@@ -12,6 +12,7 @@ require("dotenv").config();
 const { ElevenLabsAgent } = require("./services/elevenLabsAgent");
 const { MCPServer } = require("./mcp/mcpServer");
 const { OutboundCallManager } = require("./src/knowlarity/outboundCallManager");
+const { TwilioService } = require("./services/twilioService");
 
 const app = express();
 
@@ -28,6 +29,7 @@ const wss = new WebSocket.Server({ server });
 const elevenLabsAgent = new ElevenLabsAgent();
 const mcpServer = new MCPServer();
 const outboundCallManager = new OutboundCallManager();
+const twilioService = new TwilioService();
 
 // Middleware
 app.use(express.json());
@@ -231,6 +233,100 @@ app.post("/callback", async (req, res) => {
     res.json({ success: true, message: "Callback processed" });
   } catch (error) {
     console.error("Error handling Knowlarity callback:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Twilio Voice webhook endpoints
+app.post("/twilio/voice", async (req, res) => {
+  try {
+    const twiml = await twilioService.generateTwiMLWithElevenLabs(
+      "Hello, this is HexaHealth calling about your appointment. How can I help you today?"
+    );
+    
+    res.type('text/xml');
+    res.send(twiml);
+  } catch (error) {
+    console.error('Error handling Twilio voice webhook:', error);
+    res.status(500).send('Error processing call');
+  }
+});
+
+app.post("/twilio/process-speech", async (req, res) => {
+  try {
+    const speechResult = req.body.SpeechResult;
+    const callSid = req.body.CallSid;
+    
+    console.log('Speech received:', speechResult);
+    
+    // Process speech with ElevenLabs and generate response
+    const response = await twilioService.generateTwiMLWithElevenLabs(
+      `Thank you for saying: ${speechResult}. Is there anything else I can help you with?`
+    );
+    
+    res.type('text/xml');
+    res.send(response);
+  } catch (error) {
+    console.error('Error processing speech:', error);
+    res.status(500).send('Error processing speech');
+  }
+});
+
+// Twilio SMS webhook
+app.post("/twilio/sms", async (req, res) => {
+  try {
+    const { From, Body } = req.body;
+    console.log(`SMS received from ${From}: ${Body}`);
+    
+    // Process SMS and send response
+    await twilioService.sendSMS(From, `Thank you for your message: ${Body}`);
+    
+    res.status(200).send('SMS processed');
+  } catch (error) {
+    console.error('Error handling SMS:', error);
+    res.status(500).send('Error processing SMS');
+  }
+});
+
+// Twilio API endpoints
+app.post("/api/twilio/call", async (req, res) => {
+  try {
+    const { to, message } = req.body;
+    
+    if (!to || !message) {
+      return res.status(400).json({ error: "Phone number and message are required" });
+    }
+    
+    const call = await twilioService.makeCall(to, message);
+    
+    res.json({
+      success: true,
+      callSid: call.sid,
+      message: "Call initiated successfully"
+    });
+  } catch (error) {
+    console.error('Error making Twilio call:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/twilio/sms", async (req, res) => {
+  try {
+    const { to, message } = req.body;
+    
+    if (!to || !message) {
+      return res.status(400).json({ error: "Phone number and message are required" });
+    }
+    
+    const sms = await twilioService.sendSMS(to, message);
+    
+    res.json({
+      success: true,
+      messageSid: sms.sid,
+      message: "SMS sent successfully"
+    });
+  } catch (error) {
+    console.error('Error sending SMS:', error);
     res.status(500).json({ error: error.message });
   }
 });

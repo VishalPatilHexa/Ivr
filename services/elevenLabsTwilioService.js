@@ -8,19 +8,21 @@ class ElevenLabsTwilioService {
     this.agentPhoneNumberId = null; // Will be set when phone number is configured
   }
 
-  async makeOutboundCall(toNumber, conversationData = null) {
+  async makeOutboundCall(toNumber, agentPhoneNumberId = null, conversationData = null) {
     try {
       console.log('📞 Making ElevenLabs Twilio outbound call to:', toNumber);
       
-      if (!this.agentPhoneNumberId) {
-        throw new Error('Agent phone number ID not configured. Please configure your Twilio phone number in ElevenLabs dashboard.');
+      const phoneNumberId = agentPhoneNumberId || this.agentPhoneNumberId;
+      
+      if (!phoneNumberId) {
+        throw new Error('Agent phone number ID not provided. Please configure your Twilio phone number in ElevenLabs dashboard and provide the phone number ID.');
       }
 
       const response = await axios.post(
         `${this.baseUrl}/convai/twilio/outbound-call`,
         {
           agent_id: this.agentId,
-          agent_phone_number_id: this.agentPhoneNumberId,
+          agent_phone_number_id: phoneNumberId,
           to_number: toNumber,
           conversation_initiation_client_data: conversationData
         },
@@ -59,17 +61,18 @@ class ElevenLabsTwilioService {
     }
   }
 
-  async configurePhoneNumber(twilioPhoneNumber, twilioAccountSid, twilioAuthToken) {
+  async configurePhoneNumber(twilioPhoneNumber, twilioAccountSid, twilioAuthToken, label = "HexaHealth Phone") {
     try {
       console.log('📞 Configuring phone number in ElevenLabs:', twilioPhoneNumber);
       
       const response = await axios.post(
         `${this.baseUrl}/convai/phone-numbers`,
         {
+          provider: "twilio",
           phone_number: twilioPhoneNumber,
-          agent_id: this.agentId,
-          twilio_account_sid: twilioAccountSid || process.env.TWILIO_ACCOUNT_SID,
-          twilio_auth_token: twilioAuthToken || process.env.TWILIO_AUTH_TOKEN
+          label: label,
+          sid: twilioAccountSid || process.env.TWILIO_ACCOUNT_SID,
+          token: twilioAuthToken || process.env.TWILIO_AUTH_TOKEN
         },
         {
           headers: {

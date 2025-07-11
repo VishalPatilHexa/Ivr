@@ -367,13 +367,13 @@ app.post("/twilio/sms", async (req, res) => {
 // ElevenLabs Twilio API endpoints
 app.post("/api/elevenlabs/call", async (req, res) => {
   try {
-    const { to, conversationData } = req.body;
+    const { to, agentPhoneNumberId, conversationData } = req.body;
     
     if (!to) {
       return res.status(400).json({ error: "Phone number is required" });
     }
     
-    const result = await elevenLabsTwilioService.makeOutboundCall(to, conversationData);
+    const result = await elevenLabsTwilioService.makeOutboundCall(to, agentPhoneNumberId, conversationData);
     
     res.json({
       success: true,
@@ -398,7 +398,7 @@ app.get("/api/elevenlabs/phone-numbers", async (req, res) => {
 
 app.post("/api/elevenlabs/configure-phone", async (req, res) => {
   try {
-    const { phoneNumber, twilioAccountSid, twilioAuthToken } = req.body;
+    const { phoneNumber, twilioAccountSid, twilioAuthToken, label } = req.body;
     
     if (!phoneNumber) {
       return res.status(400).json({ error: "Phone number is required" });
@@ -407,7 +407,8 @@ app.post("/api/elevenlabs/configure-phone", async (req, res) => {
     const result = await elevenLabsTwilioService.configurePhoneNumber(
       phoneNumber, 
       twilioAccountSid, 
-      twilioAuthToken
+      twilioAuthToken,
+      label
     );
     
     res.json({

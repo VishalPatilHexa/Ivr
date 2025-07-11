@@ -241,10 +241,15 @@ app.post("/callback", async (req, res) => {
 app.post("/twilio/voice", async (req, res) => {
   try {
     console.log('📞 Twilio voice webhook called');
+    console.log('📞 Request headers:', req.headers);
+    console.log('📞 Request body:', req.body);
     
     // Generate ElevenLabs audio first
     const message = "Hello, this is HexaHealth calling about your appointment. How can I help you today?";
+    console.log('📞 Generating ElevenLabs audio...');
+    
     const audioId = await twilioService.generateAndStoreAudio(message);
+    console.log('📞 Generated audio ID:', audioId);
     
     // Generate TwiML with ElevenLabs audio
     const twiml = await twilioService.generateTwiMLWithElevenLabs(message, audioId);
@@ -254,9 +259,24 @@ app.post("/twilio/voice", async (req, res) => {
     res.type('text/xml');
     res.send(twiml);
   } catch (error) {
-    console.error('Error handling Twilio voice webhook:', error);
-    res.status(500).send('Error processing call');
+    console.error('❌ Error handling Twilio voice webhook:', error);
+    console.error('❌ Error stack:', error.stack);
+    
+    // Send a simple TwiML response as fallback
+    const fallbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Hello, this is HexaHealth. There was an error processing your call.</Say>
+</Response>`;
+    
+    res.type('text/xml');
+    res.send(fallbackTwiml);
   }
+});
+
+// Add a simple GET endpoint for testing
+app.get("/twilio/voice", (req, res) => {
+  console.log('📞 GET request to webhook endpoint');
+  res.json({ message: "Webhook endpoint is accessible", timestamp: new Date().toISOString() });
 });
 
 // Serve ElevenLabs audio to Twilio

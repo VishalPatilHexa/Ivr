@@ -70,26 +70,28 @@ class TwilioService {
     return twiml.toString();
   }
 
-  async generateTwiMLWithElevenLabs(message) {
+  async generateTwiMLWithElevenLabs(message, audioId = null) {
     try {
-      // Generate speech using ElevenLabs
-      const audioBuffer = await this.elevenLabsService.synthesizeSpeech(message);
-      
-      // For now, we'll use Twilio's built-in TTS
-      // In production, you'd upload the audio to a URL and use <Play>
       const twiml = new twilio.twiml.VoiceResponse();
       
-      twiml.say({
-        voice: 'alice',
-        language: 'en-US'
-      }, message);
+      // If we have a pre-generated audio ID, play it
+      if (audioId) {
+        twiml.play(`http://13.233.10.184:3000/twilio/audio/${audioId}`);
+      } else {
+        // Fallback to Twilio TTS
+        twiml.say({
+          voice: 'alice',
+          language: 'en-US'
+        }, message);
+      }
 
       // Add gather for input
       const gather = twiml.gather({
         input: 'speech',
         action: '/twilio/process-speech',
         method: 'POST',
-        speechTimeout: 'auto'
+        speechTimeout: 'auto',
+        speechModel: 'enhanced'
       });
 
       gather.say({
@@ -101,6 +103,38 @@ class TwilioService {
     } catch (error) {
       console.error('Error generating TwiML with ElevenLabs:', error);
       return this.generateTwiML(message);
+    }
+  }
+
+  async generateAndStoreAudio(message) {
+    try {
+      // Generate speech using ElevenLabs
+      const audioBuffer = await this.elevenLabsService.synthesizeSpeech(message);
+      
+      // Create unique ID for this audio
+      const audioId = `audio_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Store audio temporarily (you might want to use a proper storage solution)
+      if (!global.audioStorage) {
+        global.audioStorage = new Map();
+      }
+      
+      global.audioStorage.set(audioId, {
+        buffer: audioBuffer,
+        createdAt: Date.now()
+      });
+      
+      // Clean up old audio files after 10 minutes
+      setTimeout(() => {
+        if (global.audioStorage) {
+          global.audioStorage.delete(audioId);
+        }
+      }, 10 * 60 * 1000);
+      
+      return audioId;
+    } catch (error) {
+      console.error('Error generating and storing audio:', error);
+      return null;
     }
   }
 

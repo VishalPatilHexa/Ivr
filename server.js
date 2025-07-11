@@ -240,9 +240,16 @@ app.post("/callback", async (req, res) => {
 // Twilio Voice webhook endpoints
 app.post("/twilio/voice", async (req, res) => {
   try {
-    const twiml = await twilioService.generateTwiMLWithElevenLabs(
-      "Hello, this is HexaHealth calling about your appointment. How can I help you today?"
-    );
+    console.log('📞 Twilio voice webhook called');
+    
+    // Generate ElevenLabs audio first
+    const message = "Hello, this is HexaHealth calling about your appointment. How can I help you today?";
+    const audioId = await twilioService.generateAndStoreAudio(message);
+    
+    // Generate TwiML with ElevenLabs audio
+    const twiml = await twilioService.generateTwiMLWithElevenLabs(message, audioId);
+    
+    console.log('📞 Generated TwiML:', twiml);
     
     res.type('text/xml');
     res.send(twiml);
@@ -252,17 +259,47 @@ app.post("/twilio/voice", async (req, res) => {
   }
 });
 
+// Serve ElevenLabs audio to Twilio
+app.get("/twilio/audio/:audioId", (req, res) => {
+  try {
+    const { audioId } = req.params;
+    
+    if (!global.audioStorage || !global.audioStorage.has(audioId)) {
+      return res.status(404).send('Audio not found');
+    }
+    
+    const audioData = global.audioStorage.get(audioId);
+    
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': audioData.buffer.length,
+      'Cache-Control': 'no-cache'
+    });
+    
+    res.send(audioData.buffer);
+  } catch (error) {
+    console.error('Error serving audio:', error);
+    res.status(500).send('Error serving audio');
+  }
+});
+
 app.post("/twilio/process-speech", async (req, res) => {
   try {
     const speechResult = req.body.SpeechResult;
     const callSid = req.body.CallSid;
     
-    console.log('Speech received:', speechResult);
+    console.log('🎤 Speech received:', speechResult);
     
-    // Process speech with ElevenLabs and generate response
-    const response = await twilioService.generateTwiMLWithElevenLabs(
-      `Thank you for saying: ${speechResult}. Is there anything else I can help you with?`
-    );
+    // Generate response message
+    const responseMessage = `Thank you for saying: ${speechResult}. Is there anything else I can help you with?`;
+    
+    // Generate ElevenLabs audio for response
+    const audioId = await twilioService.generateAndStoreAudio(responseMessage);
+    
+    // Generate TwiML with ElevenLabs audio
+    const response = await twilioService.generateTwiMLWithElevenLabs(responseMessage, audioId);
+    
+    console.log('🎤 Generated speech response TwiML');
     
     res.type('text/xml');
     res.send(response);

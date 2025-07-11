@@ -6,18 +6,31 @@ class TwilioService {
     this.accountSid = process.env.TWILIO_ACCOUNT_SID;
     this.authToken = process.env.TWILIO_AUTH_TOKEN;
     this.phoneNumber = process.env.TWILIO_PHONE_NUMBER;
+    
+    console.log('Twilio config:', {
+      accountSid: this.accountSid,
+      authToken: this.authToken ? '***' : 'missing',
+      phoneNumber: this.phoneNumber
+    });
+    
+    if (!this.accountSid || !this.authToken || !this.phoneNumber) {
+      throw new Error('Missing Twilio configuration. Check your .env file.');
+    }
+    
     this.client = twilio(this.accountSid, this.authToken);
     this.elevenLabsService = new ElevenLabsService();
   }
 
   async makeCall(to, message) {
     try {
+      console.log('Making call with:', { to, from: this.phoneNumber, accountSid: this.accountSid });
+      
       // Generate speech from text using ElevenLabs
       const audioBuffer = await this.elevenLabsService.synthesizeSpeech(message);
       
       // Create a call with Twilio
       const call = await this.client.calls.create({
-        url: `${process.env.SERVER_WEBSOCKET_URL}/twilio/voice`,
+        url: `http://13.233.10.184:3000/twilio/voice`,
         to: to,
         from: this.phoneNumber,
         method: 'POST'
@@ -27,6 +40,7 @@ class TwilioService {
       return call;
     } catch (error) {
       console.error('Error making call:', error);
+      console.error('Call parameters:', { to, from: this.phoneNumber, accountSid: this.accountSid });
       throw new Error('Failed to make call');
     }
   }

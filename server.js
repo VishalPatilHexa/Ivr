@@ -13,6 +13,7 @@ const { ElevenLabsAgent } = require("./services/elevenLabsAgent");
 const { MCPServer } = require("./mcp/mcpServer");
 const { OutboundCallManager } = require("./src/knowlarity/outboundCallManager");
 const { TwilioService } = require("./services/twilioService");
+const { ElevenLabsTwilioService } = require("./services/elevenLabsTwilioService");
 
 const app = express();
 
@@ -30,6 +31,7 @@ const elevenLabsAgent = new ElevenLabsAgent();
 const mcpServer = new MCPServer();
 const outboundCallManager = new OutboundCallManager();
 const twilioService = new TwilioService();
+const elevenLabsTwilioService = new ElevenLabsTwilioService();
 
 // Middleware
 app.use(express.json());
@@ -362,7 +364,70 @@ app.post("/twilio/sms", async (req, res) => {
   }
 });
 
-// Twilio API endpoints
+// ElevenLabs Twilio API endpoints
+app.post("/api/elevenlabs/call", async (req, res) => {
+  try {
+    const { to, conversationData } = req.body;
+    
+    if (!to) {
+      return res.status(400).json({ error: "Phone number is required" });
+    }
+    
+    const result = await elevenLabsTwilioService.makeOutboundCall(to, conversationData);
+    
+    res.json({
+      success: true,
+      ...result,
+      message: "ElevenLabs call initiated successfully"
+    });
+  } catch (error) {
+    console.error('Error making ElevenLabs call:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/elevenlabs/phone-numbers", async (req, res) => {
+  try {
+    const phoneNumbers = await elevenLabsTwilioService.getPhoneNumbers();
+    res.json(phoneNumbers);
+  } catch (error) {
+    console.error('Error fetching phone numbers:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/elevenlabs/configure-phone", async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ error: "Phone number is required" });
+    }
+    
+    const result = await elevenLabsTwilioService.configurePhoneNumber(phoneNumber);
+    
+    res.json({
+      success: true,
+      ...result,
+      message: "Phone number configured successfully"
+    });
+  } catch (error) {
+    console.error('Error configuring phone number:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/elevenlabs/agent-info", async (req, res) => {
+  try {
+    const agentInfo = await elevenLabsTwilioService.getAgentInfo();
+    res.json(agentInfo);
+  } catch (error) {
+    console.error('Error fetching agent info:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Legacy Twilio API endpoints
 app.post("/api/twilio/call", async (req, res) => {
   try {
     const { to, message } = req.body;

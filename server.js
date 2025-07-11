@@ -33,6 +33,7 @@ const twilioService = new TwilioService();
 
 // Middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Add this for form data parsing
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
@@ -251,8 +252,14 @@ app.post("/twilio/voice", async (req, res) => {
     const audioId = await twilioService.generateAndStoreAudio(message);
     console.log('📞 Generated audio ID:', audioId);
     
-    // Generate TwiML with ElevenLabs audio
-    const twiml = await twilioService.generateTwiMLWithElevenLabs(message, audioId);
+    // Generate TwiML - if no audio ID, fallback to regular TTS
+    let twiml;
+    if (audioId) {
+      twiml = await twilioService.generateTwiMLWithElevenLabs(message, audioId);
+    } else {
+      console.log('📞 Falling back to regular TTS');
+      twiml = await twilioService.generateTwiML(message);
+    }
     
     console.log('📞 Generated TwiML:', twiml);
     
@@ -265,7 +272,10 @@ app.post("/twilio/voice", async (req, res) => {
     // Send a simple TwiML response as fallback
     const fallbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Hello, this is HexaHealth. There was an error processing your call.</Say>
+  <Say voice="alice">Hello, this is HexaHealth calling about your appointment. How can I help you today?</Say>
+  <Gather input="speech" action="/twilio/process-speech" method="POST" speechTimeout="auto">
+    <Say voice="alice">Please speak your response</Say>
+  </Gather>
 </Response>`;
     
     res.type('text/xml');
@@ -284,21 +294,28 @@ app.get("/twilio/audio/:audioId", (req, res) => {
   try {
     const { audioId } = req.params;
     
+    console.log('🔊 Audio request for ID:', audioId);
+    console.log('🔊 Available audio IDs:', global.audioStorage ? Array.from(global.audioStorage.keys()) : 'none');
+    
     if (!global.audioStorage || !global.audioStorage.has(audioId)) {
+      console.log('❌ Audio not found:', audioId);
       return res.status(404).send('Audio not found');
     }
     
     const audioData = global.audioStorage.get(audioId);
     
+    console.log('🔊 Serving audio, size:', audioData.buffer.length, 'bytes');
+    
     res.set({
       'Content-Type': 'audio/mpeg',
       'Content-Length': audioData.buffer.length,
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
+      'Accept-Ranges': 'bytes'
     });
     
     res.send(audioData.buffer);
   } catch (error) {
-    console.error('Error serving audio:', error);
+    console.error('❌ Error serving audio:', error);
     res.status(500).send('Error serving audio');
   }
 });

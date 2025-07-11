@@ -12,7 +12,6 @@ require("dotenv").config();
 const { ElevenLabsAgent } = require("./services/elevenLabsAgent");
 const { MCPServer } = require("./mcp/mcpServer");
 const { OutboundCallManager } = require("./src/knowlarity/outboundCallManager");
-const { TwilioService } = require("./services/twilioService");
 const { ElevenLabsTwilioService } = require("./services/elevenLabsTwilioService");
 
 const app = express();
@@ -30,30 +29,14 @@ const wss = new WebSocket.Server({ server });
 const elevenLabsAgent = new ElevenLabsAgent();
 const mcpServer = new MCPServer();
 const outboundCallManager = new OutboundCallManager();
-const twilioService = new TwilioService();
 const elevenLabsTwilioService = new ElevenLabsTwilioService();
 
 // Middleware
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // Add this for form data parsing
-app.use(express.static("public"));
-app.use("/uploads", express.static("uploads"));
+app.use(express.urlencoded({ extended: true }));
 
-// Multer for file uploads
-const upload = multer({ dest: "uploads/" });
-
-// Store client WebSocket connections
-const clients = new Map();
 // Store Knowlarity call connections
 const knowlarityConnections = new Map();
-
-// Set up client message handler for ElevenLabs agent
-elevenLabsAgent.setClientMessageHandler((sessionId, message) => {
-  const client = clients.get(sessionId);
-  if (client && client.readyState === WebSocket.OPEN) {
-    client.send(JSON.stringify(message));
-  }
-});
 
 // Health check
 app.get("/health", (req, res) => {
@@ -102,21 +85,6 @@ app.get("/export", async (req, res) => {
   }
 });
 
-// Get conversation status
-app.get("/conversation/:sessionId", async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const status = await elevenLabsAgent.getConversationStatus(sessionId);
-    
-    if (!status) {
-      return res.status(404).json({ error: "Conversation not found" });
-    }
-    
-    res.json(status);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // Outbound call API endpoints
 app.post("/api/outbound-call", async (req, res) => {
@@ -240,129 +208,6 @@ app.post("/callback", async (req, res) => {
   }
 });
 
-// Twilio Voice webhook endpoints
-app.post("/twilio/voice", async (req, res) => {
-  try {
-    console.log('📞 Twilio voice webhook called');
-    console.log('📞 Request headers:', req.headers);
-    console.log('📞 Request body:', req.body);
-    
-    // Generate ElevenLabs audio first
-    const message = "Hello, this is HexaHealth calling about your appointment. How can I help you today?";
-    console.log('📞 Generating ElevenLabs audio...');
-    
-    const audioId = await twilioService.generateAndStoreAudio(message);
-    console.log('📞 Generated audio ID:', audioId);
-    
-    // Generate TwiML - if no audio ID, fallback to regular TTS
-    let twiml;
-    if (audioId) {
-      twiml = await twilioService.generateTwiMLWithElevenLabs(message, audioId);
-    } else {
-      console.log('📞 Falling back to regular TTS');
-      twiml = await twilioService.generateTwiML(message);
-    }
-    
-    console.log('📞 Generated TwiML:', twiml);
-    
-    res.type('text/xml');
-    res.send(twiml);
-  } catch (error) {
-    console.error('❌ Error handling Twilio voice webhook:', error);
-    console.error('❌ Error stack:', error.stack);
-    
-    // Send a simple TwiML response as fallback
-    const fallbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Hello, this is HexaHealth calling about your appointment. How can I help you today?</Say>
-  <Gather input="speech" action="/twilio/process-speech" method="POST" speechTimeout="auto">
-    <Say voice="alice">Please speak your response</Say>
-  </Gather>
-</Response>`;
-    
-    res.type('text/xml');
-    res.send(fallbackTwiml);
-  }
-});
-
-// Add a simple GET endpoint for testing
-app.get("/twilio/voice", (req, res) => {
-  console.log('📞 GET request to webhook endpoint');
-  res.json({ message: "Webhook endpoint is accessible", timestamp: new Date().toISOString() });
-});
-
-// Serve ElevenLabs audio to Twilio
-app.get("/twilio/audio/:audioId", (req, res) => {
-  try {
-    const { audioId } = req.params;
-    
-    console.log('🔊 Audio request for ID:', audioId);
-    console.log('🔊 Available audio IDs:', global.audioStorage ? Array.from(global.audioStorage.keys()) : 'none');
-    
-    if (!global.audioStorage || !global.audioStorage.has(audioId)) {
-      console.log('❌ Audio not found:', audioId);
-      return res.status(404).send('Audio not found');
-    }
-    
-    const audioData = global.audioStorage.get(audioId);
-    
-    console.log('🔊 Serving audio, size:', audioData.buffer.length, 'bytes');
-    
-    res.set({
-      'Content-Type': 'audio/mpeg',
-      'Content-Length': audioData.buffer.length,
-      'Cache-Control': 'no-cache',
-      'Accept-Ranges': 'bytes'
-    });
-    
-    res.send(audioData.buffer);
-  } catch (error) {
-    console.error('❌ Error serving audio:', error);
-    res.status(500).send('Error serving audio');
-  }
-});
-
-app.post("/twilio/process-speech", async (req, res) => {
-  try {
-    const speechResult = req.body.SpeechResult;
-    const callSid = req.body.CallSid;
-    
-    console.log('🎤 Speech received:', speechResult);
-    
-    // Generate response message
-    const responseMessage = `Thank you for saying: ${speechResult}. Is there anything else I can help you with?`;
-    
-    // Generate ElevenLabs audio for response
-    const audioId = await twilioService.generateAndStoreAudio(responseMessage);
-    
-    // Generate TwiML with ElevenLabs audio
-    const response = await twilioService.generateTwiMLWithElevenLabs(responseMessage, audioId);
-    
-    console.log('🎤 Generated speech response TwiML');
-    
-    res.type('text/xml');
-    res.send(response);
-  } catch (error) {
-    console.error('Error processing speech:', error);
-    res.status(500).send('Error processing speech');
-  }
-});
-
-// Twilio SMS webhook
-app.post("/twilio/sms", async (req, res) => {
-  try {
-    const { From, Body } = req.body;
-    console.log(`SMS received from ${From}: ${Body}`);
-    
-    // Process SMS and send response
-    await twilioService.sendSMS(From, `Thank you for your message: ${Body}`);
-    
-    res.status(200).send('SMS processed');
-  } catch (error) {
-    console.error('Error handling SMS:', error);
-    res.status(500).send('Error processing SMS');
-  }
-});
 
 // ElevenLabs Twilio API endpoints
 app.post("/api/elevenlabs/call", async (req, res) => {
@@ -446,48 +291,6 @@ app.get("/api/elevenlabs/check-access", async (req, res) => {
   }
 });
 
-// Legacy Twilio API endpoints
-app.post("/api/twilio/call", async (req, res) => {
-  try {
-    const { to, message } = req.body;
-    
-    if (!to || !message) {
-      return res.status(400).json({ error: "Phone number and message are required" });
-    }
-    
-    const call = await twilioService.makeCall(to, message);
-    
-    res.json({
-      success: true,
-      callSid: call.sid,
-      message: "Call initiated successfully"
-    });
-  } catch (error) {
-    console.error('Error making Twilio call:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/api/twilio/sms", async (req, res) => {
-  try {
-    const { to, message } = req.body;
-    
-    if (!to || !message) {
-      return res.status(400).json({ error: "Phone number and message are required" });
-    }
-    
-    const sms = await twilioService.sendSMS(to, message);
-    
-    res.json({
-      success: true,
-      messageSid: sms.sid,
-      message: "SMS sent successfully"
-    });
-  } catch (error) {
-    console.error('Error sending SMS:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // WebSocket handling
 wss.on("connection", (ws, req) => {
@@ -643,177 +446,13 @@ wss.on("connection", (ws, req) => {
     return;
   }
   
-  // Regular frontend WebSocket connection
-  console.log("🔗 New WebSocket connection");
-  
-  let sessionId = null;
-  let conversation = null;
-
-  ws.on("message", async (message) => {
-    try {
-      const data = JSON.parse(message);
-      
-      switch (data.type) {
-        case "start-conversation":
-          // Generate unique session ID
-          sessionId = uuidv4();
-          clients.set(sessionId, ws);
-          
-          // Create conversation with ElevenLabs agent
-          try {
-            conversation = await elevenLabsAgent.createConversation(
-              sessionId, 
-              data.query || "general_treatment"
-            );
-            
-            ws.send(JSON.stringify({
-              type: "conversation-started",
-              sessionId,
-              message: "Conversation started with ElevenLabs agent",
-              status: "active"
-            }));
-            
-            // Let the ElevenLabs agent start the conversation naturally
-            // The agent's system prompt will handle the initial greeting
-            console.log("✅ Conversation created, agent will start naturally");
-            
-          } catch (error) {
-            console.error("Error creating conversation:", error);
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "Failed to start conversation with agent: " + error.message
-            }));
-          }
-          break;
-
-        case "audio-chunk":
-          if (!sessionId || !conversation) {
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "No active conversation"
-            }));
-            return;
-          }
-
-          try {
-            // Send audio to ElevenLabs agent
-            await elevenLabsAgent.sendAudioToAgent(sessionId, data.audio);
-          } catch (error) {
-            console.error("Error sending audio to agent:", error);
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "Failed to process audio"
-            }));
-          }
-          break;
-
-        case "text-message":
-          if (!sessionId || !conversation) {
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "No active conversation"
-            }));
-            return;
-          }
-
-          try {
-            // Send text to ElevenLabs agent
-            await elevenLabsAgent.sendTextToAgent(sessionId, data.text);
-            
-            // Show user message in UI
-            ws.send(JSON.stringify({
-              type: "user-message",
-              text: data.text,
-              timestamp: new Date().toISOString()
-            }));
-            
-          } catch (error) {
-            console.error("Error sending text to agent:", error);
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "Failed to send text message"
-            }));
-          }
-          break;
-
-        case "end-conversation":
-          if (sessionId && conversation) {
-            try {
-              await elevenLabsAgent.endConversation(sessionId);
-              ws.send(JSON.stringify({
-                type: "conversation-ended",
-                sessionId,
-                message: "Conversation ended successfully"
-              }));
-            } catch (error) {
-              console.error("Error ending conversation:", error);
-            }
-          }
-          break;
-
-        case "get-conversation-data":
-          if (sessionId) {
-            try {
-              const conversationData = await elevenLabsAgent.getConversationStatus(sessionId);
-              ws.send(JSON.stringify({
-                type: "conversation-data",
-                sessionId,
-                data: conversationData
-              }));
-            } catch (error) {
-              console.error("Error getting conversation data:", error);
-              ws.send(JSON.stringify({
-                type: "error",
-                message: "Failed to get conversation data"
-              }));
-            }
-          }
-          break;
-      }
-    } catch (error) {
-      console.error("WebSocket message error:", error);
-      ws.send(JSON.stringify({
-        type: "error",
-        message: "Invalid message format"
-      }));
-    }
-  });
-
-  ws.on("close", () => {
-    console.log("🔌 WebSocket connection closed");
-    if (sessionId) {
-      // Clean up
-      clients.delete(sessionId);
-      if (conversation) {
-        elevenLabsAgent.endConversation(sessionId);
-      }
-    }
-  });
-
-  ws.on("error", (error) => {
-    console.error("WebSocket error:", error);
-    if (sessionId) {
-      clients.delete(sessionId);
-      if (conversation) {
-        elevenLabsAgent.endConversation(sessionId);
-      }
-    }
-  });
+  // Unknown WebSocket connection
+  console.log("🔗 Unknown WebSocket connection, closing");
+  ws.close(1008, 'Unknown connection type');
 });
 
 // Cleanup function for expired sessions
 setInterval(() => {
-  const now = Date.now();
-  const sessionTimeout = 30 * 60 * 1000; // 30 minutes
-  
-  // Cleanup regular client connections
-  clients.forEach((client, sessionId) => {
-    if (client.readyState === WebSocket.CLOSED) {
-      clients.delete(sessionId);
-      elevenLabsAgent.endConversation(sessionId);
-    }
-  });
-  
   // Cleanup Knowlarity connections
   knowlarityConnections.forEach((connection, callSessionId) => {
     if (connection.readyState === WebSocket.CLOSED) {
@@ -833,14 +472,6 @@ server.listen(PORT, () => {
 process.on("SIGTERM", () => {
   console.log("SIGTERM received, shutting down gracefully");
   
-  // Close all WebSocket connections
-  clients.forEach((client, sessionId) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.close();
-    }
-    elevenLabsAgent.endConversation(sessionId);
-  });
-  
   // Close all Knowlarity connections
   knowlarityConnections.forEach((connection, callSessionId) => {
     if (connection.readyState === WebSocket.OPEN) {
@@ -856,14 +487,6 @@ process.on("SIGTERM", () => {
 
 process.on("SIGINT", () => {
   console.log("SIGINT received, shutting down gracefully");
-  
-  // Close all WebSocket connections
-  clients.forEach((client, sessionId) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.close();
-    }
-    elevenLabsAgent.endConversation(sessionId);
-  });
   
   // Close all Knowlarity connections
   knowlarityConnections.forEach((connection, callSessionId) => {

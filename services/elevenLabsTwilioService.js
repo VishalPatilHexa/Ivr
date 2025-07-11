@@ -59,7 +59,7 @@ class ElevenLabsTwilioService {
     }
   }
 
-  async configurePhoneNumber(twilioPhoneNumber) {
+  async configurePhoneNumber(twilioPhoneNumber, twilioAccountSid, twilioAuthToken) {
     try {
       console.log('📞 Configuring phone number in ElevenLabs:', twilioPhoneNumber);
       
@@ -67,7 +67,9 @@ class ElevenLabsTwilioService {
         `${this.baseUrl}/convai/phone-numbers`,
         {
           phone_number: twilioPhoneNumber,
-          agent_id: this.agentId
+          agent_id: this.agentId,
+          twilio_account_sid: twilioAccountSid || process.env.TWILIO_ACCOUNT_SID,
+          twilio_auth_token: twilioAuthToken || process.env.TWILIO_AUTH_TOKEN
         },
         {
           headers: {

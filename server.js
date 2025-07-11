@@ -398,13 +398,17 @@ app.get("/api/elevenlabs/phone-numbers", async (req, res) => {
 
 app.post("/api/elevenlabs/configure-phone", async (req, res) => {
   try {
-    const { phoneNumber } = req.body;
+    const { phoneNumber, twilioAccountSid, twilioAuthToken } = req.body;
     
     if (!phoneNumber) {
       return res.status(400).json({ error: "Phone number is required" });
     }
     
-    const result = await elevenLabsTwilioService.configurePhoneNumber(phoneNumber);
+    const result = await elevenLabsTwilioService.configurePhoneNumber(
+      phoneNumber, 
+      twilioAccountSid, 
+      twilioAuthToken
+    );
     
     res.json({
       success: true,

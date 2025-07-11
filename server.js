@@ -427,6 +427,20 @@ app.get("/api/elevenlabs/agent-info", async (req, res) => {
   }
 });
 
+app.get("/api/elevenlabs/check-access", async (req, res) => {
+  try {
+    const accessInfo = await elevenLabsTwilioService.checkConversationalAIAccess();
+    res.json({
+      success: true,
+      message: "Conversational AI access confirmed",
+      data: accessInfo
+    });
+  } catch (error) {
+    console.error('Error checking conversational AI access:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Legacy Twilio API endpoints
 app.post("/api/twilio/call", async (req, res) => {
   try {

@@ -43,7 +43,7 @@ class ElevenLabsTwilioService {
   async getPhoneNumbers() {
     try {
       const response = await axios.get(
-        `${this.baseUrl}/convai/twilio/phone-numbers`,
+        `${this.baseUrl}/convai/phone-numbers`,
         {
           headers: {
             "xi-api-key": this.apiKey
@@ -64,7 +64,7 @@ class ElevenLabsTwilioService {
       console.log('📞 Configuring phone number in ElevenLabs:', twilioPhoneNumber);
       
       const response = await axios.post(
-        `${this.baseUrl}/convai/twilio/phone-numbers`,
+        `${this.baseUrl}/convai/phone-numbers`,
         {
           phone_number: twilioPhoneNumber,
           agent_id: this.agentId
@@ -125,6 +125,25 @@ class ElevenLabsTwilioService {
     } catch (error) {
       console.error('❌ Error fetching agent info:', error.response?.data || error.message);
       throw new Error(`Failed to fetch agent info: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  async checkConversationalAIAccess() {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/convai/agents`,
+        {
+          headers: {
+            "xi-api-key": this.apiKey
+          }
+        }
+      );
+
+      console.log('✅ Conversational AI access confirmed');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Conversational AI access check failed:', error.response?.data || error.message);
+      throw new Error(`Conversational AI not accessible: ${error.response?.data?.message || error.message}`);
     }
   }
 }

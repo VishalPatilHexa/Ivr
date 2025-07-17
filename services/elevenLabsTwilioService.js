@@ -153,4 +153,4 @@ class ElevenLabsTwilioService {
   }
 }
 
-module.exports = { ElevenLabsTwilioService };
+module.exports = ElevenLabsTwilioService;

@@ -26,8 +26,12 @@ class WebSocketHandler {
     const callSessionId = pathname.split('/')[2];
     console.log("📞 New Knowlarity call stream connection for session:", callSessionId);
     
-    // Store the Knowlarity connection
-    this.knowlarityConnections.set(callSessionId, ws);
+    // Store the Knowlarity connection with control methods
+    this.knowlarityConnections.set(callSessionId, {
+      ws,
+      transferCall: null,
+      terminateStream: null
+    });
     
     // Get call session details
     const callSession = this.outboundCallManager.getCallSession(callSessionId);
@@ -54,8 +58,8 @@ class WebSocketHandler {
         // Set up message forwarding from ElevenLabs to Knowlarity
         this.elevenLabsAgent.setClientMessageHandler((sessionId, message) => {
           if (sessionId === callSessionId) {
-            const knowlarityWs = this.knowlarityConnections.get(callSessionId);
-            if (knowlarityWs && knowlarityWs.readyState === WebSocket.OPEN) {
+            const knowlarityConnection = this.knowlarityConnections.get(callSessionId);
+            if (knowlarityConnection && knowlarityConnection.ws && knowlarityConnection.ws.readyState === WebSocket.OPEN) {
               // Convert ElevenLabs audio to format expected by Knowlarity
               if (message.type === 'agent_audio' && message.audio) {
                 // Send playAudio command to Knowlarity
@@ -69,7 +73,7 @@ class WebSocketHandler {
                 };
                 
                 console.log('🔊 Sending audio to Knowlarity for playback');
-                knowlarityWs.send(JSON.stringify(playAudioCommand));
+                knowlarityConnection.ws.send(JSON.stringify(playAudioCommand));
               }
             }
           }
@@ -80,6 +84,31 @@ class WebSocketHandler {
         ws.close(1011, 'Failed to initialize conversation');
       }
     };
+
+    // Helper function to send commands to Knowlarity
+    const sendToKnowlarity = (command) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(command));
+        console.log('📤 Sent command to Knowlarity:', command.type);
+      }
+    };
+
+    // Add methods for call control
+    const transferCall = (phoneNumber) => {
+      sendToKnowlarity({
+        type: 'transfer',
+        data: { textContent: phoneNumber }
+      });
+    };
+
+    const terminateStream = () => {
+      sendToKnowlarity({ type: 'disconnect' });
+    };
+
+    // Store control methods in connection object
+    const knowlarityConnection = this.knowlarityConnections.get(callSessionId);
+    knowlarityConnection.transferCall = transferCall;
+    knowlarityConnection.terminateStream = terminateStream;
     
     // Initialize ElevenLabs conversation
     initializeElevenLabsConversation();
@@ -168,10 +197,31 @@ class WebSocketHandler {
     });
   }
 
+  // Public methods for call control
+  transferCall(callSessionId, phoneNumber) {
+    const connection = this.knowlarityConnections.get(callSessionId);
+    if (connection && connection.transferCall) {
+      connection.transferCall(phoneNumber);
+      console.log(`📞 Transferring call ${callSessionId} to ${phoneNumber}`);
+    } else {
+      console.error(`❌ Cannot transfer call ${callSessionId} - connection not found`);
+    }
+  }
+
+  terminateStream(callSessionId) {
+    const connection = this.knowlarityConnections.get(callSessionId);
+    if (connection && connection.terminateStream) {
+      connection.terminateStream();
+      console.log(`📞 Terminating stream for call ${callSessionId}`);
+    } else {
+      console.error(`❌ Cannot terminate stream ${callSessionId} - connection not found`);
+    }
+  }
+
   cleanup() {
     // Cleanup Knowlarity connections
     this.knowlarityConnections.forEach((connection, callSessionId) => {
-      if (connection.readyState === WebSocket.CLOSED) {
+      if (connection.ws && connection.ws.readyState === WebSocket.CLOSED) {
         this.knowlarityConnections.delete(callSessionId);
         this.elevenLabsAgent.endConversation(callSessionId);
         this.outboundCallManager.handleCallStatusUpdate(callSessionId, { status: 'disconnected' });
@@ -182,8 +232,8 @@ class WebSocketHandler {
   shutdown() {
     // Close all Knowlarity connections
     this.knowlarityConnections.forEach((connection, callSessionId) => {
-      if (connection.readyState === WebSocket.OPEN) {
-        connection.close();
+      if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
+        connection.ws.close();
       }
       this.elevenLabsAgent.endConversation(callSessionId);
     });

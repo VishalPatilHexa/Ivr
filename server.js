@@ -9,7 +9,7 @@ require("dotenv").config();
 const { ElevenLabsAgent } = require("./services/elevenLabsAgent");
 const { MCPServer } = require("./mcp/mcpServer");
 const { OutboundCallManager } = require("./src/knowlarity/outboundCallManager");
-const { ElevenLabsTwilioService } = require("./services/elevenLabsTwilioService");
+const  ElevenLabsTwilioService  = require("./services/elevenLabsTwilioService");
 const WebSocketHandler = require("./src/services/websocketHandler");
 
 // Controllers

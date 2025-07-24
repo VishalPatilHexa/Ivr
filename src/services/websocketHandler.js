@@ -273,7 +273,7 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   
   // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const audioBase64Data = audioBuffer.toString('base64');
+  const audioBase64Data = audioBuffer;
   
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {

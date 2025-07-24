@@ -39,11 +39,22 @@ function handleKnowlarityStream(ws, pathname) {
   });
   
   // Get call session details
-  const callSession = getCallSession(callSessionId);
+  let callSession = getCallSession(callSessionId);
   if (!callSession) {
-    console.error('❌ Call session not found:', callSessionId);
-    ws.close(1008, 'Call session not found');
-    return;
+    console.log('⚠️ Call session not found, creating temporary session for external call:', callSessionId);
+    // Create temporary session for external calls (like Gupshup)
+    callSession = {
+      sessionId: callSessionId,
+      patientData: {
+        name: 'External Call (Gupshup)',
+        phoneNumber: 'Unknown',
+        treatmentType: 'general consultation'
+      },
+      status: 'external_connection',
+      createdAt: new Date(),
+      isExternal: true
+    };
+    console.log('✅ Temporary session created for:', callSessionId);
   }
   
   // Update call status to connected
@@ -266,7 +277,12 @@ function getCallSession(callSessionId) {
 
 function handleCallStatusUpdate(callSessionId, statusUpdate) {
   if (outboundCallManager) {
-    outboundCallManager.handleCallStatusUpdate(callSessionId, statusUpdate);
+    // Try to update the session, but don't fail if it doesn't exist (external sessions)
+    try {
+      outboundCallManager.handleCallStatusUpdate(callSessionId, statusUpdate);
+    } catch (error) {
+      console.log('⚠️ Status update failed for external session:', callSessionId, 'Status:', statusUpdate.status);
+    }
   }
 }
 

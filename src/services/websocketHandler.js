@@ -203,7 +203,7 @@ function setupAudioStreaming(sessionId) {
           
           console.log('🔊 Streaming agent audio to caller');
           // AUDIO TRANSMISSION: Send audio command to Knowlarity → Caller hears AI voice
-          connection.websocket.send(base64.decode(agentMessage.audio));
+          connection.websocket.send((agentMessage.audio));
         }
         
         // RESPONSE TEXT LOGGING: Log agent text responses for monitoring/debugging
@@ -271,7 +271,7 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   
   // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const audioBase64Data = audioBuffer;
+  const audioBase64Data = audioBuffer.toString('base64');
   
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {

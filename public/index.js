@@ -10,6 +10,7 @@ class HexahealthElevenLabsClient {
     this.audioContext = null;
     this.audioQueue = [];
     this.isPlayingAudio = false;
+    this.activeAudioSources = [];
 
     this.initializeElements();
     this.setupEventListeners();
@@ -190,6 +191,10 @@ class HexahealthElevenLabsClient {
         // Handle streaming audio chunks from ElevenLabs agent
         if (data.audio) {
           console.log("🔊 Received agent audio chunk");
+          // Stop recording when agent starts speaking to prevent echo
+          if (this.isRecording) {
+            this.stopRecording();
+          }
           this.playAudioChunk(data.audio);
         }
         break;
@@ -198,6 +203,13 @@ class HexahealthElevenLabsClient {
         // Agent finished speaking
         console.log("✅ Agent finished speaking");
         this.updateStepIndicator("Agent finished speaking - you can respond now");
+        
+        // Re-enable recording after a short delay to avoid echo
+        setTimeout(() => {
+          if (!this.isRecording) {
+            this.startRecordingBtn.disabled = false;
+          }
+        }, 500);
         break;
 
       case "agent_response":
@@ -341,6 +353,18 @@ class HexahealthElevenLabsClient {
         const source = this.audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(this.audioContext.destination);
+        
+        // Track this source for cleanup
+        this.activeAudioSources.push(source);
+        
+        // Remove from tracking when finished
+        source.onended = () => {
+          const index = this.activeAudioSources.indexOf(source);
+          if (index > -1) {
+            this.activeAudioSources.splice(index, 1);
+          }
+        };
+        
         source.start();
         
         console.log("✅ Binary audio played successfully");
@@ -355,6 +379,19 @@ class HexahealthElevenLabsClient {
     } catch (error) {
       console.error("❌ Error playing binary audio:", error);
     }
+  }
+
+  stopAllAudio() {
+    // Stop all active audio sources
+    this.activeAudioSources.forEach(source => {
+      try {
+        source.stop();
+      } catch (e) {
+        // Ignore if already stopped
+      }
+    });
+    this.activeAudioSources = [];
+    console.log("🔇 Stopped all audio sources");
   }
 
   playRawPCMAudio(arrayBuffer) {
@@ -372,10 +409,22 @@ class HexahealthElevenLabsClient {
         channelData[i] = pcmData[i] / 32768.0;
       }
       
-      // Play the audio
+      // Play the audio with tracking
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(this.audioContext.destination);
+      
+      // Track this source for cleanup
+      this.activeAudioSources.push(source);
+      
+      // Remove from tracking when finished
+      source.onended = () => {
+        const index = this.activeAudioSources.indexOf(source);
+        if (index > -1) {
+          this.activeAudioSources.splice(index, 1);
+        }
+      };
+      
       source.start();
       
       console.log("✅ Raw PCM audio played successfully");
@@ -474,12 +523,16 @@ class HexahealthElevenLabsClient {
     }
 
     try {
+      // Stop any currently playing audio to prevent echo
+      this.stopAllAudio();
+      
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           sampleRate: 16000,
           channelCount: 1,
           echoCancellation: true,
-          noiseSuppression: true
+          noiseSuppression: true,
+          autoGainControl: true
         }
       });
       

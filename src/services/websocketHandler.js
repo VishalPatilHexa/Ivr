@@ -242,8 +242,9 @@ function setupAudioStreaming(sessionId) {
           // SAVE AUDIO CHUNK: Store audio chunk for file creation
           saveAudioChunk(sessionId, agentMessage.audio, "outgoing");
 
-          // AUDIO TRANSMISSION: Send audio to caller
-          connection.websocket.send(agentMessage.audio);
+          // AUDIO TRANSMISSION: Convert base64 to binary for browser
+          const audioBuffer = Buffer.from(agentMessage.audio, 'base64');
+          connection.websocket.send(audioBuffer);
         }
 
         // RESPONSE TEXT LOGGING: Log agent text responses for monitoring/debugging

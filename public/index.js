@@ -178,6 +178,7 @@ class HexahealthElevenLabsClient {
         this.addMessage("system", "🤖 Agent is ready! You can now start recording.");
         this.updateStepIndicator("Agent ready - click Start Recording to speak");
         // Enable recording now that agent is ready
+        this.conversationActive = true;
         this.startRecordingBtn.disabled = false;
         break;
 

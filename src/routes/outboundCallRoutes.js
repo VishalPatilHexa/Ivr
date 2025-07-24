@@ -1,18 +1,15 @@
-const express = require('express');
+const express = require("express");
+const outboundCallController = require("../controllers/outboundCallController");
 
 const router = express.Router();
 
-const createOutboundCallRoutes = (outboundCallController) => {
-  // Outbound call API endpoints
-  router.post('/api/outbound-call', outboundCallController.initiateCall.bind(outboundCallController));
-  router.get('/api/outbound-call/:sessionId', outboundCallController.getCallStatus.bind(outboundCallController));
-  router.get('/api/outbound-calls', outboundCallController.getActiveCalls.bind(outboundCallController));
-  
-  // Knowlarity webhook endpoints
-  router.post('/api/knowlarity/webhook', outboundCallController.handleWebhook.bind(outboundCallController));
-  router.post('/callback', outboundCallController.handleCallback.bind(outboundCallController));
-  
-  return router;
-};
+// Knowlarity Outbound Call APIs
+router.post("/api/outbound-call", outboundCallController.initiateCall);
+router.get(
+  "/api/outbound-call/:sessionId",
+  outboundCallController.getCallStatus
+);
+router.get("/api/outbound-calls", outboundCallController.getActiveCalls);
+router.post("/api/knowlarity/webhook", outboundCallController.handleWebhook);
 
-module.exports = createOutboundCallRoutes;
+module.exports = router;

@@ -1,16 +1,19 @@
-const express = require('express');
+const express = require("express");
+const elevenLabsController = require("../controllers/elevenLabsController");
 
 const router = express.Router();
 
-const createElevenLabsRoutes = (elevenLabsController) => {
-  // ElevenLabs API endpoints
-  router.post('/api/elevenlabs/call', elevenLabsController.makeCall.bind(elevenLabsController));
-  router.get('/api/elevenlabs/phone-numbers', elevenLabsController.getPhoneNumbers.bind(elevenLabsController));
-  router.post('/api/elevenlabs/configure-phone', elevenLabsController.configurePhone.bind(elevenLabsController));
-  router.get('/api/elevenlabs/agent-info', elevenLabsController.getAgentInfo.bind(elevenLabsController));
-  router.get('/api/elevenlabs/check-access', elevenLabsController.checkAccess.bind(elevenLabsController));
-  
-  return router;
-};
+// ElevenLabs Twilio APIs
+router.post("/api/elevenlabs/call", elevenLabsController.makeCall);
+router.get(
+  "/api/elevenlabs/phone-numbers",
+  elevenLabsController.getPhoneNumbers
+);
+router.post(
+  "/api/elevenlabs/configure-phone",
+  elevenLabsController.configurePhone
+);
+router.get("/api/elevenlabs/agent-info", elevenLabsController.getAgentInfo);
+router.get("/api/elevenlabs/check-access", elevenLabsController.checkAccess);
 
-module.exports = createElevenLabsRoutes;
+module.exports = router;

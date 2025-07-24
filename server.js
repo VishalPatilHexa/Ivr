@@ -5,20 +5,31 @@ const cors = require("cors");
 
 require("dotenv").config();
 
-// Services
-const { ElevenLabsAgent } = require("./services/elevenLabsAgent");
-const { MCPServer } = require("./mcp/mcpServer");
-const { OutboundCallManager } = require("./src/knowlarity/outboundCallManager");
-const  ElevenLabsTwilioService  = require("./services/elevenLabsTwilioService");
-const WebSocketHandler = require("./src/services/websocketHandler");
+// Import function-based services
+const { 
+  createConversation,
+  sendAudioToAgent,
+  setClientMessageHandler,
+  endConversation 
+} = require("./services/elevenLabsAgent");
 
-// Controllers
-const AnalyticsController = require("./src/controllers/analyticsController");
-const OutboundCallController = require("./src/controllers/outboundCallController");
-const ElevenLabsController = require("./src/controllers/elevenLabsController");
+const { 
+  getCallSession,
+  handleCallStatusUpdate 
+} = require("./src/knowlarity/outboundCallManager");
 
-// Routes
-const setupRoutes = require("./src/routes");
+const { 
+  initializeWebSocketHandler,
+  handleConnection,
+  transferCall,
+  terminateStream,
+  killAudio,
+  cleanup,
+  shutdown
+} = require("./src/services/websocketHandler");
+
+// Import routes
+const routes = require("./src/routes");
 
 const app = express();
 
@@ -32,47 +43,51 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Use routes
+app.use(routes);
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Initialize services
-const elevenLabsAgent = new ElevenLabsAgent();
-const mcpServer = new MCPServer();
-const outboundCallManager = new OutboundCallManager();
-const elevenLabsTwilioService = new ElevenLabsTwilioService();
-const websocketHandler = new WebSocketHandler(elevenLabsAgent, outboundCallManager);
+// Initialize WebSocket handler with dependencies
+// Create simple wrapper objects for backward compatibility
+const elevenLabsAgentWrapper = {
+  createConversation,
+  sendAudioToAgent,
+  setClientMessageHandler,
+  endConversation
+};
 
-// Initialize controllers
-const analyticsController = new AnalyticsController(mcpServer);
-const outboundCallController = new OutboundCallController(outboundCallManager);
-const elevenLabsController = new ElevenLabsController(elevenLabsTwilioService);
+const outboundCallManagerWrapper = {
+  getCallSession,
+  handleCallStatusUpdate
+};
 
-// Setup routes
-setupRoutes(app, {
-  analyticsController,
-  outboundCallController,
-  elevenLabsController
-});
+initializeWebSocketHandler(elevenLabsAgentWrapper, outboundCallManagerWrapper);
 
 // WebSocket handling
 wss.on("connection", (ws, req) => {
-  websocketHandler.handleConnection(ws, req);
+  handleConnection(ws, req);
 });
 
 // Cleanup function for expired sessions
 setInterval(() => {
-  websocketHandler.cleanup();
+  cleanup();
 }, 5 * 60 * 1000); // Check every 5 minutes
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔗 WebSocket URL: ws://localhost:${PORT}/knowlarity-stream/{sessionId}`);
+  console.log(`📋 Health Check: http://localhost:${PORT}/health`);
+  console.log(`📞 Outbound Call API: http://localhost:${PORT}/api/outbound-call`);
+  console.log(`🤖 ElevenLabs API: http://localhost:${PORT}/api/elevenlabs/call`);
 });
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("SIGTERM received, shutting down gracefully");
-  websocketHandler.shutdown();
+  shutdown();
   server.close(() => {
     console.log("Process terminated");
   });
@@ -80,8 +95,15 @@ process.on("SIGTERM", () => {
 
 process.on("SIGINT", () => {
   console.log("SIGINT received, shutting down gracefully");
-  websocketHandler.shutdown();
+  shutdown();
   server.close(() => {
     console.log("Process terminated");
   });
 });
+
+// Export functions for external control (if needed)
+module.exports = {
+  transferCall,
+  terminateStream,
+  killAudio
+};

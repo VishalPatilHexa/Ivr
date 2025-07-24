@@ -257,7 +257,15 @@ function setupAudioStreaming(sessionId) {
 
           // AUDIO TRANSMISSION: Convert base64 to binary for browser
           const audioBuffer = Buffer.from(agentMessage.audio, 'base64');
-          connection.websocket.send(audioBuffer);
+          console.log(`📤 Sending ${audioBuffer.length} bytes of audio to client`);
+          console.log(`🌐 WebSocket state: ${connection.websocket.readyState}, bufferedAmount: ${connection.websocket.bufferedAmount}`);
+          
+          try {
+            connection.websocket.send(audioBuffer);
+            console.log("✅ Audio sent successfully to client");
+          } catch (sendError) {
+            console.error("❌ Failed to send audio to client:", sendError.message);
+          }
         }
 
         // RESPONSE TEXT LOGGING: Log agent text responses for monitoring/debugging

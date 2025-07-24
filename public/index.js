@@ -109,6 +109,8 @@ class HexahealthElevenLabsClient {
 
     this.ws.onmessage = (event) => {
       try {
+        console.log("📨 Received WebSocket message, type:", typeof event.data, "constructor:", event.data.constructor.name);
+        
         // Check if message is binary audio data
         if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
           console.log("🔊 Received binary audio data, size:", event.data.byteLength || event.data.size);
@@ -117,10 +119,12 @@ class HexahealthElevenLabsClient {
         }
         
         // Handle JSON messages
+        console.log("📝 Parsing JSON message:", event.data.substring ? event.data.substring(0, 100) + "..." : event.data);
         const data = JSON.parse(event.data);
         this.handleMessage(data);
       } catch (error) {
         console.error("❌ Error handling WebSocket message:", error);
+        console.error("❌ Raw message data:", event.data);
       }
     };
 
@@ -320,13 +324,19 @@ class HexahealthElevenLabsClient {
         await this.audioContext.resume();
       }
       
-      // Convert to array buffer
-      const arrayBuffer = audioData instanceof ArrayBuffer ? audioData : await audioData.arrayBuffer();
+      // Convert to array buffer - clone it to avoid detachment
+      let arrayBuffer;
+      if (audioData instanceof ArrayBuffer) {
+        arrayBuffer = audioData.slice(); // Clone to avoid detachment
+      } else {
+        arrayBuffer = await audioData.arrayBuffer();
+      }
+      
       console.log("🎵 Audio buffer size:", arrayBuffer.byteLength);
       
       try {
         // Try to decode as audio (this will work if it's a proper audio format)
-        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice());
         
         const source = this.audioContext.createBufferSource();
         source.buffer = audioBuffer;
@@ -337,6 +347,7 @@ class HexahealthElevenLabsClient {
         
       } catch (decodeError) {
         console.log("⚠️ Could not decode as standard audio format, trying PCM conversion");
+        console.log("🔍 Decode error:", decodeError.message);
         // If decode fails, try to interpret as raw PCM
         this.playRawPCMAudio(arrayBuffer);
       }

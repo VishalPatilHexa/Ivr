@@ -112,6 +112,15 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       // STEP 3: Setup bidirectional audio streaming
       setupAudioStreaming(sessionId);
+      
+      // STEP 4: Notify client that agent is ready
+      if (connection?.websocket?.readyState === WebSocket.OPEN) {
+        connection.websocket.send(JSON.stringify({
+          type: 'agent_ready',
+          message: 'ElevenLabs agent is ready for conversation'
+        }));
+        console.log('📤 Sent agent_ready notification to client');
+      }
     } catch (error) {
       console.error("❌ Error creating ElevenLabs conversation:", error);
       websocket.close(1011, "Failed to initialize conversation");

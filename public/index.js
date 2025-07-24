@@ -83,7 +83,8 @@ class HexahealthElevenLabsClient {
       this.isConnected = true;
       this.updateConnectionStatus("Connected");
       this.connectBtn.textContent = "Disconnect";
-      this.startRecordingBtn.disabled = false;
+      // Keep recording disabled until agent is ready
+      this.startRecordingBtn.disabled = true;
       this.textInput.disabled = false;
       this.sendTextBtn.disabled = false;
 
@@ -107,8 +108,20 @@ class HexahealthElevenLabsClient {
     };
 
     this.ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      this.handleMessage(data);
+      try {
+        // Check if message is binary audio data
+        if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+          console.log("🔊 Received binary audio data");
+          this.playBinaryAudio(event.data);
+          return;
+        }
+        
+        // Handle JSON messages
+        const data = JSON.parse(event.data);
+        this.handleMessage(data);
+      } catch (error) {
+        console.error("❌ Error handling WebSocket message:", error);
+      }
     };
 
     this.ws.onclose = () => {
@@ -162,8 +175,10 @@ class HexahealthElevenLabsClient {
         break;
 
       case "agent_ready":
-        this.addMessage("system", "🤖 Agent is ready! Triggering conversation...");
-        this.updateStepIndicator("Agent is ready - conversation starting");
+        this.addMessage("system", "🤖 Agent is ready! You can now start recording.");
+        this.updateStepIndicator("Agent ready - click Start Recording to speak");
+        // Enable recording now that agent is ready
+        this.startRecordingBtn.disabled = false;
         break;
 
       case "agent_audio":
@@ -292,6 +307,24 @@ class HexahealthElevenLabsClient {
       console.error("Error processing audio chunk:", error);
       // Try PCM conversion as fallback
       this.playPCMAudio(base64Audio);
+    }
+  }
+
+  async playBinaryAudio(audioData) {
+    try {
+      console.log("🎵 Playing binary audio data");
+      
+      // Convert to audio buffer and play
+      const arrayBuffer = audioData instanceof ArrayBuffer ? audioData : await audioData.arrayBuffer();
+      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      
+      const source = this.audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.audioContext.destination);
+      source.start();
+      
+    } catch (error) {
+      console.error("❌ Error playing binary audio:", error);
     }
   }
 

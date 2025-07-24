@@ -267,12 +267,13 @@ function setupAudioStreaming(sessionId) {
           
           if (!isWebClient) {
             // KNOWLARITY FORMAT: Send as playAudio JSON message
+            // Note: Knowlarity expects raw PCM audio with specific sample rate
             const knowlarityAudioMessage = {
               type: "playAudio",
               data: {
                 audioContentType: "raw",
-                sampleRate: 16000,
-                audioContent: agentMessage.audio  // Keep as base64
+                sampleRate: 16000,  // ElevenLabs uses 16kHz
+                audioContent: agentMessage.audio  // base64 encoded raw PCM
               }
             };
             
@@ -340,9 +341,15 @@ function handleInitialMetadata(metadataMessage, sessionId) {
 
     // UPDATE CLIENT TYPE: Update connection type based on metadata
     const connection = activeConnections.get(sessionId);
-    if (connection && connectionMetadata.type === 'web_client_connection') {
-      connection.clientType = 'web_client';
-      console.log("🔄 Updated client type to web_client for session:", sessionId);
+    if (connection) {
+      if (connectionMetadata.type === 'web_client_connection') {
+        connection.clientType = 'web_client';
+        console.log("🔄 Updated client type to web_client for session:", sessionId);
+      } else if (connectionMetadata.ivr_data || connectionMetadata.callid) {
+        // This is Knowlarity metadata format
+        connection.clientType = 'knowlarity';
+        console.log("🔄 Confirmed client type as knowlarity for session:", sessionId);
+      }
     }
 
     // STATUS UPDATE: Mark call as connected and store metadata

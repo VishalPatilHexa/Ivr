@@ -154,7 +154,7 @@ function handleKnowlarityStream(websocket, urlPath) {
       }
 
       // Route audio and control messages
-      if (incomingMessage) {
+      if (incomingMessage instanceof Buffer) {
         console.log("🎵 Processing audio data for session:", sessionId);
         await handleIncomingAudio(
           incomingMessage,

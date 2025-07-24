@@ -119,6 +119,7 @@ async function createElevenLabsWebSocket(sessionId) {
 
     agentWebSocket.on('close', (code, reason) => {
       console.log('🔌 ElevenLabs WebSocket closed for session:', sessionId);
+      console.log('🔍 Close code:', code, 'Reason:', reason ? reason.toString() : 'No reason provided');
       endConversation(sessionId);
     });
   });

@@ -507,10 +507,9 @@ class HexahealthElevenLabsClient {
     if (!this.conversationActive) return;
 
     try {
-      this.ws.send(JSON.stringify({
-        type: "audio-chunk",
-        audio: base64Data
-      }));
+      // Send PCM audio as binary data directly to server
+      const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      this.ws.send(binaryData.buffer);
     } catch (error) {
       console.error("Error sending PCM chunk:", error);
     }
@@ -525,11 +524,9 @@ class HexahealthElevenLabsClient {
       const pcmData = await this.convertWebMToPCM(arrayBuffer);
       
       if (pcmData) {
-        this.ws.send(JSON.stringify({
-          type: "audio-chunk",
-          audio: pcmData,
-          isChunk: true
-        }));
+        // Send audio as binary data directly to server
+        const binaryData = Uint8Array.from(atob(pcmData), c => c.charCodeAt(0));
+        this.ws.send(binaryData.buffer);
       }
     } catch (error) {
       console.error("Error sending audio chunk:", error);
@@ -583,11 +580,9 @@ class HexahealthElevenLabsClient {
       const pcmData = await this.convertWebMToPCM(arrayBuffer);
       
       if (pcmData) {
-        this.ws.send(JSON.stringify({
-          type: "audio-chunk",
-          audio: pcmData,
-          isFinal: true
-        }));
+        // Send final audio as binary data directly to server
+        const binaryData = Uint8Array.from(atob(pcmData), c => c.charCodeAt(0));
+        this.ws.send(binaryData.buffer);
         
         console.log("🎙️ Sent final audio message");
       }

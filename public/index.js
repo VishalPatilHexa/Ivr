@@ -199,6 +199,25 @@ class HexahealthElevenLabsClient {
         }
         break;
 
+      case "playAudio":
+        // Handle Knowlarity playAudio format
+        if (data.data && data.data.audioContent) {
+          console.log("🔊 Received Knowlarity playAudio message");
+          // Stop recording when agent starts speaking to prevent echo
+          if (this.isRecording) {
+            this.stopRecording();
+          }
+          
+          if (data.data.audioContentType === "raw") {
+            // Raw PCM audio - play as base64
+            this.playAudioChunk(data.data.audioContent);
+          } else if (data.data.audioContentType === "wave") {
+            // WAV format - convert and play
+            this.playWaveAudio(data.data.audioContent);
+          }
+        }
+        break;
+
       case "agent_audio_end":
         // Agent finished speaking
         console.log("✅ Agent finished speaking");
@@ -431,6 +450,35 @@ class HexahealthElevenLabsClient {
       
     } catch (error) {
       console.error("❌ Error playing raw PCM audio:", error);
+    }
+  }
+
+  async playWaveAudio(base64WaveData) {
+    try {
+      console.log("🎵 Playing WAV audio data");
+      
+      // Resume audio context if suspended
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
+      // Create audio element and play WAV directly
+      const audio = new Audio();
+      audio.src = `data:audio/wav;base64,${base64WaveData}`;
+      
+      audio.onloadeddata = () => {
+        console.log("✅ WAV audio loaded successfully");
+      };
+      
+      audio.onerror = (error) => {
+        console.error("❌ WAV audio error:", error);
+      };
+      
+      await audio.play();
+      console.log("✅ WAV audio played successfully");
+      
+    } catch (error) {
+      console.error("❌ Error playing WAV audio:", error);
     }
   }
 

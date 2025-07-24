@@ -71,8 +71,15 @@ function handleKnowlarityStream(websocket, urlPath) {
   console.log("🌐 WebSocket Ready State:", websocket.readyState);
 
   // STEP 1: Store connection and setup call session
-  activeConnections.set(sessionId, { websocket });
-  console.log("💾 Stored connection for session:", sessionId);
+  // Detect client type from session ID or will be updated from metadata
+  const clientType = sessionId.startsWith('web_') ? 'web_client' : 'knowlarity';
+  
+  activeConnections.set(sessionId, { 
+    websocket, 
+    clientType,
+    connectedAt: new Date()
+  });
+  console.log("💾 Stored connection for session:", sessionId, "type:", clientType);
   console.log("📊 Total active connections:", activeConnections.size);
 
   let callSession = getCallSession(sessionId);
@@ -255,16 +262,39 @@ function setupAudioStreaming(sessionId) {
           // SAVE AUDIO CHUNK: Store audio chunk for file creation
           saveAudioChunk(sessionId, agentMessage.audio, "outgoing");
 
-          // AUDIO TRANSMISSION: Convert base64 to binary for browser
-          const audioBuffer = Buffer.from(agentMessage.audio, 'base64');
-          console.log(`📤 Sending ${audioBuffer.length} bytes of audio to client`);
-          console.log(`🌐 WebSocket state: ${connection.websocket.readyState}, bufferedAmount: ${connection.websocket.bufferedAmount}`);
+          // Check client type from stored connection data
+          const isWebClient = connection.clientType === 'web_client';
           
-          try {
-            connection.websocket.send(audioBuffer);
-            console.log("✅ Audio sent successfully to client");
-          } catch (sendError) {
-            console.error("❌ Failed to send audio to client:", sendError.message);
+          if (!isWebClient) {
+            // KNOWLARITY FORMAT: Send as playAudio JSON message
+            const knowlarityAudioMessage = {
+              type: "playAudio",
+              data: {
+                audioContentType: "raw",
+                sampleRate: 16000,
+                audioContent: agentMessage.audio  // Keep as base64
+              }
+            };
+            
+            console.log(`📤 Sending Knowlarity playAudio message (${agentMessage.audio.length} chars base64)`);
+            
+            try {
+              connection.websocket.send(JSON.stringify(knowlarityAudioMessage));
+              console.log("✅ Knowlarity audio JSON sent successfully");
+            } catch (sendError) {
+              console.error("❌ Failed to send Knowlarity audio:", sendError.message);
+            }
+          } else {
+            // BROWSER FORMAT: Convert base64 to binary for web clients
+            const audioBuffer = Buffer.from(agentMessage.audio, 'base64');
+            console.log(`📤 Sending ${audioBuffer.length} bytes of audio to web client`);
+            
+            try {
+              connection.websocket.send(audioBuffer);
+              console.log("✅ Web client audio sent successfully");
+            } catch (sendError) {
+              console.error("❌ Failed to send web client audio:", sendError.message);
+            }
           }
         }
 
@@ -300,13 +330,20 @@ function setupAudioStreaming(sessionId) {
  */
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
-    // METADATA PARSING: Extract call information from Knowlarity
+    // METADATA PARSING: Extract call information from client
     const connectionMetadata = JSON.parse(metadataMessage);
-    console.log("📋 Received Knowlarity metadata for session:", sessionId);
+    console.log("📋 Received metadata for session:", sessionId);
     console.log(
       "📊 Metadata details:",
       JSON.stringify(connectionMetadata, null, 2)
     );
+
+    // UPDATE CLIENT TYPE: Update connection type based on metadata
+    const connection = activeConnections.get(sessionId);
+    if (connection && connectionMetadata.type === 'web_client_connection') {
+      connection.clientType = 'web_client';
+      console.log("🔄 Updated client type to web_client for session:", sessionId);
+    }
 
     // STATUS UPDATE: Mark call as connected and store metadata
     // This updates the call management system with connection details

@@ -126,11 +126,8 @@ function handleKnowlarityStream(websocket, urlPath) {
   let isFirstMessage = true;
   let messageCount = 0;
 
-  websocket.onmessage = function (event) {
-    console.log("Received message:", event.data);
-  };
 
-  websocket.on("message", async (incomingMessage) => {
+  websocket.on("message", (incomingMessage) => {
     console.log(
       "🔗 Incoming WebSocket message for session:-------------------------------------------------",
       incomingMessage
@@ -159,7 +156,7 @@ function handleKnowlarityStream(websocket, urlPath) {
       // Route audio and control messages
       if (incomingMessage) {
         console.log("🎵 Processing audio data for session:", sessionId);
-        await handleIncomingAudio(
+         handleIncomingAudio(
           incomingMessage,
           sessionId,
           agentConversation

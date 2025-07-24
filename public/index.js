@@ -111,7 +111,7 @@ class HexahealthElevenLabsClient {
       try {
         // Check if message is binary audio data
         if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-          console.log("🔊 Received binary audio data");
+          console.log("🔊 Received binary audio data, size:", event.data.byteLength || event.data.size);
           this.playBinaryAudio(event.data);
           return;
         }
@@ -315,17 +315,62 @@ class HexahealthElevenLabsClient {
     try {
       console.log("🎵 Playing binary audio data");
       
-      // Convert to audio buffer and play
-      const arrayBuffer = audioData instanceof ArrayBuffer ? audioData : await audioData.arrayBuffer();
-      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      // Resume audio context if suspended
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
       
+      // Convert to array buffer
+      const arrayBuffer = audioData instanceof ArrayBuffer ? audioData : await audioData.arrayBuffer();
+      console.log("🎵 Audio buffer size:", arrayBuffer.byteLength);
+      
+      try {
+        // Try to decode as audio (this will work if it's a proper audio format)
+        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        
+        const source = this.audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(this.audioContext.destination);
+        source.start();
+        
+        console.log("✅ Binary audio played successfully");
+        
+      } catch (decodeError) {
+        console.log("⚠️ Could not decode as standard audio format, trying PCM conversion");
+        // If decode fails, try to interpret as raw PCM
+        this.playRawPCMAudio(arrayBuffer);
+      }
+      
+    } catch (error) {
+      console.error("❌ Error playing binary audio:", error);
+    }
+  }
+
+  playRawPCMAudio(arrayBuffer) {
+    try {
+      // Assume 16-bit PCM, 16kHz, mono (ElevenLabs format)
+      const pcmData = new Int16Array(arrayBuffer);
+      const sampleRate = 16000;
+      
+      // Create audio buffer for PCM data
+      const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, sampleRate);
+      const channelData = audioBuffer.getChannelData(0);
+      
+      // Convert 16-bit integers to float32 (-1.0 to 1.0)
+      for (let i = 0; i < pcmData.length; i++) {
+        channelData[i] = pcmData[i] / 32768.0;
+      }
+      
+      // Play the audio
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(this.audioContext.destination);
       source.start();
       
+      console.log("✅ Raw PCM audio played successfully");
+      
     } catch (error) {
-      console.error("❌ Error playing binary audio:", error);
+      console.error("❌ Error playing raw PCM audio:", error);
     }
   }
 

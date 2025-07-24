@@ -127,7 +127,7 @@ function handleKnowlarityStream(websocket, urlPath) {
   let messageCount = 0;
 
 
-  websocket.on("message", (incomingMessage) => {
+  websocket.on("message", async (incomingMessage) => {
     console.log(
       "🔗 Incoming WebSocket message for session:-------------------------------------------------",
       incomingMessage
@@ -156,7 +156,7 @@ function handleKnowlarityStream(websocket, urlPath) {
       // Route audio and control messages
       if (incomingMessage) {
         console.log("🎵 Processing audio data for session:", sessionId);
-         handleIncomingAudio(
+        await handleIncomingAudio(
           incomingMessage,
           sessionId,
           agentConversation
@@ -181,6 +181,10 @@ function handleKnowlarityStream(websocket, urlPath) {
     }
   });
 
+  websocket.on("error", (event) => {
+    console.error("❌ WebSocket error for session:", event);
+    console.error("💥 Error details:", event.message);
+  });
   // STEP 5: Setup connection lifecycle handlers
   setupConnectionLifecycle(websocket, sessionId, agentConversation);
 

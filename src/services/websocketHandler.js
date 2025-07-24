@@ -130,7 +130,7 @@ function handleKnowlarityStream(websocket, urlPath) {
       }
       
       // Route audio and control messages
-      if (incomingMessage instanceof Buffer) {
+      if (incomingMessage) {
         console.log('🎵 Processing audio data for session:', sessionId);
         await handleIncomingAudio(incomingMessage, sessionId, agentConversation);
       } else {

@@ -65,6 +65,9 @@ function handleKnowlarityStream(ws, pathname) {
   
   const initializeElevenLabsConversation = async () => {
     try {
+      console.log('🤖 Initializing ElevenLabs conversation for session:', callSessionId);
+      console.log('📋 Session type:', callSession.isExternal ? 'External (Gupshup)' : 'Internal');
+      
       elevenLabsConversation = await createConversation(
         callSessionId,
         callSession.patientData.treatmentType || 'general consultation'
@@ -76,9 +79,9 @@ function handleKnowlarityStream(ws, pathname) {
         if (sessionId === callSessionId) {
           const knowlarityConnection = knowlarityConnections.get(callSessionId);
           if (knowlarityConnection && knowlarityConnection.ws && knowlarityConnection.ws.readyState === WebSocket.OPEN) {
-            // Convert ElevenLabs audio to format expected by Knowlarity
+            // Convert ElevenLabs audio to format expected by Knowlarity/Gupshup
             if (message.type === 'agent_audio' && message.audio) {
-              // Send playAudio command to Knowlarity
+              // Send playAudio command to Knowlarity/Gupshup
               const playAudioCommand = {
                 type: 'playAudio',
                 data: {
@@ -88,8 +91,18 @@ function handleKnowlarityStream(ws, pathname) {
                 }
               };
               
-              console.log('🔊 Sending audio to Knowlarity for playback');
+              console.log('🔊 Sending ElevenLabs agent audio to caller via Gupshup/Knowlarity');
+              console.log('📊 Audio size:', message.audio.length, 'characters (base64)');
               knowlarityConnection.ws.send(JSON.stringify(playAudioCommand));
+            }
+            
+            // Handle other ElevenLabs message types
+            if (message.type === 'agent_response' && message.text) {
+              console.log('💬 Agent text response:', message.text.substring(0, 100) + '...');
+            }
+            
+            if (message.type === 'agent_audio_end') {
+              console.log('✅ Agent finished speaking');
             }
           }
         }
@@ -155,15 +168,18 @@ function handleKnowlarityStream(ws, pathname) {
       
       // After first message, check if it's JSON or binary audio
       if (message instanceof Buffer) {
-        // This is binary audio data from Knowlarity (16-bit PCM)
-        console.log('🎵 Received audio chunk from Knowlarity, size:', message.length);
+        // This is binary audio data from Knowlarity/Gupshup (16-bit PCM)
+        console.log('🎵 Received audio chunk from caller, size:', message.length, 'bytes');
         
         // Convert binary PCM to base64 for ElevenLabs
         const audioBase64 = message.toString('base64');
         
-        // Forward audio from Knowlarity to ElevenLabs
+        // Forward audio from caller to ElevenLabs
         if (elevenLabsConversation) {
+          console.log('📤 Forwarding audio to ElevenLabs agent...');
           await sendAudioToAgent(callSessionId, audioBase64);
+        } else {
+          console.log('⚠️ ElevenLabs conversation not ready, audio dropped');
         }
       } else {
         // This might be a JSON control message or DTMF
@@ -200,12 +216,15 @@ function handleKnowlarityStream(ws, pathname) {
   });
   
   ws.on('close', () => {
-    console.log('📞 Knowlarity call stream closed for session:', callSessionId);
+    console.log('📞 Knowlarity/Gupshup call stream closed for session:', callSessionId);
+    console.log('🧹 Cleaning up connections and conversations...');
     knowlarityConnections.delete(callSessionId);
     if (elevenLabsConversation) {
+      console.log('🤖 Ending ElevenLabs conversation...');
       endConversation(callSessionId);
     }
     handleCallStatusUpdate(callSessionId, { status: 'disconnected' });
+    console.log('✅ Cleanup completed for session:', callSessionId);
   });
   
   ws.on('error', (error) => {

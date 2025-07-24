@@ -1,5 +1,5 @@
 const WebSocket = require("ws");
-
+var base64 = require('base-64');
 /*
  * ===============================================================================
  * KNOWLARITY-ELEVENLABS WEBSOCKET HANDLER
@@ -203,7 +203,7 @@ function setupAudioStreaming(sessionId) {
           
           console.log('🔊 Streaming agent audio to caller');
           // AUDIO TRANSMISSION: Send audio command to Knowlarity → Caller hears AI voice
-          connection.websocket.send(agentMessage.audio);
+          connection.websocket.send(base64.decode(agentMessage.audio));
         }
         
         // RESPONSE TEXT LOGGING: Log agent text responses for monitoring/debugging

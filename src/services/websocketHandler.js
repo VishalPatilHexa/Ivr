@@ -60,20 +60,29 @@ function handleConnection(websocket, request) {
 function handleKnowlarityStream(websocket, urlPath) {
   const sessionId = urlPath.split('/')[2];
   console.log("📞 New Knowlarity call stream connection for session:", sessionId);
+  console.log("🔍 URL Path:", urlPath);
+  console.log("🌐 WebSocket Ready State:", websocket.readyState);
   
   // STEP 1: Store connection and setup call session
   activeConnections.set(sessionId, { websocket });
+  console.log("💾 Stored connection for session:", sessionId);
+  console.log("📊 Total active connections:", activeConnections.size);
   
   let callSession = getCallSession(sessionId);
   if (!callSession) {
-    // Create temporary session for external calls Knowlarity
+    // Create temporary session for external calls (Knowlarity/Gupshup)
     callSession = {
       sessionId: sessionId,
       status: 'external_connection',
       createdAt: new Date(),
-      isExternal: true
+      isExternal: true,
+      source: 'knowlarity'
     };
     console.log('✅ Temporary session created for external call:', sessionId);
+    console.log('📋 Session details:', JSON.stringify(callSession, null, 2));
+  } else {
+    console.log('🔄 Using existing call session:', sessionId);
+    console.log('📋 Existing session details:', JSON.stringify(callSession, null, 2));
   }
   
   // STEP 2: Initialize ElevenLabs conversation
@@ -99,11 +108,17 @@ function handleKnowlarityStream(websocket, urlPath) {
   
   // STEP 4: Setup message handling for audio streaming
   let isFirstMessage = true;
+  let messageCount = 0;
   
   websocket.on('message', async (incomingMessage) => {
     try {
+      messageCount++;
+      console.log(`📬 Message #${messageCount} for session ${sessionId}:`, 
+                  incomingMessage instanceof Buffer ? `Binary (${incomingMessage.length} bytes)` : 'Text');
+      
       // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
+        console.log('🎆 Processing first message (metadata) for session:', sessionId);
         handleInitialMetadata(incomingMessage, sessionId);
         isFirstMessage = false;
         return;
@@ -111,13 +126,21 @@ function handleKnowlarityStream(websocket, urlPath) {
       
       // Route audio and control messages
       if (incomingMessage instanceof Buffer) {
+        console.log('🎵 Processing audio data for session:', sessionId);
         await handleIncomingAudio(incomingMessage, sessionId, agentConversation);
       } else {
+        console.log('📝 Processing control message for session:', sessionId);
         handleControlMessages(incomingMessage, sessionId, agentConversation);
       }
       
     } catch (error) {
-      console.error('❌ Error processing message:', error);
+      console.error('❌ Error processing message for session:', sessionId);
+      console.error('💥 Error details:', error.message);
+      console.error('🔍 Message type:', incomingMessage instanceof Buffer ? 'Binary' : 'Text');
+      console.error('🔍 Message preview:', 
+                    incomingMessage instanceof Buffer ? 
+                      `Buffer(${incomingMessage.length})` : 
+                      incomingMessage.toString().substring(0, 100));
     }
   });
   
@@ -136,96 +159,167 @@ function handleKnowlarityStream(websocket, urlPath) {
 
 /**
  * Setup bidirectional audio streaming between ElevenLabs and Knowlarity
+ * 
+ * CRITICAL CONNECTION POINT: This function creates the bridge between:
+ * - ElevenLabs Agent Service (processes AI responses)
+ * - WebSocket Handler (manages caller connections)
+ * 
+ * HOW THE CONNECTION WORKS:
+ * 1. This function registers a CALLBACK with ElevenLabs agent service
+ * 2. The callback gets STORED in elevenLabsAgent.js as 'messageForwardingHandler'
+ * 3. When ElevenLabs processes audio/text, it calls forwardToClient()
+ * 4. forwardToClient() EXECUTES this callback with the agent's response
+ * 5. This callback then sends the response to the caller via Knowlarity WebSocket
+ * 
+ * FLOW: ElevenLabs → forwardToClient() → THIS CALLBACK → Knowlarity → Caller
  */
 function setupAudioStreaming(sessionId) {
+  // CALLBACK REGISTRATION: Register this function with ElevenLabs agent service
+  // This callback will be called whenever ElevenLabs has a message for this session
   setClientMessageHandler((currentSessionId, agentMessage) => {
+    // SESSION FILTERING: Only process messages for this specific call session
+    // This prevents cross-talk between multiple concurrent calls
     if (currentSessionId === sessionId) {
+      
+      // CONNECTION RETRIEVAL: Get the stored Knowlarity WebSocket connection
+      // This connection was stored earlier in handleKnowlarityStream()
       const connection = activeConnections.get(sessionId);
+      
+      // CONNECTION VALIDATION: Ensure WebSocket is still open before sending
       if (connection?.websocket?.readyState === WebSocket.OPEN) {
         
-        // OUTGOING AUDIO: ElevenLabs → Knowlarity → Caller
+        // OUTGOING AUDIO STREAM: ElevenLabs Agent → Knowlarity → Caller
+        // This is the main audio response from AI agent to caller
         if (agentMessage.type === 'agent_audio' && agentMessage.audio) {
+          // AUDIO COMMAND FORMATTING: Convert ElevenLabs audio to Knowlarity format
           const audioPlaybackCommand = {
-            type: 'playAudio',
+            type: 'playAudio',              // Knowlarity command type
             data: {
-              audioContentType: 'raw',  
-              sampleRate: 16000,
-              audioContent: agentMessage.audio
+              audioContentType: 'raw',      // Raw PCM audio format
+              sampleRate: 16000,            // 16kHz sample rate
+              audioContent: agentMessage.audio  // Base64 encoded audio from ElevenLabs
             }
           };
           
           console.log('🔊 Streaming agent audio to caller');
-          connection.websocket.send(JSON.stringify(audioPlaybackCommand));
+          // AUDIO TRANSMISSION: Send audio command to Knowlarity → Caller hears AI voice
+          connection.websocket.send(agentMessage.audio);
         }
         
-        // Log agent responses for monitoring
+        // RESPONSE TEXT LOGGING: Log agent text responses for monitoring/debugging
         if (agentMessage.type === 'agent_response' && agentMessage.text) {
           console.log('💬 Agent response:', agentMessage.text.substring(0, 100) + '...');
         }
         
+        // AUDIO END DETECTION: Log when agent finishes speaking (for turn-taking)
         if (agentMessage.type === 'agent_audio_end') {
           console.log('✅ Agent finished speaking');
         }
+      } else {
+        // CONNECTION LOST: WebSocket connection is closed or not available
+        console.log('⚠️ Cannot send to caller - WebSocket connection lost for session:', sessionId);
       }
     }
+    // ELSE: Message is for a different session - ignore (normal with multiple calls)
   });
 }
 
 /**
  * Handle initial metadata message from Knowlarity
+ * 
+ * FIRST MESSAGE PROTOCOL: The first message from Knowlarity is always JSON metadata
+ * containing call information, not audio data. This establishes the call context.
  */
 function handleInitialMetadata(metadataMessage, sessionId) {
-  const connectionMetadata = JSON.parse(metadataMessage);
-  console.log('📋 Received Knowlarity metadata for session:', sessionId);
-  
-  handleCallStatusUpdate(sessionId, { 
-    status: 'connected',
-    knowlarityMetadata: connectionMetadata
-  });
+  try {
+    // METADATA PARSING: Extract call information from Knowlarity
+    const connectionMetadata = JSON.parse(metadataMessage);
+    console.log('📋 Received Knowlarity metadata for session:', sessionId);
+    console.log('📊 Metadata details:', JSON.stringify(connectionMetadata, null, 2));
+    
+    // STATUS UPDATE: Mark call as connected and store metadata
+    // This updates the call management system with connection details
+    handleCallStatusUpdate(sessionId, { 
+      status: 'connected',
+      knowlarityMetadata: connectionMetadata,
+      isExternal: true
+    });
+  } catch (jsonError) {
+    console.error('❌ Failed to parse initial metadata for session:', sessionId);
+    console.error('🔍 Raw message:', metadataMessage.toString());
+    console.error('💥 Parse error:', jsonError.message);
+    
+    // Try to continue with minimal metadata
+    handleCallStatusUpdate(sessionId, { 
+      status: 'connected',
+      knowlarityMetadata: { error: 'Failed to parse metadata' },
+      isExternal: true
+    });
+  }
 }
 
 /**
- * INCOMING AUDIO: Handle audio from caller → ElevenLabs
+ * INCOMING AUDIO STREAM: Handle audio from caller → ElevenLabs Agent
+ * 
+ * AUDIO FLOW: Caller speaks → Knowlarity → Binary PCM → Base64 → ElevenLabs
+ * 
+ * This function processes the incoming audio stream from the caller and forwards
+ * it to the ElevenLabs agent for processing and response generation.
  */
 async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   console.log('🎵 Received audio from caller, size:', audioBuffer.length, 'bytes');
   
-  // Convert PCM audio to base64 for ElevenLabs
+  // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
+  // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   const audioBase64Data = audioBuffer.toString('base64');
   
-  // Stream to ElevenLabs agent
+  // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {
+    // STREAM TO AGENT: This will trigger AI processing and eventually a response
+    // The response will come back through the callback registered in setupAudioStreaming()
     await sendAudioToAgent(sessionId, audioBase64Data);
   } else {
+    // AGENT NOT READY: ElevenLabs conversation not initialized yet - drop audio
     console.log('⚠️ ElevenLabs not ready, audio dropped');
   }
 }
 
 /**
  * Handle control messages (call events, DTMF)
+ * 
+ * CONTROL CHANNEL: Processes non-audio messages from Knowlarity
+ * These include call lifecycle events and user input (DTMF tones)
  */
 function handleControlMessages(controlMessage, sessionId, agentConversation) {
   try {
+    // CONTROL MESSAGE PARSING: Extract control commands from Knowlarity
     const controlData = JSON.parse(controlMessage);
     console.log('📋 Control message:', controlData.type);
     
+    // CONTROL MESSAGE ROUTING: Handle different types of call events
     switch (controlData.type) {
       case 'call_start':
+        // CALL ACTIVATION: Mark call as active (beyond just connected)
         handleCallStatusUpdate(sessionId, { status: 'active' });
         break;
         
       case 'call_end':
+        // CALL TERMINATION: Clean up all resources for this call
         handleCallStatusUpdate(sessionId, { status: 'completed' });
         if (agentConversation) {
+          // AGENT CLEANUP: End the ElevenLabs conversation and close WebSocket
           endConversation(sessionId);
         }
         break;
         
       case 'dtmf':
+        // DTMF TONES: Handle keypad input from caller (could be used for menu navigation)
         console.log('📞 DTMF received:', controlData.digit);
+        // TODO: Could forward DTMF to agent for handling menu options
         break;
     }
   } catch (jsonError) {
+    // INVALID CONTROL MESSAGE: Not valid JSON, log and continue
     console.log('⚠️ Non-JSON control message received');
   }
 }
@@ -260,14 +354,26 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
 function cleanupSession(sessionId, agentConversation) {
   console.log('🧹 Cleaning up session:', sessionId);
   
+  // Check if connection exists before cleanup
+  const hadConnection = activeConnections.has(sessionId);
   activeConnections.delete(sessionId);
+  console.log(`💾 Connection removed: ${hadConnection ? 'Yes' : 'Already gone'}`);  
+  console.log(`📊 Remaining connections: ${activeConnections.size}`);
   
   if (agentConversation) {
+    console.log('🤖 Ending ElevenLabs conversation...');
     endConversation(sessionId);
+  } else {
+    console.log('⚠️ No agent conversation to clean up');
   }
   
-  handleCallStatusUpdate(sessionId, { status: 'disconnected' });
-  console.log('✅ Cleanup completed');
+  // Update status with external flag
+  handleCallStatusUpdate(sessionId, { 
+    status: 'disconnected',
+    isExternal: true,
+    reason: 'WebSocket connection closed'
+  });
+  console.log('✅ Cleanup completed for session:', sessionId);
 }
 
 /**
@@ -360,28 +466,60 @@ function getCallSession(sessionId) {
 
 // Update call status
 function handleCallStatusUpdate(sessionId, statusUpdate) {
+  console.log('🔄 Status update for session:', sessionId, 'Status:', statusUpdate.status);
+  
   if (callManagerService) {
     try {
       callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
+      console.log('✅ Status update successful for session:', sessionId);
     } catch (error) {
-      console.log('⚠️ Status update failed for external session:', sessionId);
+      console.log('⚠️ Status update failed for session:', sessionId, 'Error:', error.message);
+      // For external sessions, this is expected behavior
+      if (statusUpdate.isExternal) {
+        console.log('ℹ️ This is an external session - status update failure is normal');
+      }
     }
+  } else {
+    console.log('⚠️ No call manager service available for status update:', sessionId);
   }
 }
 
-// ElevenLabs integration functions
+// ===============================================================================
+// ELEVENLABS AGENT SERVICE INTEGRATION
+// ===============================================================================
+// These functions create the bridge between WebSocket handler and ElevenLabs agent
+
+/**
+ * CREATE AGENT CONVERSATION: Initialize ElevenLabs conversation for this call
+ * This establishes the AI agent session with context about the patient/treatment
+ */
 function createConversation(sessionId, treatmentType) {
   return elevenLabsAgentService?.createConversation(sessionId, treatmentType) || null;
 }
 
+/**
+ * CALLBACK REGISTRATION: Register callback function with ElevenLabs agent
+ * This is THE CRITICAL CONNECTION POINT - the callback registered here will be
+ * executed whenever ElevenLabs has a message (audio/text) to send to the caller
+ * 
+ * FLOW: setupAudioStreaming() calls this → elevenLabsAgent stores callback →
+ *       agent processes audio → agent calls callback → audio sent to caller
+ */
 function setClientMessageHandler(messageHandler) {
   elevenLabsAgentService?.setClientMessageHandler(messageHandler);
 }
 
+/**
+ * AUDIO TO AGENT: Send caller's audio to ElevenLabs agent for processing
+ * This triggers the AI to analyze speech and generate a response
+ */
 function sendAudioToAgent(sessionId, audioData) {
   return elevenLabsAgentService?.sendAudioToAgent(sessionId, audioData) || null;
 }
 
+/**
+ * END AGENT SESSION: Terminate ElevenLabs conversation and cleanup resources
+ */
 function endConversation(sessionId) {
   return elevenLabsAgentService?.endConversation(sessionId) || null;
 }

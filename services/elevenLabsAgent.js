@@ -27,6 +27,10 @@ const elevenLabsAgentId = process.env.ELEVENLABS_AGENT_ID;
 
 // Active conversations storage
 const activeConversations = new Map();
+
+// CRITICAL CALLBACK STORAGE: This stores the callback function from websocketHandler.js
+// When setupAudioStreaming() calls setClientMessageHandler(), the callback gets stored here
+// This callback is THE BRIDGE that sends agent responses back to the caller
 let messageForwardingHandler = null;
 
 /**
@@ -208,11 +212,17 @@ async function handleElevenLabsMessage(sessionId, messageData) {
 
 /**
  * Handle user speech transcript
+ * 
+ * SPEECH-TO-TEXT: Processes transcription of caller's speech from ElevenLabs
+ * This shows what the caller said (useful for monitoring/logging)
  */
 function handleUserTranscript(sessionId, transcriptMessage) {
+  // EXTRACT TRANSCRIPT: Get the transcribed text of what the caller said
   const userTranscript = transcriptMessage.user_transcript_event?.user_transcript || transcriptMessage.user_transcript;
   console.log('👤 User transcript:', userTranscript);
   
+  // TRANSCRIPT FORWARDING: Send transcript to websocketHandler for monitoring
+  // This is mainly for logging - the actual audio processing happens separately
   forwardToClient(sessionId, {
     type: 'user_transcript',
     text: userTranscript
@@ -221,8 +231,12 @@ function handleUserTranscript(sessionId, transcriptMessage) {
 
 /**
  * Handle agent text response
+ * 
+ * TEXT PROCESSING: Handles text responses from ElevenLabs agent
+ * This provides the transcript of what the agent is saying
  */
 function handleAgentTextResponse(sessionId, responseMessage) {
+  // EXTRACT TEXT: Get agent's text response from various possible message formats
   const agentResponseText = responseMessage.agent_response_event?.agent_response || 
                            responseMessage.agent_response?.text || 
                            responseMessage.text;
@@ -230,6 +244,8 @@ function handleAgentTextResponse(sessionId, responseMessage) {
   console.log('🤖 Agent response:', agentResponseText);
   
   if (agentResponseText) {
+    // TEXT FORWARDING: Send text to websocketHandler (mainly for logging/monitoring)
+    // The callback will log this text but the audio is what actually plays to caller
     forwardToClient(sessionId, {
       type: 'agent_response',
       text: agentResponseText
@@ -239,10 +255,16 @@ function handleAgentTextResponse(sessionId, responseMessage) {
 
 /**
  * Handle streaming audio chunks from agent
+ * 
+ * AUDIO STREAMING: Processes audio response chunks from ElevenLabs agent
+ * This is called for each audio chunk as the agent speaks (streaming response)
  */
 function handleAgentAudioChunk(sessionId, audioMessage) {
   if (audioMessage.agent_response_audio_delta_event?.delta_audio_base_64) {
     console.log('🔊 Agent audio chunk received');
+    
+    // AUDIO FORWARDING: Send audio chunk to caller via the registered callback
+    // This triggers the callback in setupAudioStreaming() which sends audio to Knowlarity
     forwardToClient(sessionId, {
       type: 'agent_audio',
       audio: audioMessage.agent_response_audio_delta_event.delta_audio_base_64
@@ -336,13 +358,21 @@ function handleConversationReady(sessionId, readyMessage, conversationSession) {
 
 /**
  * Send audio chunk to ElevenLabs agent
+ * 
+ * INCOMING AUDIO PROCESSING: Sends caller's audio to ElevenLabs for AI processing
+ * 
+ * AUDIO FLOW: Caller → Knowlarity → WebSocket → THIS FUNCTION → ElevenLabs Agent
+ * The agent processes this audio and generates responses that get sent back via callbacks
  */
 async function sendAudioToAgent(sessionId, audioData) {
   try {
+    // AUDIO MESSAGE FORMATTING: Package audio for ElevenLabs API
     const audioMessage = {
-      user_audio_chunk: audioData
+      user_audio_chunk: audioData  // Base64 encoded audio from caller
     };
     
+    // SEND TO AGENT: Forward caller's audio to ElevenLabs for processing
+    // This will trigger AI processing and eventually generate response audio
     await sendToElevenLabs(sessionId, audioMessage);
   } catch (error) {
     console.error('❌ Error sending audio to agent:', error);
@@ -366,12 +396,20 @@ async function sendTextToAgent(sessionId, textContent) {
 
 /**
  * Send message to ElevenLabs WebSocket
+ * 
+ * AGENT COMMUNICATION: Low-level function to send messages to ElevenLabs API
+ * Used for sending audio chunks, text, and control messages to the AI agent
  */
 async function sendToElevenLabs(sessionId, messageToSend) {
+  // GET CONVERSATION: Retrieve the stored conversation session
   const conversationSession = activeConversations.get(sessionId);
+  
+  // WEBSOCKET VALIDATION: Ensure connection to ElevenLabs is still active
   if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
+    // SEND MESSAGE: Forward message to ElevenLabs agent via WebSocket
     conversationSession.agentWebSocket.send(JSON.stringify(messageToSend));
   } else {
+    // CONNECTION LOST: ElevenLabs WebSocket is not available
     console.log('⚠️ Cannot send to ElevenLabs - WebSocket not ready');
   }
 }
@@ -384,18 +422,46 @@ async function sendToElevenLabs(sessionId, messageToSend) {
 
 /**
  * Forward messages to the calling system
+ * 
+ * CRITICAL BRIDGE FUNCTION: This is THE CONNECTION POINT between ElevenLabs and WebSocket
+ * 
+ * HOW THE BRIDGE WORKS:
+ * 1. ElevenLabs agent processes audio/text and calls this function
+ * 2. This function executes the callback stored in 'messageForwardingHandler'
+ * 3. The callback (from setupAudioStreaming) sends the message to Knowlarity WebSocket
+ * 4. Knowlarity forwards it to the caller
+ * 
+ * FLOW: ElevenLabs → THIS FUNCTION → CALLBACK → WebSocket → Knowlarity → Caller
  */
 function forwardToClient(sessionId, messageToForward) {
+  // CALLBACK EXECUTION: Execute the callback registered by websocketHandler
   if (messageForwardingHandler) {
+    // THIS IS THE BRIDGE: Calls the callback from setupAudioStreaming()
+    // The callback will send the message to the caller via Knowlarity WebSocket
     messageForwardingHandler(sessionId, messageToForward);
+  } else {
+    // NO CALLBACK: WebSocket handler hasn't registered a callback yet
+    console.log('⚠️ No message handler registered - message dropped:', messageToForward.type);
   }
 }
 
 /**
  * Set handler for messages to be forwarded to calling system
+ * 
+ * CALLBACK REGISTRATION POINT: This is where the WebSocket handler registers its callback
+ * 
+ * REGISTRATION FLOW:
+ * 1. websocketHandler.js calls setupAudioStreaming()
+ * 2. setupAudioStreaming() calls THIS FUNCTION with a callback
+ * 3. The callback gets STORED in 'messageForwardingHandler'
+ * 4. Later, when ElevenLabs has responses, forwardToClient() EXECUTES this callback
+ * 
+ * This creates the communication bridge: ElevenLabs → WebSocket → Caller
  */
 function setClientMessageHandler(messageHandler) {
+  // CALLBACK STORAGE: Store the callback from websocketHandler for later execution
   messageForwardingHandler = messageHandler;
+  console.log('✅ Message forwarding handler registered - bridge established');
 }
 
 /**

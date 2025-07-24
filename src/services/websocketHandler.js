@@ -186,8 +186,6 @@ function handleKnowlarityStream(websocket, urlPath) {
     console.error("💥 Error details:", event.message);
   });
 
-  websocket.send("test text message");
-  
   // STEP 5: Setup connection lifecycle handlers
   setupConnectionLifecycle(websocket, sessionId, agentConversation);
 

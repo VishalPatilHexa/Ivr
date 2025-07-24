@@ -116,6 +116,8 @@ function handleKnowlarityStream(websocket, urlPath) {
   let messageCount = 0;
   
   websocket.on('message', async (incomingMessage) => {
+  console.log('🔗 Incoming WebSocket message for session:-------------------------------------------------', incomingMessage);
+
     try {
       messageCount++;
       console.log(`📬 Message #${messageCount} for session ${sessionId}:`, 

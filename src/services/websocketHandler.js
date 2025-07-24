@@ -114,6 +114,7 @@ function handleKnowlarityStream(websocket, urlPath) {
       setupAudioStreaming(sessionId);
       
       // STEP 4: Notify client that agent is ready
+      const connection = activeConnections.get(sessionId);
       if (connection?.websocket?.readyState === WebSocket.OPEN) {
         connection.websocket.send(JSON.stringify({
           type: 'agent_ready',

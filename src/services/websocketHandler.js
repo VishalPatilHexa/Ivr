@@ -161,12 +161,25 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       // Route audio and control messages
       if (incomingMessage instanceof Buffer) {
-        console.log("🎵 Processing audio data for session:", sessionId);
-        await handleIncomingAudio(
-          incomingMessage,
-          sessionId,
-          agentConversation
-        );
+        // Try to parse as JSON first (for client audio messages)
+        try {
+          const messageStr = incomingMessage.toString();
+          const parsedMessage = JSON.parse(messageStr);
+          
+          if (parsedMessage.type === 'audio-chunk' && parsedMessage.audio) {
+            console.log("🎵 Processing JSON audio chunk for session:", sessionId);
+            // Convert base64 audio to binary
+            const audioBuffer = Buffer.from(parsedMessage.audio, 'base64');
+            await handleIncomingAudio(audioBuffer, sessionId, agentConversation);
+          } else {
+            console.log("📝 Processing JSON control message for session:", sessionId);
+            handleControlMessages(messageStr, sessionId, agentConversation);
+          }
+        } catch (parseError) {
+          // Not JSON, treat as binary audio
+          console.log("🎵 Processing binary audio data for session:", sessionId);
+          await handleIncomingAudio(incomingMessage, sessionId, agentConversation);
+        }
       } else {
         console.log("📝 Processing control message for session:", sessionId);
         handleControlMessages(incomingMessage, sessionId, agentConversation);

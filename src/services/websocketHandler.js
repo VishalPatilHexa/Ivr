@@ -763,6 +763,17 @@ function getCallSession(sessionId) {
 
 // Update call status
 function handleCallStatusUpdate(sessionId, statusUpdate) {
+  // Validate input parameters
+  if (!sessionId) {
+    console.log("⚠️ Invalid sessionId provided for status update:", sessionId);
+    return;
+  }
+  
+  if (!statusUpdate || !statusUpdate.status) {
+    console.log("⚠️ Invalid statusUpdate provided for session:", sessionId);
+    return;
+  }
+
   console.log(
     "🔄 Status update for session:",
     sessionId,
@@ -771,21 +782,43 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
   );
 
   try {
+    // Check if this is a web client session (sessions starting with 'web_')
+    const isWebClientSession = sessionId.startsWith('web_');
+    
+    if (isWebClientSession) {
+      console.log("ℹ️ Web client session detected - attempting status update");
+    }
+
     callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
     console.log("✅ Status update successful for session:", sessionId);
   } catch (error) {
     console.log(
-      "⚠️ Status update failed for session:",
+      "⚠️ Call session not found for status update:",
       sessionId,
-      "Error:",
-      error.message
+      "gracefully handling this case"
     );
-    // For external sessions, this is expected behavior
-    if (statusUpdate.isExternal) {
+    console.log("🔍 Error details:", error.message);
+    
+    // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
+    if (statusUpdate.isExternal || sessionId.startsWith('web_')) {
       console.log(
-        "ℹ️ This is an external session - status update failure is normal"
+        "ℹ️ This is an external/web client session - status update failure is normal and handled gracefully"
       );
+      
+      // Log the attempted status update for monitoring purposes
+      console.log("📊 Attempted status update details:", {
+        sessionId,
+        status: statusUpdate.status,
+        isExternal: statusUpdate.isExternal,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Continue gracefully without throwing
+      return;
     }
+    
+    // For internal sessions, we might want to log this as a more serious issue
+    console.error("❌ Unexpected status update failure for internal session:", sessionId);
   }
 }
 

@@ -26,19 +26,15 @@ const audioChunks = new Map(); // sessionId -> array of chunks
 // Active WebSocket connections storage
 const activeConnections = new Map();
 
-// Service dependencies
-let elevenLabsAgentService = null;
-let callManagerService = null;
+// Import service modules directly
+const elevenLabsAgentService = require('../../services/elevenLabsAgent');
+const callManagerService = require('../knowlarity/outboundCallManager');
 
 /**
- * Initialize WebSocket handler with required service dependencies
+ * Initialize WebSocket handler - now using direct imports
  */
-function initializeWebSocketHandler(
-  elevenLabsAgentInstance,
-  outboundCallManagerInstance
-) {
-  elevenLabsAgentService = elevenLabsAgentInstance;
-  callManagerService = outboundCallManagerInstance;
+function initializeWebSocketHandler() {
+  console.log('✅ WebSocket handler initialized with direct service imports');
 }
 
 /**
@@ -109,7 +105,7 @@ function handleKnowlarityStream(websocket, urlPath) {
         sessionId
       );
 
-      agentConversation = await createConversation(
+      agentConversation = await elevenLabsAgentService.createConversation(
         sessionId,
         callSession.patientData?.treatmentType || "general consultation"
       );
@@ -324,7 +320,7 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
 
   // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const audioBase64Data = audioBuffer;
+  const audioBase64Data = audioBuffer.toString('base64');
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {
@@ -686,7 +682,7 @@ function shutdown() {
 
 // Get call session from outbound call manager
 function getCallSession(sessionId) {
-  return callManagerService?.getCallSession(sessionId) || null;
+  return callManagerService.getCallSession(sessionId);
 }
 
 // Update call status
@@ -698,29 +694,22 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
     statusUpdate.status
   );
 
-  if (callManagerService) {
-    try {
-      callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
-      console.log("✅ Status update successful for session:", sessionId);
-    } catch (error) {
-      console.log(
-        "⚠️ Status update failed for session:",
-        sessionId,
-        "Error:",
-        error.message
-      );
-      // For external sessions, this is expected behavior
-      if (statusUpdate.isExternal) {
-        console.log(
-          "ℹ️ This is an external session - status update failure is normal"
-        );
-      }
-    }
-  } else {
+  try {
+    callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
+    console.log("✅ Status update successful for session:", sessionId);
+  } catch (error) {
     console.log(
-      "⚠️ No call manager service available for status update:",
-      sessionId
+      "⚠️ Status update failed for session:",
+      sessionId,
+      "Error:",
+      error.message
     );
+    // For external sessions, this is expected behavior
+    if (statusUpdate.isExternal) {
+      console.log(
+        "ℹ️ This is an external session - status update failure is normal"
+      );
+    }
   }
 }
 
@@ -734,9 +723,7 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
  * This establishes the AI agent session with context about the patient/treatment
  */
 function createConversation(sessionId, treatmentType) {
-  return (
-    elevenLabsAgentService?.createConversation(sessionId, treatmentType) || null
-  );
+  return elevenLabsAgentService.createConversation(sessionId, treatmentType);
 }
 
 /**
@@ -748,7 +735,7 @@ function createConversation(sessionId, treatmentType) {
  *       agent processes audio → agent calls callback → audio sent to caller
  */
 function setClientMessageHandler(messageHandler) {
-  elevenLabsAgentService?.setClientMessageHandler(messageHandler);
+  elevenLabsAgentService.setClientMessageHandler(messageHandler);
 }
 
 /**
@@ -756,18 +743,17 @@ function setClientMessageHandler(messageHandler) {
  * This triggers the AI to analyze speech and generate a response
  */
 function sendAudioToAgent(sessionId, audioData) {
-  return elevenLabsAgentService?.sendAudioToAgent(sessionId, audioData) || null;
+  return elevenLabsAgentService.sendAudioToAgent(sessionId, audioData);
 }
 
 /**
  * END AGENT SESSION: Terminate ElevenLabs conversation and cleanup resources
  */
 function endConversation(sessionId) {
-  return elevenLabsAgentService?.endConversation(sessionId) || null;
+  return elevenLabsAgentService.endConversation(sessionId);
 }
 
 module.exports = {
-  initializeWebSocketHandler,
   handleConnection,
   transferCall,
   terminateStream,

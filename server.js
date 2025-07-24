@@ -19,7 +19,6 @@ const {
 } = require("./src/knowlarity/outboundCallManager");
 
 const { 
-  initializeWebSocketHandler,
   handleConnection,
   transferCall,
   terminateStream,
@@ -49,21 +48,13 @@ app.use(routes);
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Initialize WebSocket handler with dependencies
-// Create simple wrapper objects for backward compatibility
-const elevenLabsAgentWrapper = {
-  createConversation,
-  sendAudioToAgent,
-  setClientMessageHandler,
-  endConversation
-};
 
-const outboundCallManagerWrapper = {
-  getCallSession,
-  handleCallStatusUpdate
-};
 
-initializeWebSocketHandler(elevenLabsAgentWrapper, outboundCallManagerWrapper);
+app.use(express.static("public"));
+app.use("/uploads", express.static("uploads"));
+
+// WebSocket handler now uses direct imports - no initialization needed
+console.log('✅ WebSocket handler ready with direct service imports');
 
 // WebSocket handling
 wss.on("connection", (ws, req) => {

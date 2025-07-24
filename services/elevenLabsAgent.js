@@ -1,30 +1,60 @@
 const WebSocket = require('ws');
-const axios = require('axios');
 
-// Environment variables
-const apiKey = process.env.ELEVENLABS_API_KEY;
-const agentId = process.env.ELEVENLABS_AGENT_ID;
-const baseUrl = "https://api.elevenlabs.io/v1";
+/*
+ * ===============================================================================
+ * ELEVENLABS CONVERSATIONAL AI AGENT
+ * =============================================================================== 
+ * 
+ * PURPOSE: Manages real-time voice conversations with ElevenLabs AI agents
+ * 
+ * WORKFLOW:
+ * 1. Create conversation session with ElevenLabs API
+ * 2. Establish WebSocket connection for real-time audio streaming  
+ * 3. Handle bidirectional audio/text communication
+ * 4. Process agent responses and forward to calling system
+ * 
+ * AUDIO FLOW:
+ * - INPUT: Receives base64 audio chunks from caller
+ * - OUTPUT: Streams agent audio responses back to caller
+ * - FORMATS: Handles PCM/base64 audio conversion
+ * 
+ * ===============================================================================
+ */
 
-// Store conversations
-const conversations = new Map();
-let clientMessageHandler = null;
+// Environment configuration
+const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+const elevenLabsAgentId = process.env.ELEVENLABS_AGENT_ID;
 
-// Validate required environment variables
+// Active conversations storage
+const activeConversations = new Map();
+let messageForwardingHandler = null;
+
+/**
+ * Validate required environment variables on startup
+ */
 function validateEnvironment() {
-  if (!apiKey) {
+  if (!elevenLabsApiKey) {
     throw new Error('ELEVENLABS_API_KEY is required');
   }
-  if (!agentId) {
+  if (!elevenLabsAgentId) {
     throw new Error('ELEVENLABS_AGENT_ID is required');
   }
   
-  console.log('✅ ElevenLabs Agent initialized with Agent ID:', agentId);
+  console.log('✅ ElevenLabs Agent initialized with Agent ID:', elevenLabsAgentId);
 }
 
+/**
+ * ===============================================================================
+ * CONVERSATION MANAGEMENT
+ * ===============================================================================
+ */
+
+/**
+ * Create new conversation session with ElevenLabs
+ */
 async function createConversation(sessionId, patientQuery) {
   try {
-    const conversation = {
+    const conversationSession = {
       sessionId,
       patientQuery,
       patientData: { query: patientQuery },
@@ -33,275 +63,385 @@ async function createConversation(sessionId, patientQuery) {
       agentWebSocket: null
     };
 
-    conversations.set(sessionId, conversation);
+    activeConversations.set(sessionId, conversationSession);
 
-    // Create ElevenLabs conversational AI session
-    const agentWs = await createElevenLabsWebSocket(sessionId);
-    conversation.agentWebSocket = agentWs;
+    // Establish WebSocket connection to ElevenLabs
+    const agentWebSocket = await createElevenLabsWebSocket(sessionId);
+    conversationSession.agentWebSocket = agentWebSocket;
 
-    console.log('✅ Conversation created successfully for session:', sessionId);
-    return conversation;
+    console.log('✅ Conversation created for session:', sessionId);
+    return conversationSession;
   } catch (error) {
     console.error('❌ Error creating conversation:', error);
     throw error;
   }
 }
 
+/**
+ * ===============================================================================
+ * WEBSOCKET CONNECTION MANAGEMENT
+ * ===============================================================================
+ */
+
+/**
+ * Create WebSocket connection to ElevenLabs Conversational AI
+ */
 async function createElevenLabsWebSocket(sessionId) {
   return new Promise((resolve, reject) => {
-    const wsUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}`;
+    const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${elevenLabsAgentId}`;
     
-    console.log('🔗 Connecting to ElevenLabs WebSocket:', wsUrl);
+    console.log('🔗 Connecting to ElevenLabs WebSocket for session:', sessionId);
     
-    const ws = new WebSocket(wsUrl, {
-      headers: {
-        'xi-api-key': apiKey
-      }
+    const agentWebSocket = new WebSocket(websocketUrl, {
+      headers: { 'xi-api-key': elevenLabsApiKey }
     });
 
-    ws.on('open', () => {
+    agentWebSocket.on('open', () => {
       console.log('✅ ElevenLabs WebSocket connected for session:', sessionId);
       
-      // Get conversation details
-      const conversation = conversations.get(sessionId);
-      
-      // Send initial conversation setup with dynamic variables
-      const initMessage = {
-        type: 'conversation_initiation_metadata',
-        conversation_initiation_metadata: {
-          user_id: sessionId,
-          user_object: {
-            name: 'Patient',
-            language: 'hindi'
-          }
-        },
-        dynamic_variables: {
-          new_variable: conversation?.patientQuery || 'general treatment'
-        }
-      };
-      
-      console.log('📤 Sending init message:', JSON.stringify(initMessage));
-      ws.send(JSON.stringify(initMessage));
-
-      resolve(ws);
+      // Initialize conversation with user context
+      initializeConversation(agentWebSocket, sessionId);
+      resolve(agentWebSocket);
     });
 
-    ws.on('message', (data) => {
-      console.log('📨 Received from ElevenLabs:', data.toString());
-      handleElevenLabsMessage(sessionId, data);
+    agentWebSocket.on('message', (messageData) => {
+      handleElevenLabsMessage(sessionId, messageData);
     });
 
-    ws.on('error', (error) => {
-      console.error('❌ ElevenLabs WebSocket error:', error);
-      reject(error);
+    agentWebSocket.on('error', (connectionError) => {
+      console.error('❌ ElevenLabs WebSocket error:', connectionError);
+      reject(connectionError);
     });
 
-    ws.on('close', (code, reason) => {
-      console.log('🔌 ElevenLabs WebSocket closed for session:', sessionId, 'Code:', code, 'Reason:', reason.toString());
+    agentWebSocket.on('close', (code, reason) => {
+      console.log('🔌 ElevenLabs WebSocket closed for session:', sessionId);
       endConversation(sessionId);
     });
   });
 }
 
-async function handleElevenLabsMessage(sessionId, data) {
+/**
+ * Initialize conversation with user context and settings
+ */
+function initializeConversation(agentWebSocket, sessionId) {
+  const conversationSession = activeConversations.get(sessionId);
+  
+  const initializationMessage = {
+    type: 'conversation_initiation_metadata',
+    conversation_initiation_metadata: {
+      user_id: sessionId,
+      user_object: {
+        name: 'Patient',
+        language: 'hindi'
+      }
+    },
+    dynamic_variables: {
+      new_variable: conversationSession?.patientQuery || 'general treatment'
+    }
+  };
+  
+  console.log('📤 Initializing conversation with context');
+  agentWebSocket.send(JSON.stringify(initializationMessage));
+}
+
+/**
+ * ===============================================================================
+ * MESSAGE PROCESSING
+ * ===============================================================================
+ */
+
+/**
+ * Process all incoming messages from ElevenLabs
+ */
+async function handleElevenLabsMessage(sessionId, messageData) {
   try {
-    const message = JSON.parse(data);
-    const conversation = conversations.get(sessionId);
+    const parsedMessage = JSON.parse(messageData);
+    const conversationSession = activeConversations.get(sessionId);
     
-    if (!conversation) {
+    if (!conversationSession) {
       console.log('⚠️ No conversation found for session:', sessionId);
       return;
     }
 
-    console.log('📋 Processing message type:', message.type);
+    console.log('📋 Processing ElevenLabs message:', parsedMessage.type);
 
-    switch (message.type) {
+    switch (parsedMessage.type) {
       case 'user_transcript':
-        // User's speech was transcribed by ElevenLabs
-        const transcript = message.user_transcript_event?.user_transcript || message.user_transcript;
-        console.log('👤 User transcript:', transcript);
-        
-        // Forward user transcript to client for display
-        forwardToClient(sessionId, {
-          type: 'user_transcript',
-          text: transcript
-        });
+        handleUserTranscript(sessionId, parsedMessage);
         break;
 
       case 'agent_response':
-        // Agent's text response
-        const agentText = message.agent_response_event?.agent_response || message.agent_response?.text || message.text;
-        
-        console.log('🤖 Agent response text:', agentText);
-        
-        if (agentText) {
-          forwardToClient(sessionId, {
-            type: 'agent_response',
-            text: agentText
-          });
-        }
+        handleAgentTextResponse(sessionId, parsedMessage);
         break;
 
       case 'agent_response_audio_delta':
-        // Streaming audio from agent
-        if (message.agent_response_audio_delta_event?.delta_audio_base_64) {
-          console.log('🔊 Agent audio chunk received, size:', message.agent_response_audio_delta_event.delta_audio_base_64.length);
-          forwardToClient(sessionId, {
-            type: 'agent_audio',
-            audio: message.agent_response_audio_delta_event.delta_audio_base_64
-          });
-        }
+        handleAgentAudioChunk(sessionId, parsedMessage);
         break;
 
       case 'audio':
-        // Direct audio message
-        if (message.audio_event?.audio_base_64) {
-          console.log('🔊 Direct audio received, size:', message.audio_event.audio_base_64.length);
-          forwardToClient(sessionId, {
-            type: 'agent_audio',
-            audio: message.audio_event.audio_base_64
-          });
-        }
+        handleDirectAudio(sessionId, parsedMessage);
         break;
 
       case 'agent_response_audio_end':
-        // Agent finished speaking
-        console.log('✅ Agent finished speaking');
-        forwardToClient(sessionId, {
-          type: 'agent_audio_end'
-        });
+        handleAgentAudioEnd(sessionId);
         break;
 
       case 'conversation_end':
-        console.log('🔚 Conversation ended for session:', sessionId);
-        forwardToClient(sessionId, {
-          type: 'conversation_ended',
-          message: 'Conversation completed successfully'
-        });
+        handleConversationEnd(sessionId);
         break;
 
       case 'ping':
-        console.log('📡 Ping received from ElevenLabs, event_id:', message.ping_event?.event_id);
-        // Send pong back
-        if (conversation && conversation.agentWebSocket) {
-          const pongMessage = {
-            pong_event: {
-              event_id: message.ping_event?.event_id
-            }
-          };
-          console.log('📤 Sending pong:', JSON.stringify(pongMessage));
-          conversation.agentWebSocket.send(JSON.stringify(pongMessage));
-        }
+        handlePing(sessionId, parsedMessage, conversationSession);
         break;
 
       case 'conversation_initiation_metadata':
-        console.log('🎯 Conversation initiated, agent is ready');
-        console.log('📋 Conversation ID:', message.conversation_initiation_metadata_event?.conversation_id);
-        
-        // Store conversation details
-        if (conversation) {
-          conversation.conversationId = message.conversation_initiation_metadata_event?.conversation_id;
-          conversation.audioFormat = message.conversation_initiation_metadata_event?.agent_output_audio_format;
-        }
-        
-        // Send a simple greeting to trigger the agent
-        setTimeout(() => {
-          if (conversation && conversation.agentWebSocket && conversation.agentWebSocket.readyState === 1) {
-            conversation.agentWebSocket.send(JSON.stringify({
-              user_text: 'Hi'
-            }));
-            console.log('📤 Sent simple greeting to trigger agent');
-          }
-        }, 1000);
-        
-        forwardToClient(sessionId, {
-          type: 'agent_ready',
-          message: 'Agent is ready to start conversation'
-        });
+        handleConversationReady(sessionId, parsedMessage, conversationSession);
         break;
 
       default:
-        console.log('❓ Unknown message type:', message.type);
-        console.log('📋 Full message:', JSON.stringify(message, null, 2));
+        console.log('❓ Unknown message type:', parsedMessage.type);
     }
   } catch (error) {
     console.error('❌ Error handling ElevenLabs message:', error);
   }
 }
 
-async function sendToElevenLabs(sessionId, message) {
-  const conversation = conversations.get(sessionId);
-  if (conversation && conversation.agentWebSocket && conversation.agentWebSocket.readyState === WebSocket.OPEN) {
-    console.log('📤 Sending to ElevenLabs:', JSON.stringify(message));
-    conversation.agentWebSocket.send(JSON.stringify(message));
-  } else {
-    console.log('⚠️ Cannot send to ElevenLabs - WebSocket not ready');
+/**
+ * Handle user speech transcript
+ */
+function handleUserTranscript(sessionId, transcriptMessage) {
+  const userTranscript = transcriptMessage.user_transcript_event?.user_transcript || transcriptMessage.user_transcript;
+  console.log('👤 User transcript:', userTranscript);
+  
+  forwardToClient(sessionId, {
+    type: 'user_transcript',
+    text: userTranscript
+  });
+}
+
+/**
+ * Handle agent text response
+ */
+function handleAgentTextResponse(sessionId, responseMessage) {
+  const agentResponseText = responseMessage.agent_response_event?.agent_response || 
+                           responseMessage.agent_response?.text || 
+                           responseMessage.text;
+  
+  console.log('🤖 Agent response:', agentResponseText);
+  
+  if (agentResponseText) {
+    forwardToClient(sessionId, {
+      type: 'agent_response',
+      text: agentResponseText
+    });
   }
 }
 
+/**
+ * Handle streaming audio chunks from agent
+ */
+function handleAgentAudioChunk(sessionId, audioMessage) {
+  if (audioMessage.agent_response_audio_delta_event?.delta_audio_base_64) {
+    console.log('🔊 Agent audio chunk received');
+    forwardToClient(sessionId, {
+      type: 'agent_audio',
+      audio: audioMessage.agent_response_audio_delta_event.delta_audio_base_64
+    });
+  }
+}
+
+/**
+ * Handle direct audio messages
+ */
+function handleDirectAudio(sessionId, directAudioMessage) {
+  if (directAudioMessage.audio_event?.audio_base_64) {
+    console.log('🔊 Direct audio received');
+    forwardToClient(sessionId, {
+      type: 'agent_audio',
+      audio: directAudioMessage.audio_event.audio_base_64
+    });
+  }
+}
+
+/**
+ * Handle agent finished speaking
+ */
+function handleAgentAudioEnd(sessionId) {
+  console.log('✅ Agent finished speaking');
+  forwardToClient(sessionId, {
+    type: 'agent_audio_end'
+  });
+}
+
+/**
+ * Handle conversation end
+ */
+function handleConversationEnd(sessionId) {
+  console.log('🔚 Conversation ended for session:', sessionId);
+  forwardToClient(sessionId, {
+    type: 'conversation_ended',
+    message: 'Conversation completed successfully'
+  });
+}
+
+/**
+ * Handle ping/pong for connection keepalive
+ */
+function handlePing(sessionId, pingMessage, conversationSession) {
+  console.log('📡 Ping received from ElevenLabs');
+  
+  if (conversationSession?.agentWebSocket) {
+    const pongResponse = {
+      pong_event: {
+        event_id: pingMessage.ping_event?.event_id
+      }
+    };
+    conversationSession.agentWebSocket.send(JSON.stringify(pongResponse));
+  }
+}
+
+/**
+ * Handle conversation ready state
+ */
+function handleConversationReady(sessionId, readyMessage, conversationSession) {
+  console.log('🎯 Conversation ready for session:', sessionId);
+  
+  // Store conversation metadata
+  if (conversationSession) {
+    conversationSession.conversationId = readyMessage.conversation_initiation_metadata_event?.conversation_id;
+    conversationSession.audioFormat = readyMessage.conversation_initiation_metadata_event?.agent_output_audio_format;
+  }
+  
+  // Send initial greeting to activate agent
+  setTimeout(() => {
+    if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
+      conversationSession.agentWebSocket.send(JSON.stringify({
+        user_text: 'Hi'
+      }));
+      console.log('📤 Sent greeting to activate agent');
+    }
+  }, 1000);
+  
+  forwardToClient(sessionId, {
+    type: 'agent_ready',
+    message: 'Agent is ready to start conversation'
+  });
+}
+
+/**
+ * ===============================================================================
+ * AUDIO COMMUNICATION
+ * ===============================================================================
+ */
+
+/**
+ * Send audio chunk to ElevenLabs agent
+ */
 async function sendAudioToAgent(sessionId, audioData) {
   try {
-    const message = {
+    const audioMessage = {
       user_audio_chunk: audioData
     };
     
-    await sendToElevenLabs(sessionId, message);
+    await sendToElevenLabs(sessionId, audioMessage);
   } catch (error) {
     console.error('❌ Error sending audio to agent:', error);
   }
 }
 
-async function sendTextToAgent(sessionId, text) {
+/**
+ * Send text message to ElevenLabs agent
+ */
+async function sendTextToAgent(sessionId, textContent) {
   try {
-    const message = {
-      user_text: text
+    const textMessage = {
+      user_text: textContent
     };
     
-    await sendToElevenLabs(sessionId, message);
+    await sendToElevenLabs(sessionId, textMessage);
   } catch (error) {
     console.error('❌ Error sending text to agent:', error);
   }
 }
 
-function forwardToClient(sessionId, message) {
-  // This will be called by the main server to forward messages to WebSocket clients
-  if (clientMessageHandler) {
-    clientMessageHandler(sessionId, message);
+/**
+ * Send message to ElevenLabs WebSocket
+ */
+async function sendToElevenLabs(sessionId, messageToSend) {
+  const conversationSession = activeConversations.get(sessionId);
+  if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
+    conversationSession.agentWebSocket.send(JSON.stringify(messageToSend));
+  } else {
+    console.log('⚠️ Cannot send to ElevenLabs - WebSocket not ready');
   }
 }
 
-function setClientMessageHandler(handler) {
-  clientMessageHandler = handler;
+/**
+ * ===============================================================================
+ * CLIENT COMMUNICATION
+ * ===============================================================================
+ */
+
+/**
+ * Forward messages to the calling system
+ */
+function forwardToClient(sessionId, messageToForward) {
+  if (messageForwardingHandler) {
+    messageForwardingHandler(sessionId, messageToForward);
+  }
 }
 
+/**
+ * Set handler for messages to be forwarded to calling system
+ */
+function setClientMessageHandler(messageHandler) {
+  messageForwardingHandler = messageHandler;
+}
+
+/**
+ * ===============================================================================
+ * CONVERSATION LIFECYCLE
+ * ===============================================================================
+ */
+
+/**
+ * End conversation and cleanup resources
+ */
 async function endConversation(sessionId) {
-  const conversation = conversations.get(sessionId);
-  if (conversation) {
-    if (conversation.agentWebSocket) {
-      conversation.agentWebSocket.close();
+  const conversationSession = activeConversations.get(sessionId);
+  if (conversationSession) {
+    if (conversationSession.agentWebSocket) {
+      conversationSession.agentWebSocket.close();
     }
-    conversation.isActive = false;
-    conversations.delete(sessionId);
+    conversationSession.isActive = false;
+    activeConversations.delete(sessionId);
+    console.log('🧹 Conversation ended and cleaned up:', sessionId);
   }
 }
 
+/**
+ * Get conversation details
+ */
 function getConversation(sessionId) {
-  return conversations.get(sessionId);
+  return activeConversations.get(sessionId);
 }
 
+/**
+ * Get conversation status
+ */
 async function getConversationStatus(sessionId) {
-  const conversation = conversations.get(sessionId);
-  if (!conversation) return null;
+  const conversationSession = activeConversations.get(sessionId);
+  if (!conversationSession) return null;
 
   return {
     sessionId,
-    isActive: conversation.isActive,
-    patientData: conversation.patientData,
-    createdAt: conversation.createdAt
+    isActive: conversationSession.isActive,
+    patientData: conversationSession.patientData,
+    createdAt: conversationSession.createdAt
   };
 }
 
-// Initialize on module load
+// Initialize environment on module load
 validateEnvironment();
 
 module.exports = {

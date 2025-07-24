@@ -1,326 +1,389 @@
 const WebSocket = require("ws");
 
-// Store active connections
-const knowlarityConnections = new Map();
+/*
+ * ===============================================================================
+ * KNOWLARITY-ELEVENLABS WEBSOCKET HANDLER
+ * =============================================================================== 
+ * 
+ * CALLING WORKFLOW:
+ * 1. Knowlarity initiates WebSocket connection to /knowlarity-stream/{sessionId}
+ * 2. System creates/retrieves call session and initializes ElevenLabs agent
+ * 3. Audio streaming begins bidirectionally between caller and AI agent
+ * 
+ * STREAMING WORKFLOW:
+ * 1. INCOMING AUDIO: Caller → Knowlarity → WebSocket → ElevenLabs Agent
+ * 2. OUTGOING AUDIO: ElevenLabs Agent → WebSocket → Knowlarity → Caller
+ * 3. CONTROL MESSAGES: Handle call start/end, DTMF, and connection management
+ * 
+ * ===============================================================================
+ */
 
-// Initialize WebSocket handler with dependencies
-let elevenLabsAgent = null;
-let outboundCallManager = null;
+// Active WebSocket connections storage
+const activeConnections = new Map();
 
+// Service dependencies
+let elevenLabsAgentService = null;
+let callManagerService = null;
+
+/**
+ * Initialize WebSocket handler with required service dependencies
+ */
 function initializeWebSocketHandler(elevenLabsAgentInstance, outboundCallManagerInstance) {
-  elevenLabsAgent = elevenLabsAgentInstance;
-  outboundCallManager = outboundCallManagerInstance;
+  elevenLabsAgentService = elevenLabsAgentInstance;
+  callManagerService = outboundCallManagerInstance;
 }
 
-function handleConnection(ws, req) {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = url.pathname;
+/**
+ * Main WebSocket connection handler - routes connections based on URL path
+ */
+function handleConnection(websocket, request) {
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  const urlPath = url.pathname;
   
-  // Check if this is a Knowlarity stream connection
-  if (pathname.startsWith('/knowlarity-stream/')) {
-    handleKnowlarityStream(ws, pathname);
+  // Route to Knowlarity stream handler
+  if (urlPath.startsWith('/knowlarity-stream/')) {
+    handleKnowlarityStream(websocket, urlPath);
     return;
   }
   
-  // Unknown WebSocket connection
+  // Reject unknown connection types
   console.log("🔗 Unknown WebSocket connection, closing");
-  ws.close(1008, 'Unknown connection type');
+  websocket.close(1008, 'Unknown connection type');
 }
 
-function handleKnowlarityStream(ws, pathname) {
-  const callSessionId = pathname.split('/')[2];
-  console.log("📞 New Knowlarity call stream connection for session:", callSessionId);
+/**
+ * ===============================================================================
+ * MAIN KNOWLARITY STREAM HANDLER
+ * ===============================================================================
+ * Handles the complete audio streaming workflow between Knowlarity and ElevenLabs
+ */
+function handleKnowlarityStream(websocket, urlPath) {
+  const sessionId = urlPath.split('/')[2];
+  console.log("📞 New Knowlarity call stream connection for session:", sessionId);
   
-  // Store the Knowlarity connection with control methods
-  knowlarityConnections.set(callSessionId, {
-    ws,
-    transferCall: null,
-    terminateStream: null
-  });
+  // STEP 1: Store connection and setup call session
+  activeConnections.set(sessionId, { websocket });
   
-  // Get call session details
-  let callSession = getCallSession(callSessionId);
+  let callSession = getCallSession(sessionId);
   if (!callSession) {
-    console.log('⚠️ Call session not found, creating temporary session for external call:', callSessionId);
-    // Create temporary session for external calls (like Gupshup)
+    // Create temporary session for external calls Knowlarity
     callSession = {
-      sessionId: callSessionId,
-      patientData: {
-        name: 'External Call (Gupshup)',
-        phoneNumber: 'Unknown',
-        treatmentType: 'general consultation'
-      },
+      sessionId: sessionId,
       status: 'external_connection',
       createdAt: new Date(),
       isExternal: true
     };
-    console.log('✅ Temporary session created for:', callSessionId);
+    console.log('✅ Temporary session created for external call:', sessionId);
   }
   
-  // Update call status to connected
-  handleCallStatusUpdate(callSessionId, { status: 'connected' });
+  // STEP 2: Initialize ElevenLabs conversation
+  let agentConversation = null;
   
-  // Create ElevenLabs conversation for this call
-  let elevenLabsConversation = null;
-  
-  const initializeElevenLabsConversation = async () => {
+  const initializeAgentConversation = async () => {
     try {
-      console.log('🤖 Initializing ElevenLabs conversation for session:', callSessionId);
-      console.log('📋 Session type:', callSession.isExternal ? 'External (Gupshup)' : 'Internal');
+      console.log('🤖 Initializing ElevenLabs conversation for session:', sessionId);
       
-      elevenLabsConversation = await createConversation(
-        callSessionId,
-        callSession.patientData.treatmentType || 'general consultation'
+      agentConversation = await createConversation(
+        sessionId,
+        callSession.patientData?.treatmentType || 'general consultation'
       );
-      console.log('✅ ElevenLabs conversation created for call:', callSessionId);
       
-      // Set up message forwarding from ElevenLabs to Knowlarity
-      setClientMessageHandler((sessionId, message) => {
-        if (sessionId === callSessionId) {
-          const knowlarityConnection = knowlarityConnections.get(callSessionId);
-          if (knowlarityConnection && knowlarityConnection.ws && knowlarityConnection.ws.readyState === WebSocket.OPEN) {
-            // Convert ElevenLabs audio to format expected by Knowlarity/Gupshup
-            if (message.type === 'agent_audio' && message.audio) {
-              // Send playAudio command to Knowlarity/Gupshup
-              const playAudioCommand = {
-                type: 'playAudio',
-                data: {
-                  audioContentType: 'raw',  
-                  sampleRate: 16000,
-                  audioContent: message.audio
-                }
-              };
-              
-              console.log('🔊 Sending ElevenLabs agent audio to caller via Gupshup/Knowlarity');
-              console.log('📊 Audio size:', message.audio.length, 'characters (base64)');
-              knowlarityConnection.ws.send(JSON.stringify(playAudioCommand));
-            }
-            
-            // Handle other ElevenLabs message types
-            if (message.type === 'agent_response' && message.text) {
-              console.log('💬 Agent text response:', message.text.substring(0, 100) + '...');
-            }
-            
-            if (message.type === 'agent_audio_end') {
-              console.log('✅ Agent finished speaking');
-            }
-          }
-        }
-      });
+      // STEP 3: Setup bidirectional audio streaming
+      setupAudioStreaming(sessionId);
       
     } catch (error) {
-      console.error('❌ Error creating ElevenLabs conversation for call:', error);
-      ws.close(1011, 'Failed to initialize conversation');
+      console.error('❌ Error creating ElevenLabs conversation:', error);
+      websocket.close(1011, 'Failed to initialize conversation');
     }
   };
-
-  // Helper function to send commands to Knowlarity
-  const sendToKnowlarity = (command) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(command));
-      console.log('📤 Sent command to Knowlarity:', command.type);
-    }
-  };
-
-  // Add methods for call control
-  const transferCall = (phoneNumber) => {
-    sendToKnowlarity({
-      type: 'transfer',
-      data: { textContent: phoneNumber }
-    });
-  };
-
-  const terminateStream = () => {
-    sendToKnowlarity({ type: 'disconnect' });
-  };
-
-  const killAudio = () => {
-    sendToKnowlarity({ type: 'killAudio' });
-  };
-
-  // Store control methods in connection object
-  const knowlarityConnection = knowlarityConnections.get(callSessionId);
-  knowlarityConnection.transferCall = transferCall;
-  knowlarityConnection.terminateStream = terminateStream;
-  knowlarityConnection.killAudio = killAudio;
   
-  // Initialize ElevenLabs conversation
-  initializeElevenLabsConversation();
-  
+  // STEP 4: Setup message handling for audio streaming
   let isFirstMessage = true;
   
-  ws.on('message', async (message) => {
+  websocket.on('message', async (incomingMessage) => {
     try {
-      // First message is always JSON metadata from Knowlarity
+      // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
-        const metadata = JSON.parse(message);
-        console.log('📋 Received Knowlarity metadata:', JSON.stringify(metadata, null, 2));
-        
-        // Update call status to active
-        handleCallStatusUpdate(callSessionId, { 
-          status: 'connected',
-          knowlarityMetadata: metadata
-        });
-        
+        handleInitialMetadata(incomingMessage, sessionId);
         isFirstMessage = false;
         return;
       }
       
-      // After first message, check if it's JSON or binary audio
-      if (message instanceof Buffer) {
-        // This is binary audio data from Knowlarity/Gupshup (16-bit PCM)
-        console.log('🎵 Received audio chunk from caller, size:', message.length, 'bytes');
-        
-        // Convert binary PCM to base64 for ElevenLabs
-        const audioBase64 = message.toString('base64');
-        
-        // Forward audio from caller to ElevenLabs
-        if (elevenLabsConversation) {
-          console.log('📤 Forwarding audio to ElevenLabs agent...');
-          await sendAudioToAgent(callSessionId, audioBase64);
-        } else {
-          console.log('⚠️ ElevenLabs conversation not ready, audio dropped');
-        }
+      // Route audio and control messages
+      if (incomingMessage instanceof Buffer) {
+        await handleIncomingAudio(incomingMessage, sessionId, agentConversation);
       } else {
-        // This might be a JSON control message or DTMF
-        try {
-          const data = JSON.parse(message);
-          console.log('📋 Received JSON message from Knowlarity:', data);
+        handleControlMessages(incomingMessage, sessionId, agentConversation);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error processing message:', error);
+    }
+  });
+  
+  // STEP 5: Setup connection lifecycle handlers
+  setupConnectionLifecycle(websocket, sessionId, agentConversation);
+  
+  // Initialize the conversation
+  initializeAgentConversation();
+}
+
+/**
+ * ===============================================================================
+ * AUDIO STREAMING FUNCTIONS
+ * ===============================================================================
+ */
+
+/**
+ * Setup bidirectional audio streaming between ElevenLabs and Knowlarity
+ */
+function setupAudioStreaming(sessionId) {
+  setClientMessageHandler((currentSessionId, agentMessage) => {
+    if (currentSessionId === sessionId) {
+      const connection = activeConnections.get(sessionId);
+      if (connection?.websocket?.readyState === WebSocket.OPEN) {
+        
+        // OUTGOING AUDIO: ElevenLabs → Knowlarity → Caller
+        if (agentMessage.type === 'agent_audio' && agentMessage.audio) {
+          const audioPlaybackCommand = {
+            type: 'playAudio',
+            data: {
+              audioContentType: 'raw',  
+              sampleRate: 16000,
+              audioContent: agentMessage.audio
+            }
+          };
           
-          switch (data.type) {
-            case 'call_start':
-              console.log('📞 Call started for session:', callSessionId);
-              handleCallStatusUpdate(callSessionId, { status: 'active' });
-              break;
-              
-            case 'call_end':
-              console.log('📞 Call ended for session:', callSessionId);
-              handleCallStatusUpdate(callSessionId, { status: 'completed' });
-              if (elevenLabsConversation) {
-                await endConversation(callSessionId);
-              }
-              break;
-              
-            case 'dtmf':
-              console.log('📞 DTMF received:', data.digit);
-              // Handle DTMF inputs if needed
-              break;
-          }
-        } catch (jsonError) {
-          console.log('⚠️ Non-JSON message received:', message.toString().substring(0, 100));
+          console.log('🔊 Streaming agent audio to caller');
+          connection.websocket.send(JSON.stringify(audioPlaybackCommand));
+        }
+        
+        // Log agent responses for monitoring
+        if (agentMessage.type === 'agent_response' && agentMessage.text) {
+          console.log('💬 Agent response:', agentMessage.text.substring(0, 100) + '...');
+        }
+        
+        if (agentMessage.type === 'agent_audio_end') {
+          console.log('✅ Agent finished speaking');
         }
       }
-    } catch (error) {
-      console.error('❌ Error processing Knowlarity message:', error);
     }
+  });
+}
+
+/**
+ * Handle initial metadata message from Knowlarity
+ */
+function handleInitialMetadata(metadataMessage, sessionId) {
+  const connectionMetadata = JSON.parse(metadataMessage);
+  console.log('📋 Received Knowlarity metadata for session:', sessionId);
+  
+  handleCallStatusUpdate(sessionId, { 
+    status: 'connected',
+    knowlarityMetadata: connectionMetadata
+  });
+}
+
+/**
+ * INCOMING AUDIO: Handle audio from caller → ElevenLabs
+ */
+async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
+  console.log('🎵 Received audio from caller, size:', audioBuffer.length, 'bytes');
+  
+  // Convert PCM audio to base64 for ElevenLabs
+  const audioBase64Data = audioBuffer.toString('base64');
+  
+  // Stream to ElevenLabs agent
+  if (agentConversation) {
+    await sendAudioToAgent(sessionId, audioBase64Data);
+  } else {
+    console.log('⚠️ ElevenLabs not ready, audio dropped');
+  }
+}
+
+/**
+ * Handle control messages (call events, DTMF)
+ */
+function handleControlMessages(controlMessage, sessionId, agentConversation) {
+  try {
+    const controlData = JSON.parse(controlMessage);
+    console.log('📋 Control message:', controlData.type);
+    
+    switch (controlData.type) {
+      case 'call_start':
+        handleCallStatusUpdate(sessionId, { status: 'active' });
+        break;
+        
+      case 'call_end':
+        handleCallStatusUpdate(sessionId, { status: 'completed' });
+        if (agentConversation) {
+          endConversation(sessionId);
+        }
+        break;
+        
+      case 'dtmf':
+        console.log('📞 DTMF received:', controlData.digit);
+        break;
+    }
+  } catch (jsonError) {
+    console.log('⚠️ Non-JSON control message received');
+  }
+}
+
+/**
+ * ===============================================================================
+ * CONNECTION LIFECYCLE MANAGEMENT
+ * ===============================================================================
+ */
+
+/**
+ * Setup WebSocket connection lifecycle handlers
+ */
+function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
+  // Handle connection close
+  websocket.on('close', () => {
+    console.log('📞 Call stream closed for session:', sessionId);
+    cleanupSession(sessionId, agentConversation);
   });
   
-  ws.on('close', () => {
-    console.log('📞 Knowlarity/Gupshup call stream closed for session:', callSessionId);
-    console.log('🧹 Cleaning up connections and conversations...');
-    knowlarityConnections.delete(callSessionId);
-    if (elevenLabsConversation) {
-      console.log('🤖 Ending ElevenLabs conversation...');
-      endConversation(callSessionId);
-    }
-    handleCallStatusUpdate(callSessionId, { status: 'disconnected' });
-    console.log('✅ Cleanup completed for session:', callSessionId);
+  // Handle connection errors  
+  websocket.on('error', (connectionError) => {
+    console.error('❌ WebSocket error:', connectionError);
+    cleanupSession(sessionId, agentConversation);
+    handleCallStatusUpdate(sessionId, { status: 'failed', reason: connectionError.message });
   });
+}
+
+/**
+ * Cleanup session resources
+ */
+function cleanupSession(sessionId, agentConversation) {
+  console.log('🧹 Cleaning up session:', sessionId);
   
-  ws.on('error', (error) => {
-    console.error('❌ Knowlarity WebSocket error:', error);
-    knowlarityConnections.delete(callSessionId);
-    if (elevenLabsConversation) {
-      endConversation(callSessionId);
-    }
-    handleCallStatusUpdate(callSessionId, { status: 'failed', reason: error.message });
-  });
+  activeConnections.delete(sessionId);
+  
+  if (agentConversation) {
+    endConversation(sessionId);
+  }
+  
+  handleCallStatusUpdate(sessionId, { status: 'disconnected' });
+  console.log('✅ Cleanup completed');
 }
 
-// Public functions for call control
-function transferCall(callSessionId, phoneNumber) {
-  const connection = knowlarityConnections.get(callSessionId);
-  if (connection && connection.transferCall) {
-    connection.transferCall(phoneNumber);
-    console.log(`📞 Transferring call ${callSessionId} to ${phoneNumber}`);
+/**
+ * ===============================================================================
+ * CALL CONTROL FUNCTIONS
+ * ===============================================================================
+ */
+
+/**
+ * Transfer call to another number
+ */
+function transferCall(sessionId, targetPhoneNumber) {
+  const connection = activeConnections.get(sessionId);
+  if (connection?.websocket?.readyState === WebSocket.OPEN) {
+    connection.websocket.send(JSON.stringify({
+      type: 'transfer',
+      data: { textContent: targetPhoneNumber }
+    }));
+    console.log(`📞 Transferring call ${sessionId} to ${targetPhoneNumber}`);
   } else {
-    console.error(`❌ Cannot transfer call ${callSessionId} - connection not found`);
+    console.error(`❌ Cannot transfer call ${sessionId} - connection not found`);
   }
 }
 
-function terminateStream(callSessionId) {
-  const connection = knowlarityConnections.get(callSessionId);
-  if (connection && connection.terminateStream) {
-    connection.terminateStream();
-    console.log(`📞 Terminating stream for call ${callSessionId}`);
+/**
+ * Terminate call stream
+ */
+function terminateStream(sessionId) {
+  const connection = activeConnections.get(sessionId);
+  if (connection?.websocket?.readyState === WebSocket.OPEN) {
+    connection.websocket.send(JSON.stringify({ type: 'disconnect' }));
+    console.log(`📞 Terminating stream for call ${sessionId}`);
   } else {
-    console.error(`❌ Cannot terminate stream ${callSessionId} - connection not found`);
+    console.error(`❌ Cannot terminate stream ${sessionId} - connection not found`);
   }
 }
 
-function killAudio(callSessionId) {
-  const connection = knowlarityConnections.get(callSessionId);
-  if (connection && connection.killAudio) {
-    connection.killAudio();
-    console.log(`📞 Killing audio for call ${callSessionId}`);
+/**
+ * Stop audio playback
+ */
+function killAudio(sessionId) {
+  const connection = activeConnections.get(sessionId);
+  if (connection?.websocket?.readyState === WebSocket.OPEN) {
+    connection.websocket.send(JSON.stringify({ type: 'killAudio' }));
+    console.log(`📞 Killing audio for call ${sessionId}`);
   } else {
-    console.error(`❌ Cannot kill audio ${callSessionId} - connection not found`);
+    console.error(`❌ Cannot kill audio ${sessionId} - connection not found`);
   }
 }
 
+/**
+ * ===============================================================================
+ * SYSTEM MANAGEMENT
+ * ===============================================================================
+ */
+
+/**
+ * Cleanup dead connections
+ */
 function cleanup() {
-  // Cleanup Knowlarity connections
-  knowlarityConnections.forEach((connection, callSessionId) => {
-    if (connection.ws && connection.ws.readyState === WebSocket.CLOSED) {
-      knowlarityConnections.delete(callSessionId);
-      endConversation(callSessionId);
-      handleCallStatusUpdate(callSessionId, { status: 'disconnected' });
+  activeConnections.forEach((connection, sessionId) => {
+    if (connection.websocket?.readyState === WebSocket.CLOSED) {
+      cleanupSession(sessionId, null);
     }
   });
 }
 
+/**
+ * Shutdown all connections
+ */
 function shutdown() {
-  // Close all Knowlarity connections
-  knowlarityConnections.forEach((connection, callSessionId) => {
-    if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
-      connection.ws.close();
+  activeConnections.forEach((connection, sessionId) => {
+    if (connection.websocket?.readyState === WebSocket.OPEN) {
+      connection.websocket.close();
     }
-    endConversation(callSessionId);
+    endConversation(sessionId);
   });
 }
 
-// Placeholder functions - these will need to be implemented based on your other services
-function getCallSession(callSessionId) {
-  return outboundCallManager ? outboundCallManager.getCallSession(callSessionId) : null;
+/**
+ * ===============================================================================
+ * SERVICE INTEGRATION FUNCTIONS
+ * ===============================================================================
+ */
+
+// Get call session from outbound call manager
+function getCallSession(sessionId) {
+  return callManagerService?.getCallSession(sessionId) || null;
 }
 
-function handleCallStatusUpdate(callSessionId, statusUpdate) {
-  if (outboundCallManager) {
-    // Try to update the session, but don't fail if it doesn't exist (external sessions)
+// Update call status
+function handleCallStatusUpdate(sessionId, statusUpdate) {
+  if (callManagerService) {
     try {
-      outboundCallManager.handleCallStatusUpdate(callSessionId, statusUpdate);
+      callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
     } catch (error) {
-      console.log('⚠️ Status update failed for external session:', callSessionId, 'Status:', statusUpdate.status);
+      console.log('⚠️ Status update failed for external session:', sessionId);
     }
   }
 }
 
+// ElevenLabs integration functions
 function createConversation(sessionId, treatmentType) {
-  return elevenLabsAgent ? elevenLabsAgent.createConversation(sessionId, treatmentType) : null;
+  return elevenLabsAgentService?.createConversation(sessionId, treatmentType) || null;
 }
 
-function setClientMessageHandler(handler) {
-  if (elevenLabsAgent) {
-    elevenLabsAgent.setClientMessageHandler(handler);
-  }
+function setClientMessageHandler(messageHandler) {
+  elevenLabsAgentService?.setClientMessageHandler(messageHandler);
 }
 
 function sendAudioToAgent(sessionId, audioData) {
-  return elevenLabsAgent ? elevenLabsAgent.sendAudioToAgent(sessionId, audioData) : null;
+  return elevenLabsAgentService?.sendAudioToAgent(sessionId, audioData) || null;
 }
 
 function endConversation(sessionId) {
-  return elevenLabsAgent ? elevenLabsAgent.endConversation(sessionId) : null;
+  return elevenLabsAgentService?.endConversation(sessionId) || null;
 }
 
 module.exports = {

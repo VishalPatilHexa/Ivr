@@ -73,7 +73,8 @@ function handleKnowlarityStream(websocket, urlPath) {
   activeConnections.set(sessionId, { 
     websocket, 
     clientType,
-    connectedAt: new Date()
+    connectedAt: new Date(),
+    agentConversation: null  // Will be set when ElevenLabs agent is initialized
   });
   console.log("💾 Stored connection for session:", sessionId, "type:", clientType);
   console.log("📊 Total active connections:", activeConnections.size);
@@ -113,11 +114,17 @@ function handleKnowlarityStream(websocket, urlPath) {
         callSession.patientData?.treatmentType || "general consultation"
       );
 
+      // Store the agent conversation in the connection for cleanup
+      const connection = activeConnections.get(sessionId);
+      if (connection) {
+        connection.agentConversation = agentConversation;
+        console.log("💾 Agent conversation stored for session:", sessionId);
+      }
+
       // STEP 3: Setup bidirectional audio streaming
       setupAudioStreaming(sessionId);
       
       // STEP 4: Notify client that agent is ready
-      const connection = activeConnections.get(sessionId);
       if (connection?.websocket?.readyState === WebSocket.OPEN) {
         connection.websocket.send(JSON.stringify({
           type: 'agent_ready',
@@ -314,8 +321,25 @@ function setupAudioStreaming(sessionId) {
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     // METADATA PARSING: Extract call information from client
-    // Fix single quotes to double quotes for valid JSON
-    const fixedMetadata = metadataMessage.toString().replace(/'/g, '"');
+    // Fix single quotes to double quotes for valid JSON, but handle nested quotes carefully
+    let fixedMetadata = metadataMessage.toString();
+    
+    // Replace single quotes with double quotes, but be careful with nested structures
+    // First, protect content within existing double quotes
+    const protectedStrings = [];
+    fixedMetadata = fixedMetadata.replace(/"([^"]*)"/g, (match, content) => {
+      protectedStrings.push(content);
+      return `__PROTECTED_${protectedStrings.length - 1}__`;
+    });
+    
+    // Replace single quotes with double quotes
+    fixedMetadata = fixedMetadata.replace(/'/g, '"');
+    
+    // Restore protected strings
+    protectedStrings.forEach((content, index) => {
+      fixedMetadata = fixedMetadata.replace(`__PROTECTED_${index}__`, `"${content}"`);
+    });
+    
     const connectionMetadata = JSON.parse(fixedMetadata);
     console.log("📋 Received metadata for session:", sessionId);
     console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");
@@ -446,13 +470,19 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
   // Handle connection close
   websocket.on("close", () => {
     console.log("📞 Call stream closed for session:", sessionId);
-    cleanupSession(sessionId, agentConversation);
+    // Get the agent conversation from the stored connection
+    const connection = activeConnections.get(sessionId);
+    const storedAgentConversation = connection?.agentConversation || agentConversation;
+    cleanupSession(sessionId, storedAgentConversation);
   });
 
   // Handle connection errors
   websocket.on("error", (connectionError) => {
     console.error("❌ WebSocket error:", connectionError);
-    cleanupSession(sessionId, agentConversation);
+    // Get the agent conversation from the stored connection
+    const connection = activeConnections.get(sessionId);
+    const storedAgentConversation = connection?.agentConversation || agentConversation;
+    cleanupSession(sessionId, storedAgentConversation);
     handleCallStatusUpdate(sessionId, {
       status: "failed",
       reason: connectionError.message,
@@ -559,7 +589,7 @@ function killAudio(sessionId) {
 function cleanup() {
   activeConnections.forEach((connection, sessionId) => {
     if (connection.websocket?.readyState === WebSocket.CLOSED) {
-      cleanupSession(sessionId, null);
+      cleanupSession(sessionId, connection.agentConversation);
     }
   });
 }

@@ -321,25 +321,8 @@ function setupAudioStreaming(sessionId) {
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     // METADATA PARSING: Extract call information from client
-    // Fix single quotes to double quotes for valid JSON, but handle nested quotes carefully
-    let fixedMetadata = metadataMessage.toString();
-    
-    // Replace single quotes with double quotes, but be careful with nested structures
-    // First, protect content within existing double quotes
-    const protectedStrings = [];
-    fixedMetadata = fixedMetadata.replace(/"([^"]*)"/g, (match, content) => {
-      protectedStrings.push(content);
-      return `__PROTECTED_${protectedStrings.length - 1}__`;
-    });
-    
-    // Replace single quotes with double quotes
-    fixedMetadata = fixedMetadata.replace(/'/g, '"');
-    
-    // Restore protected strings
-    protectedStrings.forEach((content, index) => {
-      fixedMetadata = fixedMetadata.replace(`__PROTECTED_${index}__`, `"${content}"`);
-    });
-    
+    // Fix single quotes to double quotes for valid JSON using replaceAll
+    const fixedMetadata = metadataMessage.toString().replaceAll("'", '"');
     const connectionMetadata = JSON.parse(fixedMetadata);
     console.log("📋 Received metadata for session:", sessionId);
     console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");

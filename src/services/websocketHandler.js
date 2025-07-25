@@ -102,7 +102,7 @@ function handleKnowlarityStream(websocket, urlPath) {
     );
   }
 
-  // STEP 2: Initialize ElevenLabs conversation (will be called after metadata is received)
+  // STEP 2: Initialize ElevenLabs conversation
   let agentConversation = null;
 
   const initializeAgentConversation = async () => {
@@ -112,22 +112,17 @@ function handleKnowlarityStream(websocket, urlPath) {
         sessionId
       );
 
-      // Get updated call session with metadata
-      const updatedCallSession = getCallSession(sessionId);
-      
       // Pass metadata to ElevenLabs
       const conversationContext = {
-        treatmentType: updatedCallSession?.metadata?.treatmentType || "general consultation",
-        patientName: updatedCallSession?.metadata?.patientName || "Patient",
-        patientAge: updatedCallSession?.metadata?.patientAge || "",
-        symptoms: updatedCallSession?.metadata?.symptoms || "",
-        medicalHistory: updatedCallSession?.metadata?.medicalHistory || "",
-        appointmentType: updatedCallSession?.metadata?.appointmentType || "consultation",
-        doctorName: updatedCallSession?.metadata?.doctorName || "",
-        customInstructions: updatedCallSession?.metadata?.customInstructions || ""
+        treatmentType: callSession.patientData?.treatmentType || callSession.metadata?.treatmentType || "general consultation",
+        patientName: callSession.metadata?.patientName || "Patient",
+        patientAge: callSession.metadata?.patientAge || "",
+        symptoms: callSession.metadata?.symptoms || "",
+        medicalHistory: callSession.metadata?.medicalHistory || "",
+        appointmentType: callSession.metadata?.appointmentType || "consultation",
+        doctorName: callSession.metadata?.doctorName || "",
+        customInstructions: callSession.metadata?.customInstructions || ""
       };
-
-      console.log("🔄 Using conversation context:", JSON.stringify(conversationContext, null, 2));
 
       agentConversation = await elevenLabsAgentService.createConversation(
         sessionId,
@@ -176,28 +171,16 @@ function handleKnowlarityStream(websocket, urlPath) {
           : "Text"
       );
 
-      // Handle initial metadata from Knowlarity (only if it looks like JSON)
+      // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
-        const messageStr = incomingMessage.toString();
+        console.log("🔥 FIRST MESSAGE FROM KNOWLARITY (METADATA) 🔥");
+        console.log("🎆 Processing first message (metadata) for session:", sessionId);
+        console.log("📋 First Message Content:", incomingMessage.toString());
+        console.log("📏 First Message Size:", incomingMessage.length, "bytes");
         
-        // Check if this looks like JSON metadata (contains typical metadata fields)
-        if (messageStr.includes('callid') || messageStr.includes('session_metadata') || messageStr.includes('ivr_data')) {
-          console.log("🔥 FIRST MESSAGE FROM KNOWLARITY (METADATA) 🔥");
-          console.log("🎆 Processing first message (metadata) for session:", sessionId);
-          console.log("📋 First Message Content:", messageStr);
-          console.log("📏 First Message Size:", incomingMessage.length, "bytes");
-          
-          await handleInitialMetadata(incomingMessage, sessionId, initializeAgentConversation);
-          isFirstMessage = false;
-          return;
-        } else {
-          // First message is not metadata, it's audio - initialize conversation with defaults
-          console.log("🔥 FIRST MESSAGE IS AUDIO, NOT METADATA 🔥");
-          console.log("🚀 Initializing ElevenLabs conversation with defaults...");
-          await initializeAgentConversation();
-          isFirstMessage = false;
-          // Continue processing this message as audio below
-        }
+        handleInitialMetadata(incomingMessage, sessionId);
+        isFirstMessage = false;
+        return;
       }
 
       // Route audio and control messages
@@ -258,7 +241,8 @@ function handleKnowlarityStream(websocket, urlPath) {
   // STEP 5: Setup connection lifecycle handlers
   setupConnectionLifecycle(websocket, sessionId, agentConversation);
 
-  // NOTE: Conversation will be initialized after metadata is received in handleInitialMetadata()
+  // Initialize the conversation
+  initializeAgentConversation();
 }
 
 /**
@@ -368,83 +352,13 @@ function setupAudioStreaming(sessionId) {
  * FIRST MESSAGE PROTOCOL: The first message from Knowlarity is always JSON metadata
  * containing call information, not audio data. This establishes the call context.
  */
-async function handleInitialMetadata(metadataMessage, sessionId, initializeAgentConversationCallback) {
+function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     console.log("🔥 PARSING KNOWLARITY METADATA 🔥");
+    console.log("📋 Raw metadata message:", metadataMessage.toString());
     
-    let rawMessage = metadataMessage.toString();
-    console.log("📋 Raw metadata message:", rawMessage);
-    
-    // Fix Knowlarity's invalid JSON format
-    let connectionMetadata;
-    if (rawMessage.includes("'")) {
-      console.log("🔧 Fixing Knowlarity JSON format...");
-      
-      try {
-        // Method 1: More comprehensive JSON fixing
-        let fixedMessage = rawMessage
-          .replace(/'/g, '"')           // Single quotes to double quotes
-          .replace(/\s+/g, ' ')         // Multiple spaces to single space
-          .replace(/"\s*:/g, '":')      // Remove spaces before colons
-          .replace(/:\s*"/g, ':"')      // Remove spaces after colons
-          .trim();
-        
-        console.log("🔧 Attempting to parse fixed JSON...");
-        connectionMetadata = JSON.parse(fixedMessage);
-        console.log("✅ JSON parsed successfully with comprehensive fix");
-      } catch (error1) {
-        console.log("⚠️ Comprehensive fix failed, trying regex extraction...");
-        
-        try {
-          // Method 2: Extract data using regex patterns
-          console.log("🔧 Extracting data with regex patterns...");
-          
-          const callidMatch = rawMessage.match(/'callid':\s*'([^']+)'/);
-          const virtualNumberMatch = rawMessage.match(/'virtual_number':\s*'([^']+)'/);
-          const customerNumberMatch = rawMessage.match(/'customer_number':\s*'([^']+)'/);
-          
-          // Extract session_metadata
-          const sessionMetaMatch = rawMessage.match(/'session_metadata':\s*\{([^}]+)\}/);
-          let sessionMetadata = {};
-          
-          if (sessionMetaMatch) {
-            const metaContent = sessionMetaMatch[1];
-            const patientIdMatch = metaContent.match(/'patient_id':\s*'([^']+)'/);
-            const patientNameMatch = metaContent.match(/'patient_name':\s*'([^']+)'/);
-            const patientPhoneMatch = metaContent.match(/'patient_phone':\s*'([^']+)'/);
-            const treatmentTypeMatch = metaContent.match(/'treatment_type':\s*'([^']+)'/);
-            const callTypeMatch = metaContent.match(/'call_type':\s*'([^']+)'/);
-            const providerMatch = metaContent.match(/'healthcare_provider':\s*'([^']+)'/);
-            
-            sessionMetadata = {
-              patient_id: patientIdMatch ? patientIdMatch[1] : '',
-              patient_name: patientNameMatch ? patientNameMatch[1] : '',
-              patient_phone: patientPhoneMatch ? patientPhoneMatch[1] : '',
-              treatment_type: treatmentTypeMatch ? treatmentTypeMatch[1] : '',
-              call_type: callTypeMatch ? callTypeMatch[1] : '',
-              healthcare_provider: providerMatch ? providerMatch[1] : ''
-            };
-          }
-          
-          connectionMetadata = {
-            callid: callidMatch ? callidMatch[1] : '',
-            virtual_number: virtualNumberMatch ? virtualNumberMatch[1] : '',
-            customer_number: customerNumberMatch ? customerNumberMatch[1] : '',
-            session_metadata: sessionMetadata
-          };
-          
-          console.log("✅ Data extracted successfully with regex");
-        } catch (error2) {
-          console.log("❌ Both parsing methods failed");
-          console.log("Error 1:", error1.message);
-          console.log("Error 2:", error2.message);
-          throw error2;
-        }
-      }
-    } else {
-      // Normal JSON parsing
-      connectionMetadata = JSON.parse(rawMessage);
-    }
+    // METADATA PARSING: Extract call information from client
+    const connectionMetadata = JSON.parse(metadataMessage);
     console.log("📋 Received metadata for session:", sessionId);
     console.log("📊 Metadata keys:", Object.keys(connectionMetadata));
     console.log("📊 Metadata details:", JSON.stringify(connectionMetadata, null, 2));
@@ -468,24 +382,6 @@ async function handleInitialMetadata(metadataMessage, sessionId, initializeAgent
         // This is Knowlarity metadata format
         connection.clientType = 'knowlarity';
         console.log("🔄 Confirmed client type as knowlarity for session:", sessionId);
-        
-        // Extract patient data from Knowlarity session_metadata
-        if (connectionMetadata.session_metadata) {
-          console.log("📋 Found Knowlarity session_metadata!");
-          const sessionMeta = connectionMetadata.session_metadata;
-          const callSession = getCallSession(sessionId);
-          if (callSession) {
-            callSession.metadata = {
-              treatmentType: sessionMeta.treatment_type || 'general consultation',
-              patientName: sessionMeta.patient_name || 'Patient',
-              patientPhone: sessionMeta.patient_phone || '',
-              callType: sessionMeta.call_type || 'outbound',
-              healthcareProvider: sessionMeta.healthcare_provider || 'HexaHealth',
-              patientId: sessionMeta.patient_id || sessionId
-            };
-            console.log("📋 Stored Knowlarity patient metadata:", JSON.stringify(callSession.metadata, null, 2));
-          }
-        }
       }
     }
 
@@ -496,12 +392,6 @@ async function handleInitialMetadata(metadataMessage, sessionId, initializeAgent
       knowlarityMetadata: connectionMetadata,
       isExternal: true,
     });
-
-    // Initialize ElevenLabs conversation now that we have metadata
-    console.log("🚀 Metadata processed, initializing ElevenLabs conversation...");
-    if (typeof initializeAgentConversationCallback === 'function') {
-      await initializeAgentConversationCallback();
-    }
   } catch (jsonError) {
     console.error(
       "❌ Failed to parse initial metadata for session:",
@@ -516,12 +406,6 @@ async function handleInitialMetadata(metadataMessage, sessionId, initializeAgent
       knowlarityMetadata: { error: "Failed to parse metadata" },
       isExternal: true,
     });
-
-    // Still try to initialize conversation with defaults
-    console.log("🚀 Metadata parsing failed, initializing ElevenLabs conversation with defaults...");
-    if (typeof initializeAgentConversationCallback === 'function') {
-      await initializeAgentConversationCallback();
-    }
   }
 }
 

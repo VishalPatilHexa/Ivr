@@ -59,6 +59,12 @@ function validateEnvironment() {
  */
 async function createConversation(sessionId, conversationContext) {
   try {
+    // Check if conversation already exists
+    if (activeConversations.has(sessionId)) {
+      console.log('⚠️ Conversation already exists for session:', sessionId);
+      return activeConversations.get(sessionId);
+    }
+    
     // Determine client type from session ID
     const clientType = sessionId.startsWith('web_') ? 'web_client' : 'knowlarity';
     

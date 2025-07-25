@@ -316,10 +316,12 @@ function handleInitialMetadata(metadataMessage, sessionId) {
     // METADATA PARSING: Extract call information from client
     const connectionMetadata = JSON.parse(metadataMessage);
     console.log("📋 Received metadata for session:", sessionId);
+    console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");
     console.log(
       "📊 Metadata details:",
       JSON.stringify(connectionMetadata, null, 2)
     );
+    console.log("🔥 ===== END KNOWLARITY METADATA =====");
 
     // UPDATE CLIENT TYPE: Update connection type based on metadata
     const connection = activeConnections.get(sessionId);

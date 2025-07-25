@@ -137,6 +137,7 @@ class HexahealthElevenLabsClient {
       this.agentSpeaking = false; // Reset agent speaking state
       this.currentAudioSource = null; // Reset audio source
       this.isPlayingAudio = false;
+      this.audioQueue = []; // Clear audio queue
       this.updateConnectionStatus("Disconnected");
       this.connectBtn.textContent = "Connect";
       this.startRecordingBtn.disabled = true;
@@ -398,17 +399,12 @@ class HexahealthElevenLabsClient {
 
   async playBinaryAudio(audioData) {
     try {
-      console.log("🎵 Playing binary audio data");
+      console.log("🎵 Adding binary audio to queue");
       
-      // Immediately stop recording to prevent echo
+      // Immediately stop recording to prevent echo (only on first audio chunk)
       if (this.isRecording) {
         console.log("🔇 Stopping recording immediately for binary audio");
         this.stopRecording();
-      }
-      
-      // Resume audio context if suspended
-      if (this.audioContext && this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
       }
       
       // Convert to array buffer - clone it to avoid detachment
@@ -421,59 +417,143 @@ class HexahealthElevenLabsClient {
       
       console.log("🎵 Audio buffer size:", arrayBuffer.byteLength);
       
+      // Add to queue instead of playing immediately
+      this.audioQueue.push(arrayBuffer);
+      console.log("📝 Audio queue length:", this.audioQueue.length);
+      
+      // Start processing queue if not already playing
+      if (!this.isPlayingAudio) {
+        this.processAudioQueue();
+      }
+      
+    } catch (error) {
+      console.error("❌ Error queuing binary audio:", error);
+    }
+  }
+
+  async processAudioQueue() {
+    if (this.audioQueue.length === 0 || this.isPlayingAudio) {
+      return;
+    }
+
+    console.log("🎵 Processing audio queue, items:", this.audioQueue.length);
+    this.isPlayingAudio = true;
+
+    while (this.audioQueue.length > 0) {
+      const arrayBuffer = this.audioQueue.shift();
+      console.log("🎵 Playing queued audio, remaining in queue:", this.audioQueue.length);
+      
+      await this.playAudioBuffer(arrayBuffer);
+      
+      // Small delay between chunks for smoother playback
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    console.log("✅ Audio queue processing completed");
+    this.isPlayingAudio = false;
+    
+    // Reset agent speaking flag when all audio finishes
+    this.agentSpeaking = false;
+    console.log("✅ Agent speaking flag reset - ready for recording");
+    
+    // Auto-restart recording after all audio finishes
+    setTimeout(() => {
+      console.log("🔍 Checking if can restart recording - isRecording:", this.isRecording, "conversationActive:", this.conversationActive, "agentSpeaking:", this.agentSpeaking);
+      if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
+        console.log("🎙️ Auto-restarting recording after queue finished");
+        this.startRecording(true);
+      } else {
+        console.log("❌ Cannot restart recording - conditions not met");
+      }
+    }, 500);
+  }
+
+  async playAudioBuffer(arrayBuffer) {
+    return new Promise(async (resolve) => {
       try {
-        // Try to decode as audio (this will work if it's a proper audio format)
-        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice());
+        // Resume audio context if suspended
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+          await this.audioContext.resume();
+        }
+
+        try {
+          // Try to decode as audio (this will work if it's a proper audio format)
+          const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice());
+          
+          const source = this.audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(this.audioContext.destination);
+          
+          this.currentAudioSource = source;
+          
+          source.onended = () => {
+            console.log("✅ Audio buffer playback completed");
+            this.currentAudioSource = null;
+            resolve();
+          };
+          
+          source.start();
+          console.log("✅ Audio buffer started, duration:", audioBuffer.duration, "seconds");
+          
+        } catch (decodeError) {
+          console.log("⚠️ Could not decode as standard audio format, trying PCM conversion");
+          // If decode fails, try to interpret as raw PCM
+          await this.playRawPCMAudioQueued(arrayBuffer);
+          resolve();
+        }
         
+      } catch (error) {
+        console.error("❌ Error playing audio buffer:", error);
+        resolve();
+      }
+    });
+  }
+
+  async playRawPCMAudioQueued(arrayBuffer) {
+    return new Promise((resolve) => {
+      try {
+        console.log("🎵 Playing queued PCM audio, buffer size:", arrayBuffer.byteLength);
+        
+        // Assume 16-bit PCM, 16kHz, mono (ElevenLabs format)
+        const pcmData = new Int16Array(arrayBuffer);
+        const sampleRate = 16000;
+        
+        // Create audio buffer for PCM data
+        const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, sampleRate);
+        const channelData = audioBuffer.getChannelData(0);
+        
+        // Convert 16-bit integers to float32 (-1.0 to 1.0)
+        for (let i = 0; i < pcmData.length; i++) {
+          channelData[i] = pcmData[i] / 32768.0;
+        }
+        
+        // Create and configure the audio source
         const source = this.audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(this.audioContext.destination);
         
-        // Use currentAudioSource tracking (same as PCM audio)
         this.currentAudioSource = source;
-        this.isPlayingAudio = true;
         
-        // Handle completion
         source.onended = () => {
-          console.log("✅ Binary audio source ended");
-          if (this.currentAudioSource === source) {
-            this.currentAudioSource = null;
-            this.isPlayingAudio = false;
-            
-            // Reset agent speaking flag when audio finishes
-            this.agentSpeaking = false;
-            console.log("✅ Agent speaking flag reset - ready for recording");
-            
-            // Auto-restart recording after audio finishes
-            setTimeout(() => {
-              console.log("🔍 Checking if can restart recording - isRecording:", this.isRecording, "conversationActive:", this.conversationActive, "agentSpeaking:", this.agentSpeaking);
-              if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
-                console.log("🎙️ Auto-restarting recording after binary audio finished");
-                this.startRecording(true);
-              } else {
-                console.log("❌ Cannot restart recording - conditions not met");
-              }
-            }, 500);
-          }
+          console.log("✅ Queued PCM audio completed, duration:", audioBuffer.duration, "seconds");
+          this.currentAudioSource = null;
+          resolve();
         };
         
         source.start();
+        console.log("✅ Queued PCM audio started, duration:", audioBuffer.duration, "seconds");
         
-        console.log("✅ Binary audio played successfully");
-        
-      } catch (decodeError) {
-        console.log("⚠️ Could not decode as standard audio format, trying PCM conversion");
-        console.log("🔍 Decode error:", decodeError.message);
-        // If decode fails, try to interpret as raw PCM
-        this.playRawPCMAudio(arrayBuffer);
+      } catch (error) {
+        console.error("❌ Error playing queued PCM audio:", error);
+        resolve();
       }
-      
-    } catch (error) {
-      console.error("❌ Error playing binary audio:", error);
-    }
+    });
   }
 
   stopAllAudio() {
+    // Clear the audio queue
+    this.audioQueue = [];
+    
     // Stop current audio source
     if (this.currentAudioSource) {
       try {
@@ -495,77 +575,9 @@ class HexahealthElevenLabsClient {
     this.activeAudioSources = [];
     
     this.isPlayingAudio = false;
-    console.log("🔇 Stopped all audio sources including current source");
+    console.log("🔇 Stopped all audio sources and cleared queue");
   }
 
-  playRawPCMAudio(arrayBuffer) {
-    try {
-      console.log("🎵 Starting playRawPCMAudio, buffer size:", arrayBuffer.byteLength);
-      
-      // Stop any currently playing audio source
-      if (this.currentAudioSource) {
-        console.log("🔇 Stopping current audio source before playing new one");
-        this.currentAudioSource.stop();
-        this.currentAudioSource = null;
-      }
-      
-      // Assume 16-bit PCM, 16kHz, mono (ElevenLabs format)
-      const pcmData = new Int16Array(arrayBuffer);
-      const sampleRate = 16000;
-      
-      // Create audio buffer for PCM data
-      const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, sampleRate);
-      const channelData = audioBuffer.getChannelData(0);
-      
-      // Convert 16-bit integers to float32 (-1.0 to 1.0)
-      for (let i = 0; i < pcmData.length; i++) {
-        channelData[i] = pcmData[i] / 32768.0;
-      }
-      
-      // Create and configure the audio source
-      const source = this.audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(this.audioContext.destination);
-      
-      // Store as current source
-      this.currentAudioSource = source;
-      this.isPlayingAudio = true;
-      
-      // Handle completion
-      source.onended = () => {
-        console.log("✅ PCM audio source ended");
-        if (this.currentAudioSource === source) {
-          this.currentAudioSource = null;
-          this.isPlayingAudio = false;
-          
-          // Reset agent speaking flag when audio finishes
-          this.agentSpeaking = false;
-          console.log("✅ Agent speaking flag reset - ready for recording");
-          
-          // Auto-restart recording after audio finishes
-          setTimeout(() => {
-            console.log("🔍 Checking if can restart recording - isRecording:", this.isRecording, "conversationActive:", this.conversationActive, "agentSpeaking:", this.agentSpeaking);
-            if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
-              console.log("🎙️ Auto-restarting recording after PCM audio finished");
-              this.startRecording(true);
-            } else {
-              console.log("❌ Cannot restart recording - conditions not met");
-            }
-          }, 500);
-        }
-      };
-      
-      // Start playback
-      source.start();
-      console.log("✅ Raw PCM audio started successfully, duration:", audioBuffer.duration, "seconds");
-      
-    } catch (error) {
-      console.error("❌ Error playing raw PCM audio:", error);
-      this.currentAudioSource = null;
-      this.isPlayingAudio = false;
-      this.agentSpeaking = false;
-    }
-  }
 
   async playWaveAudio(base64WaveData) {
     try {

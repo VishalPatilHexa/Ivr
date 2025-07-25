@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const { formatForElevenLabs, getPatientDataForClientType } = require('../config/defaultPatientData');
 
 /*
  * ===============================================================================
@@ -56,12 +57,28 @@ function validateEnvironment() {
 /**
  * Create new conversation session with ElevenLabs
  */
-async function createConversation(sessionId, patientQuery) {
+async function createConversation(sessionId, conversationContext) {
   try {
+    // Determine client type from session ID
+    const clientType = sessionId.startsWith('web_') ? 'web_client' : 'knowlarity';
+    
+    // Get appropriate defaults and merge with provided context
+    const finalContext = getPatientDataForClientType(clientType, conversationContext);
+
     const conversationSession = {
       sessionId,
-      patientQuery,
-      patientData: { query: patientQuery },
+      patientQuery: finalContext.treatmentType,
+      patientData: { 
+        query: finalContext.treatmentType,
+        name: finalContext.patientName,
+        age: finalContext.patientAge,
+        symptoms: finalContext.symptoms,
+        medicalHistory: finalContext.medicalHistory,
+        appointmentType: finalContext.appointmentType,
+        doctorName: finalContext.doctorName,
+        customInstructions: finalContext.customInstructions
+      },
+      conversationContext: finalContext,
       isActive: true,
       createdAt: new Date(),
       agentWebSocket: null
@@ -74,6 +91,8 @@ async function createConversation(sessionId, patientQuery) {
     conversationSession.agentWebSocket = agentWebSocket;
 
     console.log('✅ Conversation created for session:', sessionId);
+    console.log('📋 Using provided metadata:', conversationContext ? 'Yes' : 'No (using defaults)');
+    console.log('📋 Final patient context:', JSON.stringify(finalContext, null, 2));
     return conversationSession;
   } catch (error) {
     console.error('❌ Error creating conversation:', error);
@@ -130,22 +149,27 @@ async function createElevenLabsWebSocket(sessionId) {
  */
 function initializeConversation(agentWebSocket, sessionId) {
   const conversationSession = activeConversations.get(sessionId);
+  const context = conversationSession?.conversationContext || {};
+  
+  // Format context for ElevenLabs with defaults applied
+  const dynamicVariables = formatForElevenLabs(context);
   
   const initializationMessage = {
     type: 'conversation_initiation_metadata',
     conversation_initiation_metadata: {
       user_id: sessionId,
       user_object: {
-        name: 'Patient',
+        name: dynamicVariables.patientName,
         language: 'hindi'
       }
     },
-    dynamic_variables: {
-      new_variable: conversationSession?.patientQuery || 'general treatment'
-    }
+    dynamic_variables: dynamicVariables
   };
   
-  console.log('📤 Initializing conversation with context');
+  console.log('📤 Initializing conversation with dynamic variables:');
+  console.log('🔄 Using metadata:', Object.keys(context).length > 0 ? 'Yes' : 'No (using defaults)');
+  console.log('📋 Dynamic variables:', JSON.stringify(initializationMessage.dynamic_variables, null, 2));
+  
   agentWebSocket.send(JSON.stringify(initializationMessage));
 }
 
@@ -477,15 +501,31 @@ function setClientMessageHandler(messageHandler) {
 /**
  * End conversation and cleanup resources
  */
-async function endConversation(sessionId) {
+function endConversation(sessionId) {
   const conversationSession = activeConversations.get(sessionId);
   if (conversationSession) {
-    if (conversationSession.agentWebSocket) {
-      conversationSession.agentWebSocket.close();
+    try {
+      // Mark conversation as completed
+      conversationSession.isActive = false;
+      conversationSession.completedAt = new Date();
+      
+      console.log('🧹 Ending conversation for session:', sessionId);
+      console.log('⏱️ Conversation duration:', 
+        Math.floor((conversationSession.completedAt - conversationSession.createdAt) / 1000), 'seconds');
+      
+      // Close WebSocket connection
+      if (conversationSession.agentWebSocket) {
+        conversationSession.agentWebSocket.close();
+      }
+      
+      // Remove from active conversations
+      activeConversations.delete(sessionId);
+      console.log('✅ Conversation ended and cleaned up:', sessionId);
+    } catch (error) {
+      console.error('❌ Error during conversation cleanup:', error);
+      // Force cleanup even if there are errors
+      activeConversations.delete(sessionId);
     }
-    conversationSession.isActive = false;
-    activeConversations.delete(sessionId);
-    console.log('🧹 Conversation ended and cleaned up:', sessionId);
   }
 }
 

@@ -134,7 +134,7 @@ function handleKnowlarityStream(websocket, urlPath) {
   // STEP 4: Setup message handling for audio streaming
   let isFirstMessage = true;
   let messageCount = 0;
-
+ 
 
   websocket.on("message", async (incomingMessage) => {
     console.log(
@@ -144,12 +144,6 @@ function handleKnowlarityStream(websocket, urlPath) {
 
     try {
       messageCount++;
-      console.log(
-        `📬 Message #${messageCount} for session ${sessionId}:`,
-        incomingMessage instanceof Buffer
-          ? `Binary (${incomingMessage.length} bytes)`
-          : "Text"
-      );
 
       // Handle initial metadata from Knowlarity
       if (isFirstMessage) {

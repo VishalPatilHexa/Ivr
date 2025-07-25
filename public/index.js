@@ -57,10 +57,8 @@ class HexahealthElevenLabsClient {
 
   setupEventListeners() {
     this.connectBtn.addEventListener("click", () => this.toggleConnection());
-    this.startRecordingBtn.addEventListener("click", () =>
-      this.startRecording()
-    );
-    this.stopRecordingBtn.addEventListener("click", () => this.stopRecording());
+    this.startRecordingBtn.addEventListener("click", () => this.handleStartRecording());
+    this.stopRecordingBtn.addEventListener("click", () => this.handleStopRecording());
     this.sendTextBtn.addEventListener("click", () => this.sendTextMessage());
     this.textInput.addEventListener("keypress", (e) => {
       if (e.key === "Enter") {
@@ -77,6 +75,26 @@ class HexahealthElevenLabsClient {
     }
   }
 
+  handleStartRecording() {
+    if (!this.isConnected) {
+      // Connect first, then start recording when agent is ready
+      this.connect();
+    } else if (this.conversationActive && !this.isRecording) {
+      // Already connected, just start recording
+      this.startRecording();
+    }
+  }
+
+  handleStopRecording() {
+    if (this.isRecording) {
+      this.stopRecording();
+    }
+    // Also disconnect when stopping recording
+    if (this.isConnected) {
+      this.disconnect();
+    }
+  }
+
   connect() {
     // Connect to same server instance for voice streaming
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -90,7 +108,8 @@ class HexahealthElevenLabsClient {
       this.isConnected = true;
       this.updateConnectionStatus("Connected");
       this.connectBtn.textContent = "Disconnect";
-      // Keep recording disabled until agent is ready
+      // Update button text and state
+      this.startRecordingBtn.textContent = "Connecting...";
       this.startRecordingBtn.disabled = true;
       this.textInput.disabled = false;
       this.sendTextBtn.disabled = false;
@@ -154,7 +173,9 @@ class HexahealthElevenLabsClient {
       this.conversationActive = false;
       this.updateConnectionStatus("Disconnected");
       this.connectBtn.textContent = "Connect";
-      this.startRecordingBtn.disabled = true;
+      // Reset button states
+      this.startRecordingBtn.textContent = "Start Recording";
+      this.startRecordingBtn.disabled = false;
       this.stopRecordingBtn.disabled = true;
       this.textInput.disabled = true;
       this.sendTextBtn.disabled = true;
@@ -209,14 +230,19 @@ class HexahealthElevenLabsClient {
       case "agent_ready":
         this.addMessage(
           "system",
-          "🤖 Agent is ready! You can now start recording."
+          "🤖 Agent is ready! Starting recording automatically..."
         );
-        this.updateStepIndicator(
-          "Agent ready - click Start Recording to speak"
-        );
+        this.updateStepIndicator("Agent ready - recording started");
         // Enable recording now that agent is ready
         this.conversationActive = true;
-        this.startRecordingBtn.disabled = false;
+        
+        // Auto-start recording and update button states
+        setTimeout(() => {
+          this.startRecording();
+          this.startRecordingBtn.textContent = "Recording...";
+          this.startRecordingBtn.disabled = true;
+          this.stopRecordingBtn.disabled = false;
+        }, 500);
         break;
 
       case "agent_audio":
@@ -600,9 +626,12 @@ class HexahealthElevenLabsClient {
     this.stepIndicator.style.display = "block";
   }
 
-  async startRecording() {
+  async startRecording(autoStart = false) {
     if (!this.conversationActive) {
-      alert("Please start a conversation first.");
+      if (!autoStart) {
+        // This shouldn't happen with new UI flow, but keep as fallback
+        this.handleStartRecording();
+      }
       return;
     }
 
@@ -662,6 +691,7 @@ class HexahealthElevenLabsClient {
       this.recordingStream = stream;
 
       this.isRecording = true;
+      this.startRecordingBtn.textContent = "Recording...";
       this.startRecordingBtn.disabled = true;
       this.stopRecordingBtn.disabled = false;
       this.recordingIndicator.classList.add("active");
@@ -669,7 +699,14 @@ class HexahealthElevenLabsClient {
       console.log("🎙️ Started recording with direct PCM processing");
     } catch (error) {
       console.error("Error starting recording:", error);
-      alert("Unable to access microphone. Please check permissions.");
+      if (!autoStart) {
+        alert("Unable to access microphone. Please check permissions.");
+      } else {
+        this.addMessage("system", "⚠️ Unable to access microphone. Please grant permissions.");
+        this.updateStepIndicator("Microphone access required");
+        this.startRecordingBtn.textContent = "Start Recording";
+        this.startRecordingBtn.disabled = false;
+      }
     }
   }
 
@@ -692,6 +729,7 @@ class HexahealthElevenLabsClient {
       }
 
       this.isRecording = false;
+      this.startRecordingBtn.textContent = "Start Recording";
       this.startRecordingBtn.disabled = false;
       this.stopRecordingBtn.disabled = true;
       this.recordingIndicator.classList.remove("active");

@@ -1,10 +1,6 @@
 const WebSocket = require("ws");
 var base64 = require("base-64");
-const fs = require("fs");
-const path = require("path");
 
-// Audio file storage
-const audioChunks = new Map(); // sessionId -> array of chunks
 /*
  * ===============================================================================
  * KNOWLARITY-ELEVENLABS WEBSOCKET HANDLER
@@ -259,9 +255,6 @@ function setupAudioStreaming(sessionId) {
         if (agentMessage.type === "agent_audio" && agentMessage.audio) {
           console.log("🔊 Streaming agent audio to caller");
 
-          // SAVE AUDIO CHUNK: Store audio chunk for file creation
-          saveAudioChunk(sessionId, agentMessage.audio, "outgoing");
-
           // Check client type from stored connection data
           const isWebClient = connection.clientType === 'web_client';
           
@@ -391,8 +384,6 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     "bytes"
   );
 
-  // SAVE INCOMING AUDIO: Store caller's audio chunk
-  // saveAudioChunk(sessionId, audioBuffer, 'incoming');
 
   // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
@@ -476,172 +467,14 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
   });
 }
 
-/**
- * Save audio chunk to file for debugging and playback
- */
-function saveAudioChunk(sessionId, audioData, direction) {
-  try {
-    // Initialize session audio storage
-    if (!audioChunks.has(sessionId)) {
-      audioChunks.set(sessionId, {
-        incoming: [],
-        outgoing: [],
-        startTime: new Date(),
-      });
-    }
 
-    const sessionAudio = audioChunks.get(sessionId);
 
-    // Convert audio data to buffer
-    let audioBuffer;
-    if (direction === "incoming") {
-      // Incoming is already a buffer
-      audioBuffer = audioData;
-    } else {
-      // Outgoing is base64, decode it
-      audioBuffer = Buffer.from(audioData, "base64");
-    }
-
-    // Store chunk with timestamp
-    sessionAudio[direction].push({
-      timestamp: Date.now(),
-      data: audioBuffer,
-      size: audioBuffer.length,
-    });
-
-    console.log(
-      `💾 Saved ${direction} audio chunk: ${audioBuffer.length} bytes (Session: ${sessionId})`
-    );
-  } catch (error) {
-    console.error("❌ Error saving audio chunk:", error.message);
-  }
-}
-
-/**
- * Convert audio chunks to playable WAV file
- */
-function saveSessionAudioToFile(sessionId) {
-  try {
-    const sessionAudio = audioChunks.get(sessionId);
-    if (!sessionAudio) {
-      console.log("⚠️ No audio data found for session:", sessionId);
-      return;
-    }
-
-    const audioDir = path.join(__dirname, "../../audio_files");
-    if (!fs.existsSync(audioDir)) {
-      fs.mkdirSync(audioDir, { recursive: true });
-    }
-
-    // Save incoming audio (caller)
-    if (sessionAudio.incoming.length > 0) {
-      const incomingFile = path.join(audioDir, `${sessionId}_incoming.pcm`);
-      const incomingBuffer = Buffer.concat(
-        sessionAudio.incoming.map((chunk) => chunk.data)
-      );
-      fs.writeFileSync(incomingFile, incomingBuffer);
-      console.log(
-        `💾 Saved incoming audio: ${incomingFile} (${incomingBuffer.length} bytes)`
-      );
-
-      // Create WAV file for incoming audio
-      createWAVFile(incomingFile, `${sessionId}_incoming.wav`);
-    }
-
-    // Save outgoing audio (agent)
-    if (sessionAudio.outgoing.length > 0) {
-      const outgoingFile = path.join(audioDir, `${sessionId}_outgoing.pcm`);
-      const outgoingBuffer = Buffer.concat(
-        sessionAudio.outgoing.map((chunk) => chunk.data)
-      );
-      fs.writeFileSync(outgoingFile, outgoingBuffer);
-      console.log(
-        `💾 Saved outgoing audio: ${outgoingFile} (${outgoingBuffer.length} bytes)`
-      );
-
-      // Create WAV file for outgoing audio
-      createWAVFile(outgoingFile, `${sessionId}_outgoing.wav`);
-    }
-
-    // Create session summary
-    const summaryFile = path.join(audioDir, `${sessionId}_summary.json`);
-    const summary = {
-      sessionId,
-      startTime: sessionAudio.startTime,
-      endTime: new Date(),
-      incomingChunks: sessionAudio.incoming.length,
-      outgoingChunks: sessionAudio.outgoing.length,
-      totalIncomingBytes: sessionAudio.incoming.reduce(
-        (sum, chunk) => sum + chunk.size,
-        0
-      ),
-      totalOutgoingBytes: sessionAudio.outgoing.reduce(
-        (sum, chunk) => sum + chunk.size,
-        0
-      ),
-    };
-    fs.writeFileSync(summaryFile, JSON.stringify(summary, null, 2));
-    console.log(`📋 Session summary saved: ${summaryFile}`);
-  } catch (error) {
-    console.error("❌ Error saving session audio:", error.message);
-  }
-}
-
-/**
- * Create WAV file from PCM data
- */
-function createWAVFile(pcmFile, wavFileName) {
-  try {
-    const audioDir = path.dirname(pcmFile);
-    const wavFile = path.join(audioDir, wavFileName);
-    const pcmData = fs.readFileSync(pcmFile);
-
-    // WAV header for 16kHz, 16-bit, mono PCM
-    const header = Buffer.alloc(44);
-    const dataSize = pcmData.length;
-    const fileSize = 36 + dataSize;
-
-    // RIFF header
-    header.write("RIFF", 0);
-    header.writeUInt32LE(fileSize, 4);
-    header.write("WAVE", 8);
-
-    // fmt chunk
-    header.write("fmt ", 12);
-    header.writeUInt32LE(16, 16); // fmt chunk size
-    header.writeUInt16LE(1, 20); // PCM format
-    header.writeUInt16LE(1, 22); // mono
-    header.writeUInt32LE(16000, 24); // sample rate
-    header.writeUInt32LE(32000, 28); // byte rate
-    header.writeUInt16LE(2, 32); // block align
-    header.writeUInt16LE(16, 34); // bits per sample
-
-    // data chunk
-    header.write("data", 36);
-    header.writeUInt32LE(dataSize, 40);
-
-    // Combine header and data
-    const wavData = Buffer.concat([header, pcmData]);
-    fs.writeFileSync(wavFile, wavData);
-
-    console.log(`🎵 WAV file created: ${wavFile} (${wavData.length} bytes)`);
-  } catch (error) {
-    console.error("❌ Error creating WAV file:", error.message);
-  }
-}
 
 /**
  * Cleanup session resources
  */
 function cleanupSession(sessionId, agentConversation) {
   console.log("🧹 Cleaning up session:", sessionId);
-
-  // Save audio files before cleanup
-  if (audioChunks.has(sessionId)) {
-    console.log("🎵 Saving session audio files...");
-    saveSessionAudioToFile(sessionId);
-    audioChunks.delete(sessionId);
-  }
 
   // Check if connection exists before cleanup
   const hadConnection = activeConnections.has(sessionId);

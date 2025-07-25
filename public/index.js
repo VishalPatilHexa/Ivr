@@ -11,6 +11,7 @@ class HexahealthElevenLabsClient {
     this.audioQueue = [];
     this.isPlayingAudio = false;
     this.activeAudioSources = [];
+    this.agentSpeaking = false;
 
     this.initializeElements();
     this.setupEventListeners();
@@ -132,6 +133,7 @@ class HexahealthElevenLabsClient {
     this.ws.onclose = () => {
       this.isConnected = false;
       this.conversationActive = false;
+      this.agentSpeaking = false; // Reset agent speaking state
       this.updateConnectionStatus("Disconnected");
       this.connectBtn.textContent = "Connect";
       this.startRecordingBtn.disabled = true;
@@ -180,21 +182,29 @@ class HexahealthElevenLabsClient {
         break;
 
       case "agent_ready":
-        this.addMessage("system", "🤖 Agent is ready! You can now start recording.");
-        this.updateStepIndicator("Agent ready - click Start Recording to speak");
+        this.addMessage("system", "🤖 Agent is ready! Starting recording automatically...");
+        this.updateStepIndicator("Agent ready - recording started automatically");
         // Enable recording now that agent is ready
         this.conversationActive = true;
         this.startRecordingBtn.disabled = false;
+        
+        // Auto-start recording when agent is ready
+        setTimeout(() => {
+          this.startRecording(true); // Pass autoStart=true
+        }, 500); // Small delay to ensure everything is initialized
         break;
 
       case "agent_audio":
         // Handle streaming audio chunks from ElevenLabs agent
         if (data.audio) {
           console.log("🔊 Received agent audio chunk");
-          // Stop recording when agent starts speaking to prevent echo
+          // Mark agent as speaking
+          this.agentSpeaking = true;
+          // Immediately stop recording and all audio to prevent echo
           if (this.isRecording) {
             this.stopRecording();
           }
+          this.stopAllAudio(); // Stop any previous audio
           this.playAudioChunk(data.audio);
         }
         break;
@@ -203,10 +213,13 @@ class HexahealthElevenLabsClient {
         // Handle Knowlarity playAudio format
         if (data.data && data.data.audioContent) {
           console.log("🔊 Received Knowlarity playAudio message");
-          // Stop recording when agent starts speaking to prevent echo
+          // Mark agent as speaking
+          this.agentSpeaking = true;
+          // Immediately stop recording and all audio to prevent echo
           if (this.isRecording) {
             this.stopRecording();
           }
+          this.stopAllAudio(); // Stop any previous audio
           
           if (data.data.audioContentType === "raw") {
             // Raw PCM audio - play as base64
@@ -221,14 +234,20 @@ class HexahealthElevenLabsClient {
       case "agent_audio_end":
         // Agent finished speaking
         console.log("✅ Agent finished speaking");
-        this.updateStepIndicator("Agent finished speaking - you can respond now");
+        this.updateStepIndicator("Agent finished speaking - automatically resuming recording");
         
-        // Re-enable recording after a short delay to avoid echo
+        // Mark agent as no longer speaking
+        this.agentSpeaking = false;
+        
+        // Stop all audio first and wait longer to avoid echo
+        this.stopAllAudio();
+        
+        // Auto-restart recording after a longer delay to avoid echo
         setTimeout(() => {
-          if (!this.isRecording) {
-            this.startRecordingBtn.disabled = false;
+          if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
+            this.startRecording(true); // Auto-restart with autoStart=true
           }
-        }, 500);
+        }, 1000); // Increased delay to 1 second for better echo prevention
         break;
 
       case "agent_response":
@@ -253,6 +272,7 @@ class HexahealthElevenLabsClient {
 
       case "conversation-ended":
         this.conversationActive = false;
+        this.agentSpeaking = false; // Reset agent speaking state
         this.addMessage("system", "🔚 Conversation ended. Thank you!");
         this.updateStepIndicator("Conversation completed");
         break;
@@ -314,6 +334,12 @@ class HexahealthElevenLabsClient {
     try {
       console.log("🎵 Playing audio chunk, size:", base64Audio.length);
       
+      // Immediately stop recording to prevent echo
+      if (this.isRecording) {
+        console.log("🔇 Stopping recording immediately for audio chunk");
+        this.stopRecording();
+      }
+      
       // Resume audio context if suspended
       if (this.audioContext && this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
@@ -350,6 +376,12 @@ class HexahealthElevenLabsClient {
     try {
       console.log("🎵 Playing binary audio data");
       
+      // Immediately stop recording to prevent echo
+      if (this.isRecording) {
+        console.log("🔇 Stopping recording immediately for binary audio");
+        this.stopRecording();
+      }
+      
       // Resume audio context if suspended
       if (this.audioContext && this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
@@ -375,12 +407,18 @@ class HexahealthElevenLabsClient {
         
         // Track this source for cleanup
         this.activeAudioSources.push(source);
+        this.isPlayingAudio = true;
         
         // Remove from tracking when finished
         source.onended = () => {
           const index = this.activeAudioSources.indexOf(source);
           if (index > -1) {
             this.activeAudioSources.splice(index, 1);
+          }
+          // Check if all audio sources are finished
+          if (this.activeAudioSources.length === 0) {
+            console.log("🔇 All audio playback finished");
+            this.isPlayingAudio = false;
           }
         };
         
@@ -435,12 +473,18 @@ class HexahealthElevenLabsClient {
       
       // Track this source for cleanup
       this.activeAudioSources.push(source);
+      this.isPlayingAudio = true;
       
       // Remove from tracking when finished
       source.onended = () => {
         const index = this.activeAudioSources.indexOf(source);
         if (index > -1) {
           this.activeAudioSources.splice(index, 1);
+        }
+        // Check if all audio sources are finished
+        if (this.activeAudioSources.length === 0) {
+          console.log("🔇 All PCM audio playback finished");
+          this.isPlayingAudio = false;
         }
       };
       
@@ -484,6 +528,12 @@ class HexahealthElevenLabsClient {
 
   async playPCMAudio(base64Audio) {
     try {
+      // Immediately stop recording to prevent echo
+      if (this.isRecording) {
+        console.log("🔇 Stopping recording immediately for PCM audio");
+        this.stopRecording();
+      }
+      
       // ElevenLabs sends PCM 16kHz data, we need to create a proper WAV header
       const pcmData = atob(base64Audio);
       const pcmArray = new Int16Array(pcmData.length / 2);
@@ -564,9 +614,17 @@ class HexahealthElevenLabsClient {
     this.stepIndicator.style.display = "block";
   }
 
-  async startRecording() {
+  async startRecording(autoStart = false) {
     if (!this.conversationActive) {
-      alert("Please start a conversation first.");
+      if (!autoStart) {
+        alert("Please start a conversation first.");
+      }
+      return;
+    }
+
+    // Prevent recording while agent is speaking
+    if (this.agentSpeaking) {
+      console.log("🔇 Cannot start recording - agent is currently speaking");
       return;
     }
 
@@ -580,7 +638,13 @@ class HexahealthElevenLabsClient {
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          googEchoCancellation: true,
+          googAutoGainControl: true,
+          googNoiseSuppression: true,
+          googHighpassFilter: true,
+          googTypingNoiseDetection: true,
+          googAudioMirroring: false
         }
       });
       
@@ -593,6 +657,11 @@ class HexahealthElevenLabsClient {
       const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
       
       processor.onaudioprocess = (event) => {
+        // Don't process audio if agent is speaking or not recording
+        if (this.agentSpeaking || !this.isRecording) {
+          return;
+        }
+        
         const inputBuffer = event.inputBuffer;
         const inputData = inputBuffer.getChannelData(0);
         
@@ -629,7 +698,12 @@ class HexahealthElevenLabsClient {
       console.log("🎙️ Started recording with direct PCM processing");
     } catch (error) {
       console.error("Error starting recording:", error);
-      alert("Unable to access microphone. Please check permissions.");
+      if (!autoStart) {
+        alert("Unable to access microphone. Please check permissions.");
+      } else {
+        this.addMessage("system", "⚠️ Unable to access microphone. Please click 'Start Recording' and grant permissions.");
+        this.updateStepIndicator("Please grant microphone permissions and click Start Recording");
+      }
     }
   }
 

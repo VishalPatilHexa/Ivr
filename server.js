@@ -5,19 +5,6 @@ const cors = require("cors");
 
 require("dotenv").config();
 
-// Import function-based services
-const { 
-  createConversation,
-  sendAudioToAgent,
-  setClientMessageHandler,
-  endConversation 
-} = require("./services/elevenLabsAgent");
-
-const { 
-  getCallSession,
-  handleCallStatusUpdate 
-} = require("./src/knowlarity/outboundCallManager");
-
 const { 
   handleConnection,
   transferCall,

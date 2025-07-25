@@ -180,6 +180,7 @@ async function handleElevenLabsMessage(sessionId, messageData) {
         break;
 
       case 'agent_response_audio_delta':
+        //calling this function for each audio chunk
         handleAgentAudioChunk(sessionId, parsedMessage);
         break;
 

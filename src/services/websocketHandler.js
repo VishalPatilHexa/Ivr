@@ -359,15 +359,35 @@ function handleInitialMetadata(metadataMessage, sessionId) {
     let rawMessage = metadataMessage.toString();
     console.log("📋 Raw metadata message:", rawMessage);
     
-    // Fix Knowlarity's invalid JSON format (single quotes to double quotes)
+    // Fix Knowlarity's invalid JSON format
+    let connectionMetadata;
     if (rawMessage.includes("'")) {
-      console.log("🔧 Fixing single quotes in JSON...");
-      rawMessage = rawMessage.replace(/'/g, '"');
-      console.log("📋 Fixed metadata message:", rawMessage);
+      console.log("🔧 Fixing Knowlarity JSON format...");
+      
+      try {
+        // Method 1: Try simple quote replacement
+        let fixedMessage = rawMessage.replace(/'/g, '"');
+        connectionMetadata = JSON.parse(fixedMessage);
+        console.log("✅ JSON parsed successfully with simple quote fix");
+      } catch (error1) {
+        console.log("⚠️ Simple quote fix failed, trying advanced parsing...");
+        
+        try {
+          // Method 2: Use eval (not ideal but works for this specific case)
+          console.log("🔧 Using eval to parse malformed JSON...");
+          connectionMetadata = eval('(' + rawMessage + ')');
+          console.log("✅ JSON parsed successfully with eval");
+        } catch (error2) {
+          console.log("❌ Both parsing methods failed");
+          console.log("Error 1:", error1.message);
+          console.log("Error 2:", error2.message);
+          throw error2;
+        }
+      }
+    } else {
+      // Normal JSON parsing
+      connectionMetadata = JSON.parse(rawMessage);
     }
-    
-    // METADATA PARSING: Extract call information from client
-    const connectionMetadata = JSON.parse(rawMessage);
     console.log("📋 Received metadata for session:", sessionId);
     console.log("📊 Metadata keys:", Object.keys(connectionMetadata));
     console.log("📊 Metadata details:", JSON.stringify(connectionMetadata, null, 2));

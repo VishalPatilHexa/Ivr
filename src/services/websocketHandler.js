@@ -1,4 +1,5 @@
 const WebSocket = require("ws");
+var base64 = require("base-64");
 
 /*
  * ===============================================================================
@@ -58,16 +59,12 @@ function handleConnection(websocket, request) {
  */
 function handleKnowlarityStream(websocket, urlPath) {
   const sessionId = urlPath.split("/")[2];
-  console.log("🔥 KNOWLARITY WEBSOCKET CONNECTION CREATED 🔥");
-  console.log("📞 New Knowlarity call stream connection for session:", sessionId);
+  console.log(
+    "📞 New Knowlarity call stream connection for session:",
+    sessionId
+  );
   console.log("🔍 URL Path:", urlPath);
   console.log("🌐 WebSocket Ready State:", websocket.readyState);
-  console.log("📋 Connection Details:", {
-    sessionId: sessionId,
-    urlPath: urlPath,
-    readyState: websocket.readyState,
-    timestamp: new Date().toISOString()
-  });
 
   // STEP 1: Store connection and setup call session
   // Detect client type from session ID or will be updated from metadata
@@ -90,7 +87,6 @@ function handleKnowlarityStream(websocket, urlPath) {
       createdAt: new Date(),
       isExternal: true,
       source: "knowlarity",
-      metadata: {}, // Will be populated from initial metadata
     };
     console.log("✅ Temporary session created for external call:", sessionId);
     console.log("📋 Session details:", JSON.stringify(callSession, null, 2));
@@ -112,21 +108,9 @@ function handleKnowlarityStream(websocket, urlPath) {
         sessionId
       );
 
-      // Pass metadata to ElevenLabs
-      const conversationContext = {
-        treatmentType: callSession.patientData?.treatmentType || callSession.metadata?.treatmentType || "general consultation",
-        patientName: callSession.metadata?.patientName || "Patient",
-        patientAge: callSession.metadata?.patientAge || "",
-        symptoms: callSession.metadata?.symptoms || "",
-        medicalHistory: callSession.metadata?.medicalHistory || "",
-        appointmentType: callSession.metadata?.appointmentType || "consultation",
-        doctorName: callSession.metadata?.doctorName || "",
-        customInstructions: callSession.metadata?.customInstructions || ""
-      };
-
       agentConversation = await elevenLabsAgentService.createConversation(
         sessionId,
-        conversationContext
+        callSession.patientData?.treatmentType || "general consultation"
       );
 
       // STEP 3: Setup bidirectional audio streaming
@@ -153,19 +137,15 @@ function handleKnowlarityStream(websocket, urlPath) {
 
 
   websocket.on("message", async (incomingMessage) => {
-    console.log("🔥 KNOWLARITY MESSAGE RECEIVED 🔥");
-    console.log("📬 Session:", sessionId);
-    console.log("📦 Message Type:", incomingMessage instanceof Buffer ? "Binary" : "Text");
-    console.log("📏 Message Size:", incomingMessage.length, "bytes");
-    
-    // Log first few messages in detail
-    if (messageCount < 3) {
-      console.log("📋 Raw Message (first 3 messages):", incomingMessage.toString());
-    }
+    console.log(
+      "🔗 Incoming WebSocket message for session:-------------------------------------------------",
+      incomingMessage
+    );
 
     try {
       messageCount++;
-      console.log(`📬 Message #${messageCount} for session ${sessionId}:`,
+      console.log(
+        `📬 Message #${messageCount} for session ${sessionId}:`,
         incomingMessage instanceof Buffer
           ? `Binary (${incomingMessage.length} bytes)`
           : "Text"
@@ -173,11 +153,10 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
-        console.log("🔥 FIRST MESSAGE FROM KNOWLARITY (METADATA) 🔥");
-        console.log("🎆 Processing first message (metadata) for session:", sessionId);
-        console.log("📋 First Message Content:", incomingMessage.toString());
-        console.log("📏 First Message Size:", incomingMessage.length, "bytes");
-        
+        console.log(
+          "🎆 Processing first message (metadata) for session:",
+          sessionId
+        );
         handleInitialMetadata(incomingMessage, sessionId);
         isFirstMessage = false;
         return;
@@ -185,36 +164,27 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       // Route audio and control messages
       if (incomingMessage instanceof Buffer) {
-        console.log("🔥 BINARY MESSAGE FROM KNOWLARITY 🔥");
-        console.log("📦 Binary data size:", incomingMessage.length, "bytes");
-        
         // Try to parse as JSON first (for client audio messages)
         try {
           const messageStr = incomingMessage.toString();
           const parsedMessage = JSON.parse(messageStr);
           
-          console.log("📋 Binary message parsed as JSON:", Object.keys(parsedMessage));
-          
           if (parsedMessage.type === 'audio-chunk' && parsedMessage.audio) {
             console.log("🎵 Processing JSON audio chunk for session:", sessionId);
-            console.log("🎵 Audio chunk size:", parsedMessage.audio.length, "characters");
             // Convert base64 audio to binary
             const audioBuffer = Buffer.from(parsedMessage.audio, 'base64');
             await handleIncomingAudio(audioBuffer, sessionId, agentConversation);
           } else {
             console.log("📝 Processing JSON control message for session:", sessionId);
-            console.log("📝 Control message type:", parsedMessage.type);
             handleControlMessages(messageStr, sessionId, agentConversation);
           }
         } catch (parseError) {
           // Not JSON, treat as binary audio
-          console.log("🎵 Raw binary audio data from Knowlarity (not JSON)");
-          console.log("🎵 Raw audio size:", incomingMessage.length, "bytes");
+          console.log("🎵 Processing binary audio data for session:", sessionId);
           await handleIncomingAudio(incomingMessage, sessionId, agentConversation);
         }
       } else {
-        console.log("🔥 TEXT MESSAGE FROM KNOWLARITY 🔥");
-        console.log("📝 Text message content:", incomingMessage.toString());
+        console.log("📝 Processing control message for session:", sessionId);
         handleControlMessages(incomingMessage, sessionId, agentConversation);
       }
     } catch (error) {
@@ -354,14 +324,13 @@ function setupAudioStreaming(sessionId) {
  */
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
-    console.log("🔥 PARSING KNOWLARITY METADATA 🔥");
-    console.log("📋 Raw metadata message:", metadataMessage.toString());
-    
     // METADATA PARSING: Extract call information from client
     const connectionMetadata = JSON.parse(metadataMessage);
     console.log("📋 Received metadata for session:", sessionId);
-    console.log("📊 Metadata keys:", Object.keys(connectionMetadata));
-    console.log("📊 Metadata details:", JSON.stringify(connectionMetadata, null, 2));
+    console.log(
+      "📊 Metadata details:",
+      JSON.stringify(connectionMetadata, null, 2)
+    );
 
     // UPDATE CLIENT TYPE: Update connection type based on metadata
     const connection = activeConnections.get(sessionId);
@@ -369,15 +338,6 @@ function handleInitialMetadata(metadataMessage, sessionId) {
       if (connectionMetadata.type === 'web_client_connection') {
         connection.clientType = 'web_client';
         console.log("🔄 Updated client type to web_client for session:", sessionId);
-        
-        // Store metadata from web client
-        if (connectionMetadata.metadata) {
-          const callSession = getCallSession(sessionId);
-          if (callSession) {
-            callSession.metadata = { ...callSession.metadata, ...connectionMetadata.metadata };
-            console.log("📋 Stored web client metadata:", JSON.stringify(connectionMetadata.metadata, null, 2));
-          }
-        }
       } else if (connectionMetadata.ivr_data || connectionMetadata.callid) {
         // This is Knowlarity metadata format
         connection.clientType = 'knowlarity';

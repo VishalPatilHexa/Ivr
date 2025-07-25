@@ -355,10 +355,19 @@ function setupAudioStreaming(sessionId) {
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     console.log("🔥 PARSING KNOWLARITY METADATA 🔥");
-    console.log("📋 Raw metadata message:", metadataMessage.toString());
+    
+    let rawMessage = metadataMessage.toString();
+    console.log("📋 Raw metadata message:", rawMessage);
+    
+    // Fix Knowlarity's invalid JSON format (single quotes to double quotes)
+    if (rawMessage.includes("'")) {
+      console.log("🔧 Fixing single quotes in JSON...");
+      rawMessage = rawMessage.replace(/'/g, '"');
+      console.log("📋 Fixed metadata message:", rawMessage);
+    }
     
     // METADATA PARSING: Extract call information from client
-    const connectionMetadata = JSON.parse(metadataMessage);
+    const connectionMetadata = JSON.parse(rawMessage);
     console.log("📋 Received metadata for session:", sessionId);
     console.log("📊 Metadata keys:", Object.keys(connectionMetadata));
     console.log("📊 Metadata details:", JSON.stringify(connectionMetadata, null, 2));
@@ -382,6 +391,24 @@ function handleInitialMetadata(metadataMessage, sessionId) {
         // This is Knowlarity metadata format
         connection.clientType = 'knowlarity';
         console.log("🔄 Confirmed client type as knowlarity for session:", sessionId);
+        
+        // Extract patient data from Knowlarity session_metadata
+        if (connectionMetadata.session_metadata) {
+          console.log("📋 Found Knowlarity session_metadata!");
+          const sessionMeta = connectionMetadata.session_metadata;
+          const callSession = getCallSession(sessionId);
+          if (callSession) {
+            callSession.metadata = {
+              treatmentType: sessionMeta.treatment_type || 'general consultation',
+              patientName: sessionMeta.patient_name || 'Patient',
+              patientPhone: sessionMeta.patient_phone || '',
+              callType: sessionMeta.call_type || 'outbound',
+              healthcareProvider: sessionMeta.healthcare_provider || 'HexaHealth',
+              patientId: sessionMeta.patient_id || sessionId
+            };
+            console.log("📋 Stored Knowlarity patient metadata:", JSON.stringify(callSession.metadata, null, 2));
+          }
+        }
       }
     }
 

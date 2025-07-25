@@ -173,6 +173,7 @@ class HexahealthElevenLabsClient {
   }
 
   handleMessage(data) {
+    console.log("🔍 Processing message type:", data.type, "agentSpeaking:", this.agentSpeaking, "isRecording:", this.isRecording);
     switch (data.type) {
       case "conversation-started":
         this.sessionId = data.sessionId;
@@ -197,26 +198,32 @@ class HexahealthElevenLabsClient {
       case "agent_audio":
         // Handle streaming audio chunks from ElevenLabs agent
         if (data.audio) {
-          console.log("🔊 Received agent audio chunk");
+          console.log("🔊 Received agent audio chunk, agentSpeaking was:", this.agentSpeaking);
           // Mark agent as speaking
           this.agentSpeaking = true;
+          console.log("🔊 Set agentSpeaking to true, isRecording:", this.isRecording);
           // Immediately stop recording and all audio to prevent echo
           if (this.isRecording) {
+            console.log("🔇 Stopping recording for agent audio");
             this.stopRecording();
           }
           this.stopAllAudio(); // Stop any previous audio
           this.playAudioChunk(data.audio);
+        } else {
+          console.log("⚠️ Received agent_audio message but no audio data");
         }
         break;
 
       case "playAudio":
         // Handle Knowlarity playAudio format
         if (data.data && data.data.audioContent) {
-          console.log("🔊 Received Knowlarity playAudio message");
+          console.log("🔊 Received Knowlarity playAudio message, agentSpeaking was:", this.agentSpeaking);
           // Mark agent as speaking
           this.agentSpeaking = true;
+          console.log("🔊 Set agentSpeaking to true for playAudio, isRecording:", this.isRecording);
           // Immediately stop recording and all audio to prevent echo
           if (this.isRecording) {
+            console.log("🔇 Stopping recording for playAudio");
             this.stopRecording();
           }
           this.stopAllAudio(); // Stop any previous audio
@@ -228,6 +235,8 @@ class HexahealthElevenLabsClient {
             // WAV format - convert and play
             this.playWaveAudio(data.data.audioContent);
           }
+        } else {
+          console.log("⚠️ Received playAudio message but no audio content");
         }
         break;
 
@@ -429,7 +438,7 @@ class HexahealthElevenLabsClient {
           }
           // Check if all audio sources are finished
           if (this.activeAudioSources.length === 0) {
-            console.log("🔇 All audio playback finished");
+            console.log("🔇 All audio playback finished, remaining sources:", this.activeAudioSources.length);
             this.isPlayingAudio = false;
             // Reset agent speaking flag when audio finishes
             this.agentSpeaking = false;
@@ -437,9 +446,12 @@ class HexahealthElevenLabsClient {
             
             // Auto-restart recording after audio finishes
             setTimeout(() => {
+              console.log("🔍 Checking if can restart recording - isRecording:", this.isRecording, "conversationActive:", this.conversationActive, "agentSpeaking:", this.agentSpeaking);
               if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
                 console.log("🎙️ Auto-restarting recording after audio finished");
                 this.startRecording(true);
+              } else {
+                console.log("❌ Cannot restart recording - conditions not met");
               }
             }, 500);
           }

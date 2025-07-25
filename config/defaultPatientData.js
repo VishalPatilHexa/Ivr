@@ -16,21 +16,21 @@
 const DEFAULT_PATIENT_DATA = {
   // Primary treatment information
   treatmentType: 'Heart Surgery',
-  appointmentType: 'consultation',
+  appointmentType: 'phone_consultation',
   
   // Patient demographics
-  patientName: 'Vishal',
+  patientName: 'Vishal Patil',
   patientAge: '30',
   
   // Medical information
-  symptoms: 'Heart related consultation needed',
-  medicalHistory: 'No major medical history',
+  symptoms: 'Heart related consultation needed for cardiac evaluation',
+  medicalHistory: 'No major medical history, first time consultation',
   
   // Healthcare provider
   doctorName: 'Dr. Sharma',
   
   // Additional instructions
-  customInstructions: 'Please provide detailed consultation in Hindi',
+  customInstructions: 'Please provide detailed consultation in Hindi language',
   
   // System settings
   language: 'hindi',

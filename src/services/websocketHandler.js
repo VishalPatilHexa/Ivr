@@ -176,16 +176,28 @@ function handleKnowlarityStream(websocket, urlPath) {
           : "Text"
       );
 
-      // Handle initial metadata from Knowlarity
+      // Handle initial metadata from Knowlarity (only if it looks like JSON)
       if (isFirstMessage) {
-        console.log("🔥 FIRST MESSAGE FROM KNOWLARITY (METADATA) 🔥");
-        console.log("🎆 Processing first message (metadata) for session:", sessionId);
-        console.log("📋 First Message Content:", incomingMessage.toString());
-        console.log("📏 First Message Size:", incomingMessage.length, "bytes");
+        const messageStr = incomingMessage.toString();
         
-        await handleInitialMetadata(incomingMessage, sessionId, initializeAgentConversation);
-        isFirstMessage = false;
-        return;
+        // Check if this looks like JSON metadata (contains typical metadata fields)
+        if (messageStr.includes('callid') || messageStr.includes('session_metadata') || messageStr.includes('ivr_data')) {
+          console.log("🔥 FIRST MESSAGE FROM KNOWLARITY (METADATA) 🔥");
+          console.log("🎆 Processing first message (metadata) for session:", sessionId);
+          console.log("📋 First Message Content:", messageStr);
+          console.log("📏 First Message Size:", incomingMessage.length, "bytes");
+          
+          await handleInitialMetadata(incomingMessage, sessionId, initializeAgentConversation);
+          isFirstMessage = false;
+          return;
+        } else {
+          // First message is not metadata, it's audio - initialize conversation with defaults
+          console.log("🔥 FIRST MESSAGE IS AUDIO, NOT METADATA 🔥");
+          console.log("🚀 Initializing ElevenLabs conversation with defaults...");
+          await initializeAgentConversation();
+          isFirstMessage = false;
+          // Continue processing this message as audio below
+        }
       }
 
       // Route audio and control messages

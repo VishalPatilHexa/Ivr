@@ -23,14 +23,14 @@ var base64 = require("base-64");
 const activeConnections = new Map();
 
 // Import service modules directly
-const elevenLabsAgentService = require('../../services/elevenLabsAgent');
-const callManagerService = require('../knowlarity/outboundCallManager');
+const elevenLabsAgentService = require("../../services/elevenLabsAgent");
+const callManagerService = require("../knowlarity/outboundCallManager");
 
 /**
  * Initialize WebSocket handler - now using direct imports
  */
 function initializeWebSocketHandler() {
-  console.log('✅ WebSocket handler initialized with direct service imports');
+  console.log("✅ WebSocket handler initialized with direct service imports");
 }
 
 /**
@@ -68,15 +68,20 @@ function handleKnowlarityStream(websocket, urlPath) {
 
   // STEP 1: Store connection and setup call session
   // Detect client type from session ID or will be updated from metadata
-  const clientType = sessionId.startsWith('web_') ? 'web_client' : 'knowlarity';
-  
-  activeConnections.set(sessionId, { 
-    websocket, 
+  const clientType = sessionId.startsWith("web_") ? "web_client" : "knowlarity";
+
+  activeConnections.set(sessionId, {
+    websocket,
     clientType,
     connectedAt: new Date(),
-    agentConversation: null  // Will be set when ElevenLabs agent is initialized
+    agentConversation: null, // Will be set when ElevenLabs agent is initialized
   });
-  console.log("💾 Stored connection for session:", sessionId, "type:", clientType);
+  console.log(
+    "💾 Stored connection for session:",
+    sessionId,
+    "type:",
+    clientType
+  );
   console.log("📊 Total active connections:", activeConnections.size);
 
   let callSession = getCallSession(sessionId);
@@ -123,14 +128,16 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       // STEP 3: Setup bidirectional audio streaming
       setupAudioStreaming(sessionId);
-      
+
       // STEP 4: Notify client that agent is ready
       if (connection?.websocket?.readyState === WebSocket.OPEN) {
-        connection.websocket.send(JSON.stringify({
-          type: 'agent_ready',
-          message: 'ElevenLabs agent is ready for conversation'
-        }));
-        console.log('📤 Sent agent_ready notification to client');
+        connection.websocket.send(
+          JSON.stringify({
+            type: "agent_ready",
+            message: "ElevenLabs agent is ready for conversation",
+          })
+        );
+        console.log("📤 Sent agent_ready notification to client");
       }
     } catch (error) {
       console.error("❌ Error creating ElevenLabs conversation:", error);
@@ -141,7 +148,6 @@ function handleKnowlarityStream(websocket, urlPath) {
   // STEP 4: Setup message handling for audio streaming
   let isFirstMessage = true;
   let messageCount = 0;
- 
 
   websocket.on("message", async (incomingMessage) => {
     try {
@@ -164,20 +170,37 @@ function handleKnowlarityStream(websocket, urlPath) {
         try {
           const messageStr = incomingMessage.toString();
           const parsedMessage = JSON.parse(messageStr);
-          
-          if (parsedMessage.type === 'audio-chunk' && parsedMessage.audio) {
-            console.log("🎵 Processing JSON audio chunk for session:", sessionId);
+
+          if (parsedMessage.type === "audio-chunk" && parsedMessage.audio) {
+            console.log(
+              "🎵 Processing JSON audio chunk for session:",
+              sessionId
+            );
             // Convert base64 audio to binary
-            const audioBuffer = Buffer.from(parsedMessage.audio, 'base64');
-            await handleIncomingAudio(audioBuffer, sessionId, agentConversation);
+            const audioBuffer = Buffer.from(parsedMessage.audio, "base64");
+            await handleIncomingAudio(
+              audioBuffer,
+              sessionId,
+              agentConversation
+            );
           } else {
-            console.log("📝 Processing JSON control message for session:", sessionId);
+            console.log(
+              "📝 Processing JSON control message for session:",
+              sessionId
+            );
             handleControlMessages(messageStr, sessionId, agentConversation);
           }
         } catch (parseError) {
           // Not JSON, treat as binary audio
-          console.log("🎵 Processing binary audio data for session:", sessionId);
-          await handleIncomingAudio(incomingMessage, sessionId, agentConversation);
+          console.log(
+            "🎵 Processing binary audio data for session:",
+            sessionId
+          );
+          await handleIncomingAudio(
+            incomingMessage,
+            sessionId,
+            agentConversation
+          );
         }
       } else {
         console.log("📝 Processing control message for session:", sessionId);
@@ -252,8 +275,8 @@ function setupAudioStreaming(sessionId) {
           console.log("🔊 Streaming agent audio to caller");
 
           // Check client type from stored connection data
-          const isWebClient = connection.clientType === 'web_client';
-          
+          const isWebClient = connection.clientType === "web_client";
+
           if (!isWebClient) {
             // KNOWLARITY FORMAT: Send as playAudio JSON message
             // Note: Knowlarity expects raw PCM audio with specific sample rate
@@ -261,29 +284,39 @@ function setupAudioStreaming(sessionId) {
               type: "playAudio",
               data: {
                 audioContentType: "raw",
-                sampleRate: 16000,  // ElevenLabs uses 16kHz
-                audioContent: agentMessage.audio  // base64 encoded raw PCM
-              }
+                sampleRate: 16000, // ElevenLabs uses 16kHz
+                audioContent: agentMessage.audio, // base64 encoded raw PCM
+              },
             };
-            
-            console.log(`📤 Sending Knowlarity playAudio message (${agentMessage.audio.length} chars base64)`);
-            
+
+            console.log(
+              `📤 Sending Knowlarity playAudio message (${agentMessage.audio.length} chars base64)`
+            );
+
             try {
               connection.websocket.send(JSON.stringify(knowlarityAudioMessage));
               console.log("✅ Knowlarity audio JSON sent successfully");
             } catch (sendError) {
-              console.error("❌ Failed to send Knowlarity audio:", sendError.message);
+              console.error(
+                "❌ Failed to send Knowlarity audio:",
+                sendError.message
+              );
             }
           } else {
             // BROWSER FORMAT: Convert base64 to binary for web clients
-            const audioBuffer = Buffer.from(agentMessage.audio, 'base64');
-            console.log(`📤 Sending ${audioBuffer.length} bytes of audio to web client`);
-            
+            const audioBuffer = Buffer.from(agentMessage.audio, "base64");
+            console.log(
+              `📤 Sending ${audioBuffer.length} bytes of audio to web client`
+            );
+
             try {
               connection.websocket.send(audioBuffer);
               console.log("✅ Web client audio sent successfully");
             } catch (sendError) {
-              console.error("❌ Failed to send web client audio:", sendError.message);
+              console.error(
+                "❌ Failed to send web client audio:",
+                sendError.message
+              );
             }
           }
         }
@@ -321,8 +354,22 @@ function setupAudioStreaming(sessionId) {
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     // METADATA PARSING: Extract call information from client
-    // Fix single quotes to double quotes for valid JSON using replaceAll
-    const fixedMetadata = metadataMessage.toString().replaceAll("'", '"');
+    // Fix complex nested JSON with step-by-step approach
+    let fixedMetadata = metadataMessage.toString();
+
+    // Step 1: Remove problematic template variables
+    fixedMetadata = fixedMetadata.replace(
+      /,\s*'event_timestamp':\s*'[^']*'/,
+      ""
+    );
+    fixedMetadata = fixedMetadata.replace(/,\s*'initiated_at':\s*'[^']*'/, "");
+
+    // Step 2: Fix nested object quotes (remove single quotes wrapping inner objects)
+    fixedMetadata = fixedMetadata.replace(/'\{/g, "{").replace(/\}'/g, "}");
+
+    // Step 3: Replace remaining single quotes with double quotes
+    fixedMetadata = fixedMetadata.replace(/'/g, '"');
+
     const connectionMetadata = JSON.parse(fixedMetadata);
     console.log("📋 Received metadata for session:", sessionId);
     console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");
@@ -335,13 +382,19 @@ function handleInitialMetadata(metadataMessage, sessionId) {
     // UPDATE CLIENT TYPE: Update connection type based on metadata
     const connection = activeConnections.get(sessionId);
     if (connection) {
-      if (connectionMetadata.type === 'web_client_connection') {
-        connection.clientType = 'web_client';
-        console.log("🔄 Updated client type to web_client for session:", sessionId);
+      if (connectionMetadata.type === "web_client_connection") {
+        connection.clientType = "web_client";
+        console.log(
+          "🔄 Updated client type to web_client for session:",
+          sessionId
+        );
       } else if (connectionMetadata.ivr_data || connectionMetadata.callid) {
         // This is Knowlarity metadata format
-        connection.clientType = 'knowlarity';
-        console.log("🔄 Confirmed client type as knowlarity for session:", sessionId);
+        connection.clientType = "knowlarity";
+        console.log(
+          "🔄 Confirmed client type as knowlarity for session:",
+          sessionId
+        );
       }
     }
 
@@ -384,10 +437,9 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     "bytes"
   );
 
-
   // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const audioBase64Data = audioBuffer.toString('base64');
+  const audioBase64Data = audioBuffer.toString("base64");
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {
@@ -455,7 +507,8 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
     console.log("📞 Call stream closed for session:", sessionId);
     // Get the agent conversation from the stored connection
     const connection = activeConnections.get(sessionId);
-    const storedAgentConversation = connection?.agentConversation || agentConversation;
+    const storedAgentConversation =
+      connection?.agentConversation || agentConversation;
     cleanupSession(sessionId, storedAgentConversation);
   });
 
@@ -464,7 +517,8 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
     console.error("❌ WebSocket error:", connectionError);
     // Get the agent conversation from the stored connection
     const connection = activeConnections.get(sessionId);
-    const storedAgentConversation = connection?.agentConversation || agentConversation;
+    const storedAgentConversation =
+      connection?.agentConversation || agentConversation;
     cleanupSession(sessionId, storedAgentConversation);
     handleCallStatusUpdate(sessionId, {
       status: "failed",
@@ -472,9 +526,6 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
     });
   });
 }
-
-
-
 
 /**
  * Cleanup session resources
@@ -607,7 +658,7 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
     console.log("⚠️ Invalid sessionId provided for status update:", sessionId);
     return;
   }
-  
+
   if (!statusUpdate || !statusUpdate.status) {
     console.log("⚠️ Invalid statusUpdate provided for session:", sessionId);
     return;
@@ -622,8 +673,8 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
 
   try {
     // Check if this is a web client session (sessions starting with 'web_')
-    const isWebClientSession = sessionId.startsWith('web_');
-    
+    const isWebClientSession = sessionId.startsWith("web_");
+
     if (isWebClientSession) {
       console.log("ℹ️ Web client session detected - attempting status update");
     }
@@ -637,27 +688,30 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
       "gracefully handling this case"
     );
     console.log("🔍 Error details:", error.message);
-    
+
     // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
-    if (statusUpdate.isExternal || sessionId.startsWith('web_')) {
+    if (statusUpdate.isExternal || sessionId.startsWith("web_")) {
       console.log(
         "ℹ️ This is an external/web client session - status update failure is normal and handled gracefully"
       );
-      
+
       // Log the attempted status update for monitoring purposes
       console.log("📊 Attempted status update details:", {
         sessionId,
         status: statusUpdate.status,
         isExternal: statusUpdate.isExternal,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
-      
+
       // Continue gracefully without throwing
       return;
     }
-    
+
     // For internal sessions, we might want to log this as a more serious issue
-    console.error("❌ Unexpected status update failure for internal session:", sessionId);
+    console.error(
+      "❌ Unexpected status update failure for internal session:",
+      sessionId
+    );
   }
 }
 

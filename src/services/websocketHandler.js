@@ -314,7 +314,9 @@ function setupAudioStreaming(sessionId) {
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     // METADATA PARSING: Extract call information from client
-    const connectionMetadata = JSON.parse(metadataMessage);
+    // Fix single quotes to double quotes for valid JSON
+    const fixedMetadata = metadataMessage.toString().replace(/'/g, '"');
+    const connectionMetadata = JSON.parse(fixedMetadata);
     console.log("📋 Received metadata for session:", sessionId);
     console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");
     console.log(

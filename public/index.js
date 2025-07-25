@@ -359,6 +359,18 @@ class HexahealthElevenLabsClient {
         this.playPCMAudio(base64Audio);
       };
       
+      audio.onended = () => {
+        console.log("✅ Regular audio playback finished");
+        this.agentSpeaking = false;
+        // Auto-restart recording
+        setTimeout(() => {
+          if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
+            console.log("🎙️ Auto-restarting recording after regular audio");
+            this.startRecording(true);
+          }
+        }, 500);
+      };
+      
       audio.play().catch(error => {
         console.error("Error playing audio chunk:", error);
         // Try PCM conversion as fallback
@@ -419,6 +431,17 @@ class HexahealthElevenLabsClient {
           if (this.activeAudioSources.length === 0) {
             console.log("🔇 All audio playback finished");
             this.isPlayingAudio = false;
+            // Reset agent speaking flag when audio finishes
+            this.agentSpeaking = false;
+            console.log("✅ Agent speaking flag reset - ready for recording");
+            
+            // Auto-restart recording after audio finishes
+            setTimeout(() => {
+              if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
+                console.log("🎙️ Auto-restarting recording after audio finished");
+                this.startRecording(true);
+              }
+            }, 500);
           }
         };
         
@@ -485,6 +508,17 @@ class HexahealthElevenLabsClient {
         if (this.activeAudioSources.length === 0) {
           console.log("🔇 All PCM audio playback finished");
           this.isPlayingAudio = false;
+          // Reset agent speaking flag when audio finishes
+          this.agentSpeaking = false;
+          console.log("✅ Agent speaking flag reset - ready for recording");
+          
+          // Auto-restart recording after audio finishes
+          setTimeout(() => {
+            if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
+              console.log("🎙️ Auto-restarting recording after PCM audio finished");
+              this.startRecording(true);
+            }
+          }, 500);
         }
       };
       

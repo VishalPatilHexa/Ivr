@@ -11,8 +11,6 @@ class HexahealthElevenLabsClient {
     this.audioQueue = [];
     this.isPlayingAudio = false;
     this.activeAudioSources = [];
-    this.agentSpeaking = false;
-    this.currentAudioSource = null;
 
     this.initializeElements();
     this.setupEventListeners();
@@ -21,7 +19,8 @@ class HexahealthElevenLabsClient {
 
   async setupAudioContext() {
     try {
-      this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      this.audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)();
       console.log("🎵 Audio context initialized");
     } catch (error) {
       console.error("❌ Audio context setup failed:", error);
@@ -30,7 +29,8 @@ class HexahealthElevenLabsClient {
 
   generateSessionId() {
     if (!this.sessionId) {
-      this.sessionId = 'web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      this.sessionId =
+        "web_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
     }
     return this.sessionId;
   }
@@ -48,16 +48,18 @@ class HexahealthElevenLabsClient {
     this.stepIndicator = document.getElementById("stepIndicator");
     this.patientQuery = document.getElementById("patientQuery");
     this.voiceSelect = document.getElementById("voiceSelect");
-    
+
     // Remove voice select since ElevenLabs agent handles this
     if (this.voiceSelect) {
-      this.voiceSelect.style.display = 'none';
+      this.voiceSelect.style.display = "none";
     }
   }
 
   setupEventListeners() {
     this.connectBtn.addEventListener("click", () => this.toggleConnection());
-    this.startRecordingBtn.addEventListener("click", () => this.startRecording());
+    this.startRecordingBtn.addEventListener("click", () =>
+      this.startRecording()
+    );
     this.stopRecordingBtn.addEventListener("click", () => this.stopRecording());
     this.sendTextBtn.addEventListener("click", () => this.sendTextMessage());
     this.textInput.addEventListener("keypress", (e) => {
@@ -78,7 +80,9 @@ class HexahealthElevenLabsClient {
   connect() {
     // Connect to same server instance for voice streaming
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/knowlarity-stream/${this.generateSessionId()}`;
+    const wsUrl = `${protocol}//${
+      window.location.host
+    }/knowlarity-stream/${this.generateSessionId()}`;
 
     this.ws = new WebSocket(wsUrl);
 
@@ -92,19 +96,20 @@ class HexahealthElevenLabsClient {
       this.sendTextBtn.disabled = false;
 
       // Send initial metadata message as expected by the server
-      const patientQuery = document.getElementById('patientQuery').value || 'general consultation';
+      const patientQuery =
+        document.getElementById("patientQuery").value || "general consultation";
       const initialMetadata = {
-        type: 'web_client_connection',
+        type: "web_client_connection",
         sessionId: this.sessionId,
         patientData: {
-          source: 'web_client',
+          source: "web_client",
           treatmentType: patientQuery,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       };
-      
+
       this.ws.send(JSON.stringify(initialMetadata));
-      console.log('📤 Sent initial metadata:', initialMetadata);
+      console.log("📤 Sent initial metadata:", initialMetadata);
 
       // Start conversation with ElevenLabs agent
       this.startConversation();
@@ -112,17 +117,30 @@ class HexahealthElevenLabsClient {
 
     this.ws.onmessage = (event) => {
       try {
-        console.log("📨 Received WebSocket message, type:", typeof event.data, "constructor:", event.data.constructor.name);
-        
+        console.log(
+          "📨 Received WebSocket message, type:",
+          typeof event.data,
+          "constructor:",
+          event.data.constructor.name
+        );
+
         // Check if message is binary audio data
         if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-          console.log("🔊 Received binary audio data, size:", event.data.byteLength || event.data.size);
+          console.log(
+            "🔊 Received binary audio data, size:",
+            event.data.byteLength || event.data.size
+          );
           this.playBinaryAudio(event.data);
           return;
         }
-        
+
         // Handle JSON messages
-        console.log("📝 Parsing JSON message:", event.data.substring ? event.data.substring(0, 100) + "..." : event.data);
+        console.log(
+          "📝 Parsing JSON message:",
+          event.data.substring
+            ? event.data.substring(0, 100) + "..."
+            : event.data
+        );
         const data = JSON.parse(event.data);
         this.handleMessage(data);
       } catch (error) {
@@ -134,10 +152,6 @@ class HexahealthElevenLabsClient {
     this.ws.onclose = () => {
       this.isConnected = false;
       this.conversationActive = false;
-      this.agentSpeaking = false; // Reset agent speaking state
-      this.currentAudioSource = null; // Reset audio source
-      this.isPlayingAudio = false;
-      this.audioQueue = []; // Clear audio queue
       this.updateConnectionStatus("Disconnected");
       this.connectBtn.textContent = "Connect";
       this.startRecordingBtn.disabled = true;
@@ -156,9 +170,11 @@ class HexahealthElevenLabsClient {
     if (this.ws) {
       // End conversation first
       if (this.conversationActive) {
-        this.ws.send(JSON.stringify({
-          type: "end-conversation"
-        }));
+        this.ws.send(
+          JSON.stringify({
+            type: "end-conversation",
+          })
+        );
       }
       this.ws.close();
     }
@@ -170,68 +186,60 @@ class HexahealthElevenLabsClient {
   startConversation() {
     const query = this.patientQuery.value || "general treatment";
 
-    this.ws.send(JSON.stringify({
-      type: "start-conversation",
-      query: query
-    }));
+    this.ws.send(
+      JSON.stringify({
+        type: "start-conversation",
+        query: query,
+      })
+    );
   }
 
   handleMessage(data) {
-    console.log("🔍 Processing message type:", data.type, "agentSpeaking:", this.agentSpeaking, "isRecording:", this.isRecording);
     switch (data.type) {
       case "conversation-started":
         this.sessionId = data.sessionId;
         this.conversationActive = true;
         this.updateStepIndicator("Conversation started with ElevenLabs agent");
-        this.addMessage("system", "✅ Connected to ElevenLabs agent. Waiting for agent to start...");
+        this.addMessage(
+          "system",
+          "✅ Connected to ElevenLabs agent. Waiting for agent to start..."
+        );
         break;
 
       case "agent_ready":
-        this.addMessage("system", "🤖 Agent is ready! Starting recording automatically...");
-        this.updateStepIndicator("Agent ready - recording started automatically");
+        this.addMessage(
+          "system",
+          "🤖 Agent is ready! You can now start recording."
+        );
+        this.updateStepIndicator(
+          "Agent ready - click Start Recording to speak"
+        );
         // Enable recording now that agent is ready
         this.conversationActive = true;
         this.startRecordingBtn.disabled = false;
-        
-        // Auto-start recording when agent is ready
-        setTimeout(() => {
-          this.startRecording(true); // Pass autoStart=true
-        }, 500); // Small delay to ensure everything is initialized
         break;
 
       case "agent_audio":
         // Handle streaming audio chunks from ElevenLabs agent
         if (data.audio) {
-          console.log("🔊 Received agent audio chunk, agentSpeaking was:", this.agentSpeaking);
-          // Mark agent as speaking
-          this.agentSpeaking = true;
-          console.log("🔊 Set agentSpeaking to true, isRecording:", this.isRecording);
-          // Immediately stop recording and all audio to prevent echo
+          console.log("🔊 Received agent audio chunk");
+          // Stop recording when agent starts speaking to prevent echo
           if (this.isRecording) {
-            console.log("🔇 Stopping recording for agent audio");
             this.stopRecording();
           }
-          this.stopAllAudio(); // Stop any previous audio
           this.playAudioChunk(data.audio);
-        } else {
-          console.log("⚠️ Received agent_audio message but no audio data");
         }
         break;
 
       case "playAudio":
         // Handle Knowlarity playAudio format
         if (data.data && data.data.audioContent) {
-          console.log("🔊 Received Knowlarity playAudio message, agentSpeaking was:", this.agentSpeaking);
-          // Mark agent as speaking
-          this.agentSpeaking = true;
-          console.log("🔊 Set agentSpeaking to true for playAudio, isRecording:", this.isRecording);
-          // Immediately stop recording and all audio to prevent echo
+          console.log("🔊 Received Knowlarity playAudio message");
+          // Stop recording when agent starts speaking to prevent echo
           if (this.isRecording) {
-            console.log("🔇 Stopping recording for playAudio");
             this.stopRecording();
           }
-          this.stopAllAudio(); // Stop any previous audio
-          
+
           if (data.data.audioContentType === "raw") {
             // Raw PCM audio - play as base64
             this.playAudioChunk(data.data.audioContent);
@@ -239,28 +247,22 @@ class HexahealthElevenLabsClient {
             // WAV format - convert and play
             this.playWaveAudio(data.data.audioContent);
           }
-        } else {
-          console.log("⚠️ Received playAudio message but no audio content");
         }
         break;
 
       case "agent_audio_end":
         // Agent finished speaking
         console.log("✅ Agent finished speaking");
-        this.updateStepIndicator("Agent finished speaking - automatically resuming recording");
-        
-        // Mark agent as no longer speaking
-        this.agentSpeaking = false;
-        
-        // Stop all audio first and wait longer to avoid echo
-        this.stopAllAudio();
-        
-        // Auto-restart recording after a longer delay to avoid echo
+        this.updateStepIndicator(
+          "Agent finished speaking - you can respond now"
+        );
+
+        // Re-enable recording after a short delay to avoid echo
         setTimeout(() => {
-          if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
-            this.startRecording(true); // Auto-restart with autoStart=true
+          if (!this.isRecording) {
+            this.startRecordingBtn.disabled = false;
           }
-        }, 1000); // Increased delay to 1 second for better echo prevention
+        }, 500);
         break;
 
       case "agent_response":
@@ -285,7 +287,6 @@ class HexahealthElevenLabsClient {
 
       case "conversation-ended":
         this.conversationActive = false;
-        this.agentSpeaking = false; // Reset agent speaking state
         this.addMessage("system", "🔚 Conversation ended. Thank you!");
         this.updateStepIndicator("Conversation completed");
         break;
@@ -335,7 +336,7 @@ class HexahealthElevenLabsClient {
   playAudio(base64Audio) {
     try {
       const audio = new Audio(`data:audio/mpeg;base64,${base64Audio}`);
-      audio.play().catch(error => {
+      audio.play().catch((error) => {
         console.error("Error playing audio:", error);
       });
     } catch (error) {
@@ -346,50 +347,31 @@ class HexahealthElevenLabsClient {
   async playAudioChunk(base64Audio) {
     try {
       console.log("🎵 Playing audio chunk, size:", base64Audio.length);
-      
-      // Immediately stop recording to prevent echo
-      if (this.isRecording) {
-        console.log("🔇 Stopping recording immediately for audio chunk");
-        this.stopRecording();
-      }
-      
+
       // Resume audio context if suspended
-      if (this.audioContext && this.audioContext.state === 'suspended') {
+      if (this.audioContext && this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
 
       // Try simple audio playback first
       const audio = new Audio();
       audio.src = `data:audio/wav;base64,${base64Audio}`;
-      
+
       audio.onloadeddata = () => {
         console.log("✅ Audio chunk loaded successfully");
       };
-      
+
       audio.onerror = (error) => {
         console.error("❌ Audio chunk error:", error);
         // Try PCM conversion as fallback
         this.playPCMAudio(base64Audio);
       };
-      
-      audio.onended = () => {
-        console.log("✅ Regular audio playback finished");
-        this.agentSpeaking = false;
-        // Auto-restart recording
-        setTimeout(() => {
-          if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
-            console.log("🎙️ Auto-restarting recording after regular audio");
-            this.startRecording(true);
-          }
-        }, 500);
-      };
-      
-      audio.play().catch(error => {
+
+      audio.play().catch((error) => {
         console.error("Error playing audio chunk:", error);
         // Try PCM conversion as fallback
         this.playPCMAudio(base64Audio);
       });
-      
     } catch (error) {
       console.error("Error processing audio chunk:", error);
       // Try PCM conversion as fallback
@@ -399,14 +381,13 @@ class HexahealthElevenLabsClient {
 
   async playBinaryAudio(audioData) {
     try {
-      console.log("🎵 Adding binary audio to queue");
-      
-      // Immediately stop recording to prevent echo (only on first audio chunk)
-      if (this.isRecording) {
-        console.log("🔇 Stopping recording immediately for binary audio");
-        this.stopRecording();
+      console.log("🎵 Playing binary audio data");
+
+      // Resume audio context if suspended
+      if (this.audioContext && this.audioContext.state === "suspended") {
+        await this.audioContext.resume();
       }
-      
+
       // Convert to array buffer - clone it to avoid detachment
       let arrayBuffer;
       if (audioData instanceof ArrayBuffer) {
@@ -414,158 +395,49 @@ class HexahealthElevenLabsClient {
       } else {
         arrayBuffer = await audioData.arrayBuffer();
       }
-      
+
       console.log("🎵 Audio buffer size:", arrayBuffer.byteLength);
-      
-      // Add to queue instead of playing immediately
-      this.audioQueue.push(arrayBuffer);
-      console.log("📝 Audio queue length:", this.audioQueue.length);
-      
-      // Start processing queue if not already playing
-      if (!this.isPlayingAudio) {
-        this.processAudioQueue();
-      }
-      
-    } catch (error) {
-      console.error("❌ Error queuing binary audio:", error);
-    }
-  }
 
-  async processAudioQueue() {
-    if (this.audioQueue.length === 0 || this.isPlayingAudio) {
-      return;
-    }
-
-    console.log("🎵 Processing audio queue, items:", this.audioQueue.length);
-    this.isPlayingAudio = true;
-
-    while (this.audioQueue.length > 0) {
-      const arrayBuffer = this.audioQueue.shift();
-      console.log("🎵 Playing queued audio, remaining in queue:", this.audioQueue.length);
-      
-      await this.playAudioBuffer(arrayBuffer);
-      
-      // Small delay between chunks for smoother playback
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-
-    console.log("✅ Audio queue processing completed");
-    this.isPlayingAudio = false;
-    
-    // Reset agent speaking flag when all audio finishes
-    this.agentSpeaking = false;
-    console.log("✅ Agent speaking flag reset - ready for recording");
-    
-    // Auto-restart recording after all audio finishes
-    setTimeout(() => {
-      console.log("🔍 Checking if can restart recording - isRecording:", this.isRecording, "conversationActive:", this.conversationActive, "agentSpeaking:", this.agentSpeaking);
-      if (!this.isRecording && this.conversationActive && !this.agentSpeaking) {
-        console.log("🎙️ Auto-restarting recording after queue finished");
-        this.startRecording(true);
-      } else {
-        console.log("❌ Cannot restart recording - conditions not met");
-      }
-    }, 500);
-  }
-
-  async playAudioBuffer(arrayBuffer) {
-    return new Promise(async (resolve) => {
       try {
-        // Resume audio context if suspended
-        if (this.audioContext && this.audioContext.state === 'suspended') {
-          await this.audioContext.resume();
-        }
+        // Try to decode as audio (this will work if it's a proper audio format)
+        const audioBuffer = await this.audioContext.decodeAudioData(
+          arrayBuffer.slice()
+        );
 
-        try {
-          // Try to decode as audio (this will work if it's a proper audio format)
-          const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice());
-          
-          const source = this.audioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(this.audioContext.destination);
-          
-          this.currentAudioSource = source;
-          
-          source.onended = () => {
-            console.log("✅ Audio buffer playback completed");
-            this.currentAudioSource = null;
-            resolve();
-          };
-          
-          source.start();
-          console.log("✅ Audio buffer started, duration:", audioBuffer.duration, "seconds");
-          
-        } catch (decodeError) {
-          console.log("⚠️ Could not decode as standard audio format, trying PCM conversion");
-          // If decode fails, try to interpret as raw PCM
-          await this.playRawPCMAudioQueued(arrayBuffer);
-          resolve();
-        }
-        
-      } catch (error) {
-        console.error("❌ Error playing audio buffer:", error);
-        resolve();
-      }
-    });
-  }
-
-  async playRawPCMAudioQueued(arrayBuffer) {
-    return new Promise((resolve) => {
-      try {
-        console.log("🎵 Playing queued PCM audio, buffer size:", arrayBuffer.byteLength);
-        
-        // Assume 16-bit PCM, 16kHz, mono (ElevenLabs format)
-        const pcmData = new Int16Array(arrayBuffer);
-        const sampleRate = 16000;
-        
-        // Create audio buffer for PCM data
-        const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, sampleRate);
-        const channelData = audioBuffer.getChannelData(0);
-        
-        // Convert 16-bit integers to float32 (-1.0 to 1.0)
-        for (let i = 0; i < pcmData.length; i++) {
-          channelData[i] = pcmData[i] / 32768.0;
-        }
-        
-        // Create and configure the audio source
         const source = this.audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(this.audioContext.destination);
-        
-        this.currentAudioSource = source;
-        
+
+        // Track this source for cleanup
+        this.activeAudioSources.push(source);
+
+        // Remove from tracking when finished
         source.onended = () => {
-          console.log("✅ Queued PCM audio completed, duration:", audioBuffer.duration, "seconds");
-          this.currentAudioSource = null;
-          resolve();
+          const index = this.activeAudioSources.indexOf(source);
+          if (index > -1) {
+            this.activeAudioSources.splice(index, 1);
+          }
         };
-        
+
         source.start();
-        console.log("✅ Queued PCM audio started, duration:", audioBuffer.duration, "seconds");
-        
-      } catch (error) {
-        console.error("❌ Error playing queued PCM audio:", error);
-        resolve();
+
+        console.log("✅ Binary audio played successfully");
+      } catch (decodeError) {
+        console.log(
+          "⚠️ Could not decode as standard audio format, trying PCM conversion"
+        );
+        console.log("🔍 Decode error:", decodeError.message);
+        // If decode fails, try to interpret as raw PCM
+        this.playRawPCMAudio(arrayBuffer);
       }
-    });
+    } catch (error) {
+      console.error("❌ Error playing binary audio:", error);
+    }
   }
 
   stopAllAudio() {
-    // Clear the audio queue
-    this.audioQueue = [];
-    
-    // Stop current audio source
-    if (this.currentAudioSource) {
-      try {
-        this.currentAudioSource.stop();
-      } catch (e) {
-        // Ignore if already stopped
-      }
-      this.currentAudioSource = null;
-    }
-    
-    // Stop all active audio sources (legacy)
-    this.activeAudioSources.forEach(source => {
+    // Stop all active audio sources
+    this.activeAudioSources.forEach((source) => {
       try {
         source.stop();
       } catch (e) {
@@ -573,36 +445,75 @@ class HexahealthElevenLabsClient {
       }
     });
     this.activeAudioSources = [];
-    
-    this.isPlayingAudio = false;
-    console.log("🔇 Stopped all audio sources and cleared queue");
+    console.log("🔇 Stopped all audio sources");
   }
 
+  playRawPCMAudio(arrayBuffer) {
+    try {
+      // Assume 16-bit PCM, 16kHz, mono (ElevenLabs format)
+      const pcmData = new Int16Array(arrayBuffer);
+      const sampleRate = 16000;
+
+      // Create audio buffer for PCM data
+      const audioBuffer = this.audioContext.createBuffer(
+        1,
+        pcmData.length,
+        sampleRate
+      );
+      const channelData = audioBuffer.getChannelData(0);
+
+      // Convert 16-bit integers to float32 (-1.0 to 1.0)
+      for (let i = 0; i < pcmData.length; i++) {
+        channelData[i] = pcmData[i] / 32768.0;
+      }
+
+      // Play the audio with tracking
+      const source = this.audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.audioContext.destination);
+
+      // Track this source for cleanup
+      this.activeAudioSources.push(source);
+
+      // Remove from tracking when finished
+      source.onended = () => {
+        const index = this.activeAudioSources.indexOf(source);
+        if (index > -1) {
+          this.activeAudioSources.splice(index, 1);
+        }
+      };
+
+      source.start();
+
+      console.log("✅ Raw PCM audio played successfully");
+    } catch (error) {
+      console.error("❌ Error playing raw PCM audio:", error);
+    }
+  }
 
   async playWaveAudio(base64WaveData) {
     try {
       console.log("🎵 Playing WAV audio data");
-      
+
       // Resume audio context if suspended
-      if (this.audioContext && this.audioContext.state === 'suspended') {
+      if (this.audioContext && this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
 
       // Create audio element and play WAV directly
       const audio = new Audio();
       audio.src = `data:audio/wav;base64,${base64WaveData}`;
-      
+
       audio.onloadeddata = () => {
         console.log("✅ WAV audio loaded successfully");
       };
-      
+
       audio.onerror = (error) => {
         console.error("❌ WAV audio error:", error);
       };
-      
+
       await audio.play();
       console.log("✅ WAV audio played successfully");
-      
     } catch (error) {
       console.error("❌ Error playing WAV audio:", error);
     }
@@ -610,16 +521,10 @@ class HexahealthElevenLabsClient {
 
   async playPCMAudio(base64Audio) {
     try {
-      // Immediately stop recording to prevent echo
-      if (this.isRecording) {
-        console.log("🔇 Stopping recording immediately for PCM audio");
-        this.stopRecording();
-      }
-      
       // ElevenLabs sends PCM 16kHz data, we need to create a proper WAV header
       const pcmData = atob(base64Audio);
       const pcmArray = new Int16Array(pcmData.length / 2);
-      
+
       for (let i = 0; i < pcmArray.length; i++) {
         const byte1 = pcmData.charCodeAt(i * 2);
         const byte2 = pcmData.charCodeAt(i * 2 + 1);
@@ -628,19 +533,18 @@ class HexahealthElevenLabsClient {
 
       // Create WAV file with proper header
       const wavBuffer = this.createWavFile(pcmArray, 16000);
-      const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+      const blob = new Blob([wavBuffer], { type: "audio/wav" });
       const audioUrl = URL.createObjectURL(blob);
-      
+
       const audio = new Audio();
       audio.src = audioUrl;
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
       };
-      
-      audio.play().catch(error => {
+
+      audio.play().catch((error) => {
         console.error("Error playing PCM audio:", error);
       });
-      
     } catch (error) {
       console.error("Error processing PCM audio:", error);
     }
@@ -650,18 +554,18 @@ class HexahealthElevenLabsClient {
     const length = pcmData.length;
     const buffer = new ArrayBuffer(44 + length * 2);
     const view = new DataView(buffer);
-    
+
     // WAV header
     const writeString = (offset, string) => {
       for (let i = 0; i < string.length; i++) {
         view.setUint8(offset + i, string.charCodeAt(i));
       }
     };
-    
-    writeString(0, 'RIFF');
+
+    writeString(0, "RIFF");
     view.setUint32(4, 36 + length * 2, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
     view.setUint32(16, 16, true);
     view.setUint16(20, 1, true);
     view.setUint16(22, 1, true);
@@ -669,14 +573,14 @@ class HexahealthElevenLabsClient {
     view.setUint32(28, sampleRate * 2, true);
     view.setUint16(32, 2, true);
     view.setUint16(34, 16, true);
-    writeString(36, 'data');
+    writeString(36, "data");
     view.setUint32(40, length * 2, true);
-    
+
     // PCM data
     for (let i = 0; i < length; i++) {
       view.setInt16(44 + i * 2, pcmData[i], true);
     }
-    
+
     return buffer;
   }
 
@@ -696,96 +600,76 @@ class HexahealthElevenLabsClient {
     this.stepIndicator.style.display = "block";
   }
 
-  async startRecording(autoStart = false) {
+  async startRecording() {
     if (!this.conversationActive) {
-      if (!autoStart) {
-        alert("Please start a conversation first.");
-      }
-      return;
-    }
-
-    // Prevent recording while agent is speaking
-    if (this.agentSpeaking) {
-      console.log("🔇 Cannot start recording - agent is currently speaking");
+      alert("Please start a conversation first.");
       return;
     }
 
     try {
       // Stop any currently playing audio to prevent echo
       this.stopAllAudio();
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 16000,
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          googEchoCancellation: true,
-          googAutoGainControl: true,
-          googNoiseSuppression: true,
-          googHighpassFilter: true,
-          googTypingNoiseDetection: true,
-          googAudioMirroring: false
-        }
+        },
       });
-      
+
       // Use AudioContext for direct PCM processing
-      this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ 
-        sampleRate: 16000 
+      this.audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)({
+        sampleRate: 16000,
       });
-      
+
       const source = this.audioContext.createMediaStreamSource(stream);
       const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-      
+
       processor.onaudioprocess = (event) => {
-        // Don't process audio if agent is speaking or not recording
-        if (this.agentSpeaking || !this.isRecording) {
-          return;
-        }
-        
         const inputBuffer = event.inputBuffer;
         const inputData = inputBuffer.getChannelData(0);
-        
+
         // Convert float32 to int16 PCM
         const int16Array = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
-          int16Array[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+          int16Array[i] = Math.max(
+            -32768,
+            Math.min(32767, inputData[i] * 32768)
+          );
         }
-        
+
         // Convert to base64 and send
         const uint8Array = new Uint8Array(int16Array.buffer);
-        let binary = '';
+        let binary = "";
         for (let i = 0; i < uint8Array.length; i++) {
           binary += String.fromCharCode(uint8Array[i]);
         }
         const base64Data = btoa(binary);
-        
+
         // Send PCM data directly
         this.sendPCMChunk(base64Data);
       };
-      
+
       source.connect(processor);
       processor.connect(this.audioContext.destination);
-      
+
       this.audioProcessor = processor;
       this.audioSource = source;
       this.recordingStream = stream;
-      
+
       this.isRecording = true;
       this.startRecordingBtn.disabled = true;
       this.stopRecordingBtn.disabled = false;
       this.recordingIndicator.classList.add("active");
-      
+
       console.log("🎙️ Started recording with direct PCM processing");
     } catch (error) {
       console.error("Error starting recording:", error);
-      if (!autoStart) {
-        alert("Unable to access microphone. Please check permissions.");
-      } else {
-        this.addMessage("system", "⚠️ Unable to access microphone. Please click 'Start Recording' and grant permissions.");
-        this.updateStepIndicator("Please grant microphone permissions and click Start Recording");
-      }
+      alert("Unable to access microphone. Please check permissions.");
     }
   }
 
@@ -796,22 +680,22 @@ class HexahealthElevenLabsClient {
         this.audioProcessor.disconnect();
         this.audioSource.disconnect();
       }
-      
+
       // Stop media stream
       if (this.recordingStream) {
-        this.recordingStream.getTracks().forEach(track => track.stop());
+        this.recordingStream.getTracks().forEach((track) => track.stop());
       }
-      
+
       // Close audio context
       if (this.audioContext) {
         this.audioContext.close();
       }
-      
+
       this.isRecording = false;
       this.startRecordingBtn.disabled = false;
       this.stopRecordingBtn.disabled = true;
       this.recordingIndicator.classList.remove("active");
-      
+
       console.log("🎙️ Stopped recording");
     }
   }
@@ -820,10 +704,12 @@ class HexahealthElevenLabsClient {
     if (!this.conversationActive) return;
 
     try {
-      this.ws.send(JSON.stringify({
-        type: "audio-chunk",
-        audio: base64Data
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: "audio-chunk",
+          audio: base64Data,
+        })
+      );
     } catch (error) {
       console.error("Error sending PCM chunk:", error);
     }
@@ -836,13 +722,15 @@ class HexahealthElevenLabsClient {
       // Convert WebM to PCM for ElevenLabs
       const arrayBuffer = await audioBlob.arrayBuffer();
       const pcmData = await this.convertWebMToPCM(arrayBuffer);
-      
+
       if (pcmData) {
-        this.ws.send(JSON.stringify({
-          type: "audio-chunk",
-          audio: pcmData,
-          isChunk: true
-        }));
+        this.ws.send(
+          JSON.stringify({
+            type: "audio-chunk",
+            audio: pcmData,
+            isChunk: true,
+          })
+        );
       }
     } catch (error) {
       console.error("Error sending audio chunk:", error);
@@ -852,32 +740,32 @@ class HexahealthElevenLabsClient {
   async convertWebMToPCM(webmBuffer) {
     try {
       // Create audio context for conversion
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ 
-        sampleRate: 16000 
+      const audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)({
+        sampleRate: 16000,
       });
-      
+
       // Decode WebM audio
       const audioBuffer = await audioContext.decodeAudioData(webmBuffer);
-      
+
       // Get PCM data (16-bit, 16kHz, mono)
       const pcmData = audioBuffer.getChannelData(0);
-      
+
       // Convert float32 to int16
       const int16Array = new Int16Array(pcmData.length);
       for (let i = 0; i < pcmData.length; i++) {
         int16Array[i] = Math.max(-32768, Math.min(32767, pcmData[i] * 32768));
       }
-      
+
       // Convert to base64
       const uint8Array = new Uint8Array(int16Array.buffer);
-      let binary = '';
+      let binary = "";
       for (let i = 0; i < uint8Array.length; i++) {
         binary += String.fromCharCode(uint8Array[i]);
       }
-      
+
       await audioContext.close();
       return btoa(binary);
-      
     } catch (error) {
       console.error("Error converting WebM to PCM:", error);
       return null;
@@ -894,14 +782,16 @@ class HexahealthElevenLabsClient {
       // Convert WebM to PCM for ElevenLabs
       const arrayBuffer = await audioBlob.arrayBuffer();
       const pcmData = await this.convertWebMToPCM(arrayBuffer);
-      
+
       if (pcmData) {
-        this.ws.send(JSON.stringify({
-          type: "audio-chunk",
-          audio: pcmData,
-          isFinal: true
-        }));
-        
+        this.ws.send(
+          JSON.stringify({
+            type: "audio-chunk",
+            audio: pcmData,
+            isFinal: true,
+          })
+        );
+
         console.log("🎙️ Sent final audio message");
       }
     } catch (error) {
@@ -917,10 +807,12 @@ class HexahealthElevenLabsClient {
   sendTextMessage() {
     const text = this.textInput.value.trim();
     if (text && this.conversationActive) {
-      this.ws.send(JSON.stringify({
-        type: "text-message",
-        text: text
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: "text-message",
+          text: text,
+        })
+      );
 
       this.textInput.value = "";
     } else if (!this.conversationActive) {
@@ -945,9 +837,11 @@ class HexahealthElevenLabsClient {
     dataDiv.innerHTML = `
       <h3>Conversation Summary</h3>
       <p><strong>Session ID:</strong> ${data.sessionId}</p>
-      <p><strong>Status:</strong> ${data.isActive ? 'Active' : 'Completed'}</p>
+      <p><strong>Status:</strong> ${data.isActive ? "Active" : "Completed"}</p>
       <p><strong>Current Question:</strong> ${data.currentQuestion}</p>
-      <p><strong>Started:</strong> ${new Date(data.createdAt).toLocaleString()}</p>
+      <p><strong>Started:</strong> ${new Date(
+        data.createdAt
+      ).toLocaleString()}</p>
       <div class="patient-data">
         <h4>Patient Information:</h4>
         <pre>${JSON.stringify(data.patientData, null, 2)}</pre>
@@ -961,17 +855,21 @@ class HexahealthElevenLabsClient {
   // Additional utility methods
   getConversationData() {
     if (this.conversationActive && this.sessionId) {
-      this.ws.send(JSON.stringify({
-        type: "get-conversation-data"
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: "get-conversation-data",
+        })
+      );
     }
   }
 
   endConversation() {
     if (this.conversationActive) {
-      this.ws.send(JSON.stringify({
-        type: "end-conversation"
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: "end-conversation",
+        })
+      );
     }
   }
 }
@@ -979,7 +877,7 @@ class HexahealthElevenLabsClient {
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
   const client = new HexahealthElevenLabsClient();
-  
+
   // Add additional controls to the UI
   const additionalControls = document.createElement("div");
   additionalControls.className = "additional-controls";
@@ -987,18 +885,20 @@ document.addEventListener("DOMContentLoaded", () => {
     <button id="getDataBtn" class="btn btn-primary">Get Conversation Data</button>
     <button id="endConversationBtn" class="btn btn-danger">End Conversation</button>
   `;
-  
-  document.querySelector('.controls').appendChild(additionalControls);
-  
+
+  document.querySelector(".controls").appendChild(additionalControls);
+
   // Add event listeners for additional controls
-  document.getElementById('getDataBtn').addEventListener('click', () => {
+  document.getElementById("getDataBtn").addEventListener("click", () => {
     client.getConversationData();
   });
-  
-  document.getElementById('endConversationBtn').addEventListener('click', () => {
-    client.endConversation();
-  });
-  
+
+  document
+    .getElementById("endConversationBtn")
+    .addEventListener("click", () => {
+      client.endConversation();
+    });
+
   // Make client globally accessible for debugging
   window.hexahealthClient = client;
 });

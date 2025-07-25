@@ -36,7 +36,6 @@ class HexahealthElevenLabsClient {
   }
 
   initializeElements() {
-    this.connectBtn = document.getElementById("connectBtn");
     this.startRecordingBtn = document.getElementById("startRecordingBtn");
     this.stopRecordingBtn = document.getElementById("stopRecordingBtn");
     this.sendTextBtn = document.getElementById("sendTextBtn");
@@ -56,7 +55,6 @@ class HexahealthElevenLabsClient {
   }
 
   setupEventListeners() {
-    this.connectBtn.addEventListener("click", () => this.toggleConnection());
     this.startRecordingBtn.addEventListener("click", () => this.handleStartRecording());
     this.stopRecordingBtn.addEventListener("click", () => this.handleStopRecording());
     this.sendTextBtn.addEventListener("click", () => this.sendTextMessage());
@@ -67,13 +65,6 @@ class HexahealthElevenLabsClient {
     });
   }
 
-  toggleConnection() {
-    if (this.isConnected) {
-      this.disconnect();
-    } else {
-      this.connect();
-    }
-  }
 
   handleStartRecording() {
     if (!this.isConnected) {
@@ -107,7 +98,6 @@ class HexahealthElevenLabsClient {
     this.ws.onopen = () => {
       this.isConnected = true;
       this.updateConnectionStatus("Connected");
-      this.connectBtn.textContent = "Disconnect";
       // Update button text and state
       this.startRecordingBtn.textContent = "Connecting...";
       this.startRecordingBtn.disabled = true;
@@ -172,7 +162,6 @@ class HexahealthElevenLabsClient {
       this.isConnected = false;
       this.conversationActive = false;
       this.updateConnectionStatus("Disconnected");
-      this.connectBtn.textContent = "Connect";
       // Reset button states
       this.startRecordingBtn.textContent = "Start Recording";
       this.startRecordingBtn.disabled = false;

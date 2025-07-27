@@ -138,14 +138,15 @@ function initializeConversation(agentWebSocket, sessionId) {
       user_object: {
         name: 'Patient',
         language: 'hindi'
+      },
+      dynamic_variables: {
+        treatmentType: conversationSession?.treatmentType || 'general consultation'
       }
-    },
-    dynamicVariables: {
-      treatmentType: conversationSession?.treatmentType || 'general consultation'
     }
   };
   
   console.log('📤 Initializing conversation with context');
+  console.log('🔍 Sending dynamic variables:', JSON.stringify(initializationMessage, null, 2));
   agentWebSocket.send(JSON.stringify(initializationMessage));
 }
 

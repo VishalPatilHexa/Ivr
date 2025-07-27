@@ -92,9 +92,15 @@ async function createConversation(sessionId, treatmentType) {
  */
 async function createElevenLabsWebSocket(sessionId) {
   return new Promise((resolve, reject) => {
-    const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${elevenLabsAgentId}`;
+    // Get treatment type from conversation session
+    const conversationSession = activeConversations.get(sessionId);
+    const treatmentType = conversationSession?.treatmentType || 'general consultation';
+    
+    // Include dynamic variables in the WebSocket URL
+    const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${elevenLabsAgentId}&treatmentType=${encodeURIComponent(treatmentType)}`;
     
     console.log('🔗 Connecting to ElevenLabs WebSocket for session:', sessionId);
+    console.log('🏥 Including treatmentType in URL:', treatmentType);
     
     const agentWebSocket = new WebSocket(websocketUrl, {
       headers: { 'xi-api-key': elevenLabsApiKey }

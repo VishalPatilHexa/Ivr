@@ -114,20 +114,9 @@ function handleKnowlarityStream(websocket, urlPath) {
         sessionId
       );
 
-      // TODO: Extract treatment type from Knowlarity metadata
-      // const connection = activeConnections.get(sessionId);
-      // const knowlarityMetadata = connection?.knowlarityMetadata;
-      // const treatmentType = knowlarityMetadata?.session_metadata?.treatment_type ||
-      //                      callSession.patientData?.treatmentType ||
-      //                      "general consultation";
-
-      const treatmentType =
-        callSession.patientData?.treatmentType || "general consultation";
-      console.log("🏥 Treatment type for agent:", treatmentType);
-
       agentConversation = await elevenLabsAgentService.createConversation(
         sessionId,
-        treatmentType
+        callSession.patientData?.treatmentType || "general consultation"
       );
 
       // Store the agent conversation in the connection for cleanup

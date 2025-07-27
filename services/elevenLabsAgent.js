@@ -56,12 +56,12 @@ function validateEnvironment() {
 /**
  * Create new conversation session with ElevenLabs
  */
-async function createConversation(sessionId, treatmentType) {
+async function createConversation(sessionId, patientQuery) {
   try {
     const conversationSession = {
       sessionId,
-      treatmentType,
-      patientData: { treatmentType: treatmentType },
+      patientQuery,
+      patientData: { query: patientQuery },
       isActive: true,
       createdAt: new Date(),
       agentWebSocket: null
@@ -103,24 +103,8 @@ async function createElevenLabsWebSocket(sessionId) {
     agentWebSocket.on('open', () => {
       console.log('✅ ElevenLabs WebSocket connected for session:', sessionId);
       
-      // First send dynamic variables
-      const conversationSession = activeConversations.get(sessionId);
-      const treatmentType = conversationSession?.treatmentType || 'general consultation';
-      
-      const dynamicVarsMessage = {
-        dynamic_variables: {
-          treatmentType: treatmentType
-        }
-      };
-      
-      console.log('🔧 Sending dynamic variables first:', JSON.stringify(dynamicVarsMessage));
-      agentWebSocket.send(JSON.stringify(dynamicVarsMessage));
-      
-      // Then initialize conversation
-      setTimeout(() => {
-        initializeConversation(agentWebSocket, sessionId);
-      }, 100);
-      
+      // Initialize conversation with user context
+      initializeConversation(agentWebSocket, sessionId);
       resolve(agentWebSocket);
     });
 
@@ -154,15 +138,11 @@ function initializeConversation(agentWebSocket, sessionId) {
       user_object: {
         name: 'Patient',
         language: 'hindi'
-      },
-      dynamic_variables: {
-        treatmentType: conversationSession?.treatmentType || 'general consultation'
       }
     }
   };
   
   console.log('📤 Initializing conversation with context');
-  console.log('🔍 Sending dynamic variables:', JSON.stringify(initializationMessage, null, 2));
   agentWebSocket.send(JSON.stringify(initializationMessage));
 }
 

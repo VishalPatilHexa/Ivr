@@ -140,7 +140,7 @@ function initializeConversation(agentWebSocket, sessionId) {
         language: 'hindi'
       }
     },
-    dynamic_variables: {
+    dynamicVariables: {
       treatmentType: conversationSession?.treatmentType || 'general consultation'
     }
   };

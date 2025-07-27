@@ -114,9 +114,20 @@ function handleKnowlarityStream(websocket, urlPath) {
         sessionId
       );
 
+      // TODO: Extract treatment type from Knowlarity metadata
+      // const connection = activeConnections.get(sessionId);
+      // const knowlarityMetadata = connection?.knowlarityMetadata;
+      // const treatmentType = knowlarityMetadata?.session_metadata?.treatment_type ||
+      //                      callSession.patientData?.treatmentType ||
+      //                      "general consultation";
+
+      const treatmentType =
+        callSession.patientData?.treatmentType || "general consultation";
+      console.log("🏥 Treatment type for agent:", treatmentType);
+
       agentConversation = await elevenLabsAgentService.createConversation(
         sessionId,
-        callSession.patientData?.treatmentType || "general consultation"
+        treatmentType
       );
 
       // Store the agent conversation in the connection for cleanup
@@ -353,56 +364,61 @@ function setupAudioStreaming(sessionId) {
  */
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
-    // METADATA PARSING: Extract call information from client
-    // Fix complex nested JSON with step-by-step approach
-    let fixedMetadata = metadataMessage.toString();
+    // TODO: METADATA PARSING DISABLED - Will work on this later
+    // // METADATA PARSING: Extract call information from client
+    // // Fix complex nested JSON with step-by-step approach
+    // let fixedMetadata = metadataMessage.toString();
 
-    // Step 1: Remove problematic template variables
-    fixedMetadata = fixedMetadata.replace(
-      /,\s*'event_timestamp':\s*'[^']*'/,
-      ""
-    );
-    fixedMetadata = fixedMetadata.replace(/,\s*'initiated_at':\s*'[^']*'/, "");
+    // // Step 1: Remove problematic template variables
+    // fixedMetadata = fixedMetadata.replace(
+    //   /,\s*'event_timestamp':\s*'[^']*'/,
+    //   ""
+    // );
+    // fixedMetadata = fixedMetadata.replace(/,\s*'initiated_at':\s*'[^']*'/, "");
 
-    // Step 2: Fix nested object quotes (remove single quotes wrapping inner objects)
-    fixedMetadata = fixedMetadata.replace(/'\{/g, "{").replace(/\}'/g, "}");
+    // // Step 2: Fix nested object quotes (remove single quotes wrapping inner objects)
+    // fixedMetadata = fixedMetadata.replace(/'\{/g, "{").replace(/\}'/g, "}");
 
-    // Step 3: Replace remaining single quotes with double quotes
-    fixedMetadata = fixedMetadata.replace(/'/g, '"');
+    // // Step 3: Replace remaining single quotes with double quotes
+    // fixedMetadata = fixedMetadata.replace(/'/g, '"');
 
-    const connectionMetadata = JSON.parse(fixedMetadata);
+    // const connectionMetadata = JSON.parse(fixedMetadata);
+    // console.log("📋 Received metadata for session:", sessionId);
+    // console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");
+    // console.log(
+    //   "📊 Metadata details:",
+    //   JSON.stringify(connectionMetadata, null, 2)
+    // );
+    // console.log("🔥 ===== END KNOWLARITY METADATA =====");
+
+    // // UPDATE CLIENT TYPE: Update connection type based on metadata
+    // const connection = activeConnections.get(sessionId);
+    // if (connection) {
+    //   if (connectionMetadata.type === "web_client_connection") {
+    //     connection.clientType = "web_client";
+    //     console.log(
+    //       "🔄 Updated client type to web_client for session:",
+    //       sessionId
+    //     );
+    //   } else if (connectionMetadata.ivr_data || connectionMetadata.callid) {
+    //     // This is Knowlarity metadata format
+    //     connection.clientType = "knowlarity";
+    //     console.log(
+    //       "🔄 Confirmed client type as knowlarity for session:",
+    //       sessionId
+    //     );
+    //   }
+    // }
+
+    // Simple logging without parsing
     console.log("📋 Received metadata for session:", sessionId);
-    console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");
-    console.log(
-      "📊 Metadata details:",
-      JSON.stringify(connectionMetadata, null, 2)
-    );
-    console.log("🔥 ===== END KNOWLARITY METADATA =====");
-
-    // UPDATE CLIENT TYPE: Update connection type based on metadata
-    const connection = activeConnections.get(sessionId);
-    if (connection) {
-      if (connectionMetadata.type === "web_client_connection") {
-        connection.clientType = "web_client";
-        console.log(
-          "🔄 Updated client type to web_client for session:",
-          sessionId
-        );
-      } else if (connectionMetadata.ivr_data || connectionMetadata.callid) {
-        // This is Knowlarity metadata format
-        connection.clientType = "knowlarity";
-        console.log(
-          "🔄 Confirmed client type as knowlarity for session:",
-          sessionId
-        );
-      }
-    }
+    console.log("🔍 Raw message:", metadataMessage.toString());
 
     // STATUS UPDATE: Mark call as connected and store metadata
     // This updates the call management system with connection details
     handleCallStatusUpdate(sessionId, {
       status: "connected",
-      knowlarityMetadata: connectionMetadata,
+      knowlarityMetadata: { raw: metadataMessage.toString() },
       isExternal: true,
     });
   } catch (jsonError) {
@@ -720,13 +736,6 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
 // ===============================================================================
 // These functions create the bridge between WebSocket handler and ElevenLabs agent
 
-/**
- * CREATE AGENT CONVERSATION: Initialize ElevenLabs conversation for this call
- * This establishes the AI agent session with context about the patient/treatment
- */
-function createConversation(sessionId, treatmentType) {
-  return elevenLabsAgentService.createConversation(sessionId, treatmentType);
-}
 
 /**
  * CALLBACK REGISTRATION: Register callback function with ElevenLabs agent

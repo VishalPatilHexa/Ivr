@@ -56,12 +56,12 @@ function validateEnvironment() {
 /**
  * Create new conversation session with ElevenLabs
  */
-async function createConversation(sessionId, patientQuery) {
+async function createConversation(sessionId, treatmentType) {
   try {
     const conversationSession = {
       sessionId,
-      patientQuery,
-      patientData: { query: patientQuery },
+      treatmentType,
+      patientData: { treatmentType: treatmentType },
       isActive: true,
       createdAt: new Date(),
       agentWebSocket: null
@@ -141,7 +141,7 @@ function initializeConversation(agentWebSocket, sessionId) {
       }
     },
     dynamic_variables: {
-      new_variable: conversationSession?.patientQuery || 'general treatment'
+      treatmentType: conversationSession?.treatmentType || 'general consultation'
     }
   };
   

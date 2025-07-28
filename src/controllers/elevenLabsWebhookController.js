@@ -17,48 +17,53 @@ async function handlePostCallWebhook(req, res) {
     const webhookData = req.body;
     
     console.log('🎯 ===== ELEVENLABS POST-CALL WEBHOOK RECEIVED =====');
-    console.log('📊 Webhook data:', JSON.stringify(webhookData, null, 2));
     
     // Extract session information from webhook
-    const conversationId = webhookData.conversation_id;
-    const sessionId = webhookData.user_id || conversationId;
+    const conversationId = webhookData.data?.conversation_id;
+    const sessionId = webhookData.data?.conversation_initiation_client_data?.dynamic_variables?.user_id || conversationId;
     
     console.log('🔍 Processing webhook for session:', sessionId);
+    
+    // Extract key webhook data
+    const webhookSummary = {
+      conversation_id: conversationId,
+      agent_id: webhookData.data?.agent_id,
+      status: webhookData.data?.status,
+      call_duration_secs: webhookData.data?.metadata?.call_duration_secs,
+      cost: webhookData.data?.metadata?.cost,
+      termination_reason: webhookData.data?.metadata?.termination_reason,
+      transcript_summary: webhookData.data?.analysis?.transcript_summary,
+      collected_data: {
+        patientName: webhookData.data?.analysis?.data_collection_results?.patientName?.value,
+        treatmentType: webhookData.data?.analysis?.data_collection_results?.treatmentType?.value,
+        symptoms: webhookData.data?.analysis?.data_collection_results?.symptoms?.value,
+        language: webhookData.data?.analysis?.data_collection_results?.language?.value
+      }
+    };
+    
+    console.log('📊 ===== ELEVENLABS WEBHOOK SUMMARY =====');
+    console.log(JSON.stringify(webhookSummary, null, 2));
     
     // Get Knowlarity metadata from stored connection
     const connection = activeConnections.get(sessionId);
     
     if (connection) {
-      console.log('🔥 ===== MAPPING WEBHOOK WITH KNOWLARITY METADATA =====');
-      
-      // Get stored Knowlarity metadata
       const knowlarityMetadata = connection.knowlarityMetadata || {};
       
-      console.log('📞 Knowlarity metadata:', JSON.stringify(knowlarityMetadata, null, 2));
-      console.log('🤖 ElevenLabs webhook data:', JSON.stringify(webhookData, null, 2));
+      console.log('📞 ===== KNOWLARITY METADATA =====');
+      console.log('🔍 Raw metadata:', knowlarityMetadata.raw || 'No metadata stored');
       
       // Prepare combined data for external API
       const combinedData = {
         sessionId: sessionId,
         conversationId: conversationId,
-        knowlarity: {
-          callid: knowlarityMetadata.callid,
-          virtual_number: knowlarityMetadata.virtual_number,
-          customer_number: knowlarityMetadata.customer_number,
-          raw_metadata: knowlarityMetadata.raw
-        },
-        elevenlabs: {
-          conversation_id: webhookData.conversation_id,
-          conversation_duration_seconds: webhookData.conversation_duration_seconds,
-          conversation_summary: webhookData.conversation_summary,
-          agent_id: webhookData.agent_id,
-          status: webhookData.status
-        },
+        knowlarity_raw_metadata: knowlarityMetadata.raw,
+        elevenlabs_summary: webhookSummary,
         timestamp: new Date().toISOString()
       };
       
       console.log('🔗 ===== COMBINED DATA FOR EXTERNAL API =====');
-      console.log('📦 Combined data:', JSON.stringify(combinedData, null, 2));
+      console.log(JSON.stringify(combinedData, null, 2));
       
       // TODO: Call external API with combined data
       await callExternalAPI(combinedData);
@@ -70,7 +75,20 @@ async function handlePostCallWebhook(req, res) {
       
     } else {
       console.log('⚠️ No connection found for session:', sessionId);
-      console.log('🔍 Available sessions:', Array.from(activeConnections.keys()));
+      console.log('💡 This is normal - cleanup may have already happened');
+      
+      // Still log the important webhook data even without Knowlarity metadata
+      console.log('📊 ===== ELEVENLABS DATA ONLY =====');
+      console.log(JSON.stringify(webhookSummary, null, 2));
+      
+      // TODO: Call external API with ElevenLabs data only
+      await callExternalAPI({
+        sessionId: sessionId,
+        conversationId: conversationId,
+        knowlarity_raw_metadata: null,
+        elevenlabs_summary: webhookSummary,
+        timestamp: new Date().toISOString()
+      });
     }
     
     console.log('🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====');

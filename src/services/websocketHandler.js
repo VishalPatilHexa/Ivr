@@ -517,13 +517,28 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
   // Handle connection close
   websocket.on("close", () => {
     console.log("📞 Call stream closed for session:", sessionId);
-    console.log("🔌 WebSocket connection closed - waiting for ElevenLabs webhook for cleanup");
-    // Note: Cleanup will be handled by ElevenLabs post-call webhook
+    
+    // Close ElevenLabs WebSocket connection to end the conversation
+    const connection = activeConnections.get(sessionId);
+    if (connection?.agentConversation?.agentWebSocket) {
+      console.log("🔌 Closing ElevenLabs WebSocket to end conversation");
+      connection.agentConversation.agentWebSocket.close();
+    }
+    
+    console.log("⏳ Waiting for ElevenLabs webhook for final cleanup");
   });
 
   // Handle connection errors
   websocket.on("error", (connectionError) => {
     console.error("❌ WebSocket error:", connectionError);
+    
+    // Close ElevenLabs WebSocket connection on error
+    const connection = activeConnections.get(sessionId);
+    if (connection?.agentConversation?.agentWebSocket) {
+      console.log("🔌 Closing ElevenLabs WebSocket due to error");
+      connection.agentConversation.agentWebSocket.close();
+    }
+    
     console.log("⚠️ WebSocket error occurred - waiting for ElevenLabs webhook for cleanup");
     handleCallStatusUpdate(sessionId, {
       status: "failed",

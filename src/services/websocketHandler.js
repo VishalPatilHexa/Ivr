@@ -403,6 +403,13 @@ function handleInitialMetadata(metadataMessage, sessionId) {
     console.log("📋 Received metadata for session:", sessionId);
     console.log("🔍 Raw message:", metadataMessage.toString());
 
+    // Store metadata in connection for webhook processing
+    const connection = activeConnections.get(sessionId);
+    if (connection) {
+      connection.knowlarityMetadata = { raw: metadataMessage.toString() };
+      console.log("💾 Stored Knowlarity metadata in connection for webhook processing");
+    }
+
     // STATUS UPDATE: Mark call as connected and store metadata
     // This updates the call management system with connection details
     handleCallStatusUpdate(sessionId, {
@@ -510,21 +517,14 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
   // Handle connection close
   websocket.on("close", () => {
     console.log("📞 Call stream closed for session:", sessionId);
-    // Get the agent conversation from the stored connection
-    const connection = activeConnections.get(sessionId);
-    const storedAgentConversation =
-      connection?.agentConversation || agentConversation;
-    cleanupSession(sessionId, storedAgentConversation);
+    console.log("🔌 WebSocket connection closed - waiting for ElevenLabs webhook for cleanup");
+    // Note: Cleanup will be handled by ElevenLabs post-call webhook
   });
 
   // Handle connection errors
   websocket.on("error", (connectionError) => {
     console.error("❌ WebSocket error:", connectionError);
-    // Get the agent conversation from the stored connection
-    const connection = activeConnections.get(sessionId);
-    const storedAgentConversation =
-      connection?.agentConversation || agentConversation;
-    cleanupSession(sessionId, storedAgentConversation);
+    console.log("⚠️ WebSocket error occurred - waiting for ElevenLabs webhook for cleanup");
     handleCallStatusUpdate(sessionId, {
       status: "failed",
       reason: connectionError.message,
@@ -754,4 +754,6 @@ module.exports = {
   killAudio,
   cleanup,
   shutdown,
+  activeConnections,
+  cleanupSession
 };

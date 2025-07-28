@@ -60,6 +60,7 @@ server.listen(PORT, () => {
   console.log(`📋 Health Check: http://localhost:${PORT}/health`);
   console.log(`📞 Outbound Call API: http://localhost:${PORT}/api/outbound-call`);
   console.log(`🤖 ElevenLabs API: http://localhost:${PORT}/api/elevenlabs/call`);
+  console.log(`🎯 ElevenLabs Webhook: http://localhost:${PORT}/api/webhook/elevenlabs/post-call`);
 });
 
 // Graceful shutdown

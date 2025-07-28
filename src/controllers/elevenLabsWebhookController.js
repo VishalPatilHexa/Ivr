@@ -68,6 +68,12 @@ async function handlePostCallWebhook(req, res) {
       // TODO: Call external API with combined data
       await callExternalAPI(combinedData);
       
+      // Close Knowlarity WebSocket if still active (agent ended call but Knowlarity socket still open)
+      if (connection.websocket && connection.websocket.readyState === 1) { // WebSocket.OPEN = 1
+        console.log('🔌 Closing Knowlarity WebSocket - ElevenLabs agent ended the call');
+        connection.websocket.close(1000, 'Call ended by ElevenLabs agent');
+      }
+      
       // Perform cleanup after processing
       console.log('🧹 Performing session cleanup after webhook processing');
       const agentConversation = connection.agentConversation;

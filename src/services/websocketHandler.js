@@ -687,28 +687,22 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
     callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
     console.log("✅ Status update successful for session:", sessionId);
   } catch (error) {
-    console.log(
-      "⚠️ Call session not found for status update:",
-      sessionId,
-      "gracefully handling this case"
-    );
-    console.log("🔍 Error details:", error.message);
-
     // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
     if (statusUpdate.isExternal || sessionId.startsWith("web_")) {
       console.log(
-        "ℹ️ This is an external/web client session - status update failure is normal and handled gracefully"
+        "ℹ️ External call session (Knowlarity) - not managed by call manager, this is expected"
       );
 
       // Log the attempted status update for monitoring purposes
-      console.log("📊 Attempted status update details:", {
+      console.log("📊 External session status:", {
         sessionId,
         status: statusUpdate.status,
-        isExternal: statusUpdate.isExternal,
+        source: "Knowlarity",
         timestamp: new Date().toISOString(),
       });
 
       // Continue gracefully without throwing
+      console.log("✅ External session status handled successfully");
       return;
     }
 

@@ -132,17 +132,23 @@ function initializeConversation(agentWebSocket, sessionId) {
   const conversationSession = activeConversations.get(sessionId);
   
   const initializationMessage = {
-    type: 'conversation_initiation_metadata',
-    conversation_initiation_metadata: {
+    type: 'conversation_initiation_client_data',
+    dynamic_variables: {
+      user_name: 'Patient',
+      language: 'hindi',
       user_id: sessionId,
-      user_object: {
-        name: 'Patient',
-        language: 'hindi'
+      treatmentType: conversationSession?.patientQuery || 'general consultation'
+    },
+    // Optional: Add conversation config overrides
+    conversation_config_override: {
+      agent: {
+        language: 'hi'  // Set agent language to Hindi
       }
     }
   };
   
-  console.log('📤 Initializing conversation with context');
+  console.log('📤 Initializing conversation with correct client data structure');
+  console.log('🔍 Initialization message:', JSON.stringify(initializationMessage, null, 2));
   agentWebSocket.send(JSON.stringify(initializationMessage));
 }
 

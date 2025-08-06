@@ -94,8 +94,6 @@ async function handlePostCallWebhook(req, res) {
         RecordingURL: recordingUrl,
         TranscriptSummary:
           elevenLabsCompleteData.analysis?.transcript_summary || "",
-        KnowlarityRawMetadata: knowlarityMetadata.raw || "",
-        PhoneCallMetadata: knowlarityMetadata.raw || "",
         AllDynamicVariables: allDynamicVariables,
         AllCollectedData: allCollectedData,
         DataExtractedByAI: allCollectedData

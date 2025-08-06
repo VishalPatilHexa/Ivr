@@ -11,7 +11,7 @@ const {
   activeConnections,
   cleanupSession,
 } = require("../services/websocketHandler");
-const { writeToGoogleSheets } = require("../services/googleSheetsService");
+const { addDataToSheet } = require("../services/googleSheetsService");
 
 /**
  * Handle ElevenLabs post-call webhook
@@ -86,24 +86,38 @@ async function handlePostCallWebhook(req, res) {
         knowlarityMetadata.raw || "No metadata stored"
       );
 
-      // Prepare combined data for Google Sheets
+      // Prepare combined data for Google Sheets with exact column names
       const combinedData = {
-        sessionId: sessionId,
-        conversationId: conversationId,
-        knowlarity_raw_metadata: knowlarityMetadata.raw,
-        elevenlabs_complete_data: elevenLabsCompleteData,
-        all_dynamic_variables: allDynamicVariables,
-        all_collected_data: allCollectedData,
-        recording_url: recordingUrl,
-        transcript_summary: elevenLabsCompleteData.analysis?.transcript_summary,
-        timestamp: new Date().toISOString(),
+        Timestamp: new Date().toISOString(),
+        SessionID: sessionId,
+        ConversationID: conversationId,
+        RecordingURL: recordingUrl,
+        TranscriptSummary:
+          elevenLabsCompleteData.analysis?.transcript_summary || "",
+        KnowlarityRawMetadata: knowlarityMetadata.raw || "",
+        PhoneCallMetadata: knowlarityMetadata.raw || "",
+        AllDynamicVariables: allDynamicVariables,
+        AllCollectedData: allCollectedData,
+        DataExtractedByAI: allCollectedData,
+        ElevenLabsCompleteData: elevenLabsCompleteData,
+        CompleteCombinedData: {
+          sessionId: sessionId,
+          conversationId: conversationId,
+          knowlarityMetadata: knowlarityMetadata.raw,
+          elevenLabsData: elevenLabsCompleteData,
+          dynamicVariables: allDynamicVariables,
+          collectedData: allCollectedData,
+          recordingUrl: recordingUrl,
+          summary: elevenLabsCompleteData.analysis?.transcript_summary,
+          timestamp: new Date().toISOString(),
+        },
       };
 
       console.log("🔗 ===== COMBINED DATA FOR GOOGLE SHEETS =====");
       console.log(JSON.stringify(combinedData, null, 2));
 
       // Write to Google Sheets instead of external API
-      await writeToGoogleSheets(combinedData);
+      await addDataToSheet(combinedData);
 
       // Close Knowlarity WebSocket if still active (agent ended call but Knowlarity socket still open)
       if (connection.websocket && connection.websocket.readyState === 1) {
@@ -124,22 +138,36 @@ async function handlePostCallWebhook(req, res) {
 
       // Still write to Google Sheets even without Knowlarity metadata
       const elevenLabsOnlyData = {
-        sessionId: sessionId,
-        conversationId: conversationId,
-        knowlarity_raw_metadata: null,
-        elevenlabs_complete_data: elevenLabsCompleteData,
-        all_dynamic_variables: allDynamicVariables,
-        all_collected_data: allCollectedData,
-        recording_url: recordingUrl,
-        transcript_summary: elevenLabsCompleteData.analysis?.transcript_summary,
-        timestamp: new Date().toISOString(),
+        Timestamp: new Date().toISOString(),
+        SessionID: sessionId,
+        ConversationID: conversationId,
+        RecordingURL: recordingUrl,
+        TranscriptSummary:
+          elevenLabsCompleteData.analysis?.transcript_summary || "",
+        KnowlarityRawMetadata: "",
+        PhoneCallMetadata: "",
+        AllDynamicVariables: allDynamicVariables,
+        AllCollectedData: allCollectedData,
+        DataExtractedByAI: allCollectedData,
+        ElevenLabsCompleteData: elevenLabsCompleteData,
+        CompleteCombinedData: {
+          sessionId: sessionId,
+          conversationId: conversationId,
+          knowlarityMetadata: null,
+          elevenLabsData: elevenLabsCompleteData,
+          dynamicVariables: allDynamicVariables,
+          collectedData: allCollectedData,
+          recordingUrl: recordingUrl,
+          summary: elevenLabsCompleteData.analysis?.transcript_summary,
+          timestamp: new Date().toISOString(),
+        },
       };
 
       console.log("📊 ===== ELEVENLABS DATA ONLY =====");
       console.log(JSON.stringify(elevenLabsOnlyData, null, 2));
 
       // Write to Google Sheets
-      await writeToGoogleSheets(elevenLabsOnlyData);
+      await addDataToSheet(elevenLabsOnlyData);
     }
 
     console.log("🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====");

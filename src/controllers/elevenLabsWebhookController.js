@@ -2,12 +2,16 @@
  * ===============================================================================
  * ELEVENLABS WEBHOOK CONTROLLER
  * ===============================================================================
- * 
+ *
  * Handles post-call webhooks from ElevenLabs and manages session cleanup
  * Maps ElevenLabs conversation data with Knowlarity metadata
  */
 
-const { activeConnections, cleanupSession } = require('../services/websocketHandler');
+const {
+  activeConnections,
+  cleanupSession,
+} = require("../services/websocketHandler");
+const { writeToGoogleSheets } = require("../services/googleSheetsService");
 
 /**
  * Handle ElevenLabs post-call webhook
@@ -15,105 +19,145 @@ const { activeConnections, cleanupSession } = require('../services/websocketHand
 async function handlePostCallWebhook(req, res) {
   try {
     const webhookData = req.body;
-    
-    console.log('🎯 ===== ELEVENLABS POST-CALL WEBHOOK RECEIVED =====');
-    
+
+    console.log("🎯 ===== ELEVENLABS POST-CALL WEBHOOK RECEIVED =====");
+
     // Extract session information from webhook
     const conversationId = webhookData.data?.conversation_id;
-    const sessionId = webhookData.data?.conversation_initiation_client_data?.dynamic_variables?.user_id || conversationId;
-    
-    console.log('🔍 Processing webhook for session:', sessionId);
-    
-    // Extract key webhook data
-    const webhookSummary = {
-      conversation_id: conversationId,
-      agent_id: webhookData.data?.agent_id,
-      status: webhookData.data?.status,
-      call_duration_secs: webhookData.data?.metadata?.call_duration_secs,
-      cost: webhookData.data?.metadata?.cost,
-      termination_reason: webhookData.data?.metadata?.termination_reason,
-      transcript_summary: webhookData.data?.analysis?.transcript_summary,
-      collected_data: {
-        patientName: webhookData.data?.analysis?.data_collection_results?.patientName?.value,
-        treatmentType: webhookData.data?.analysis?.data_collection_results?.treatmentType?.value,
-        symptoms: webhookData.data?.analysis?.data_collection_results?.symptoms?.value,
-        language: webhookData.data?.analysis?.data_collection_results?.language?.value
-      }
-    };
-    
-    console.log('📊 ===== ELEVENLABS WEBHOOK SUMMARY =====');
-    console.log(JSON.stringify(webhookSummary, null, 2));
-    
+    const sessionId =
+      webhookData.data?.conversation_initiation_client_data?.dynamic_variables
+        ?.user_id || conversationId;
+
+    console.log("🔍 Processing webhook for session:", sessionId);
+
+    // Extract ALL ElevenLabs data (complete webhook data)
+    const elevenLabsCompleteData = webhookData.data || {};
+
+    // Extract all dynamic variables (not just predefined ones)
+    const allDynamicVariables =
+      elevenLabsCompleteData.conversation_initiation_client_data
+        ?.dynamic_variables || {};
+
+    // Extract all collected data from analysis
+    const allCollectedData = {};
+    if (elevenLabsCompleteData.analysis?.data_collection_results) {
+      Object.keys(
+        elevenLabsCompleteData.analysis.data_collection_results
+      ).forEach((key) => {
+        const result =
+          elevenLabsCompleteData.analysis.data_collection_results[key];
+        allCollectedData[key] = {
+          value: result.value,
+          rationale: result.rationale,
+        };
+      });
+    }
+
+    // Recording URL from metadata
+    const recordingUrl =
+      elevenLabsCompleteData.metadata?.audio_url ||
+      elevenLabsCompleteData.metadata?.recording_url ||
+      "No recording available";
+
+    console.log("📊 ===== ELEVENLABS COMPLETE DATA =====");
+    console.log(
+      "🎯 All Dynamic Variables:",
+      JSON.stringify(allDynamicVariables, null, 2)
+    );
+    console.log(
+      "📋 All Collected Data:",
+      JSON.stringify(allCollectedData, null, 2)
+    );
+    console.log("🎵 Recording URL:", recordingUrl);
+    console.log(
+      "📄 Summary:",
+      elevenLabsCompleteData.analysis?.transcript_summary
+    );
+
     // Get Knowlarity metadata from stored connection
     const connection = activeConnections.get(sessionId);
-    
+
     if (connection) {
       const knowlarityMetadata = connection.knowlarityMetadata || {};
-      
-      console.log('📞 ===== KNOWLARITY METADATA =====');
-      console.log('🔍 Raw metadata:', knowlarityMetadata.raw || 'No metadata stored');
-      
-      // Prepare combined data for external API
+
+      console.log("📞 ===== KNOWLARITY METADATA =====");
+      console.log(
+        "🔍 Raw metadata:",
+        knowlarityMetadata.raw || "No metadata stored"
+      );
+
+      // Prepare combined data for Google Sheets
       const combinedData = {
         sessionId: sessionId,
         conversationId: conversationId,
         knowlarity_raw_metadata: knowlarityMetadata.raw,
-        elevenlabs_summary: webhookSummary,
-        timestamp: new Date().toISOString()
+        elevenlabs_complete_data: elevenLabsCompleteData,
+        all_dynamic_variables: allDynamicVariables,
+        all_collected_data: allCollectedData,
+        recording_url: recordingUrl,
+        transcript_summary: elevenLabsCompleteData.analysis?.transcript_summary,
+        timestamp: new Date().toISOString(),
       };
-      
-      console.log('🔗 ===== COMBINED DATA FOR EXTERNAL API =====');
+
+      console.log("🔗 ===== COMBINED DATA FOR GOOGLE SHEETS =====");
       console.log(JSON.stringify(combinedData, null, 2));
-      
-      // TODO: Call external API with combined data
-      await callExternalAPI(combinedData);
-      
+
+      // Write to Google Sheets instead of external API
+      await writeToGoogleSheets(combinedData);
+
       // Close Knowlarity WebSocket if still active (agent ended call but Knowlarity socket still open)
-      if (connection.websocket && connection.websocket.readyState === 1) { // WebSocket.OPEN = 1
-        console.log('🔌 Closing Knowlarity WebSocket - ElevenLabs agent ended the call');
-        connection.websocket.close(1000, 'Call ended by ElevenLabs agent');
+      if (connection.websocket && connection.websocket.readyState === 1) {
+        // WebSocket.OPEN = 1
+        console.log(
+          "🔌 Closing Knowlarity WebSocket - ElevenLabs agent ended the call"
+        );
+        connection.websocket.close(1000, "Call ended by ElevenLabs agent");
       }
-      
+
       // Perform cleanup after processing
-      console.log('🧹 Performing session cleanup after webhook processing');
+      console.log("🧹 Performing session cleanup after webhook processing");
       const agentConversation = connection.agentConversation;
       cleanupSession(sessionId, agentConversation);
-      
     } else {
-      console.log('⚠️ No connection found for session:', sessionId);
-      console.log('💡 This is normal - cleanup may have already happened');
-      
-      // Still log the important webhook data even without Knowlarity metadata
-      console.log('📊 ===== ELEVENLABS DATA ONLY =====');
-      console.log(JSON.stringify(webhookSummary, null, 2));
-      
-      // TODO: Call external API with ElevenLabs data only
-      await callExternalAPI({
+      console.log("⚠️ No connection found for session:", sessionId);
+      console.log("💡 This is normal - cleanup may have already happened");
+
+      // Still write to Google Sheets even without Knowlarity metadata
+      const elevenLabsOnlyData = {
         sessionId: sessionId,
         conversationId: conversationId,
         knowlarity_raw_metadata: null,
-        elevenlabs_summary: webhookSummary,
-        timestamp: new Date().toISOString()
-      });
+        elevenlabs_complete_data: elevenLabsCompleteData,
+        all_dynamic_variables: allDynamicVariables,
+        all_collected_data: allCollectedData,
+        recording_url: recordingUrl,
+        transcript_summary: elevenLabsCompleteData.analysis?.transcript_summary,
+        timestamp: new Date().toISOString(),
+      };
+
+      console.log("📊 ===== ELEVENLABS DATA ONLY =====");
+      console.log(JSON.stringify(elevenLabsOnlyData, null, 2));
+
+      // Write to Google Sheets
+      await writeToGoogleSheets(elevenLabsOnlyData);
     }
-    
-    console.log('🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====');
-    
+
+    console.log("🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====");
+
     // Respond to ElevenLabs webhook
     res.status(200).json({
       success: true,
-      message: 'Webhook processed successfully',
-      sessionId: sessionId
+      message: "Webhook processed successfully",
+      sessionId: sessionId,
     });
-    
   } catch (error) {
-    console.error('❌ Error processing ElevenLabs webhook:', error);
-    console.error('💥 Error details:', error.message);
-    
+    console.error("❌ Error processing ElevenLabs webhook:", error);
+    console.error("💥 Error details:", error.message);
+
     res.status(500).json({
       success: false,
-      error: 'Failed to process webhook',
-      details: error.message
+      error: "Failed to process webhook",
+      details: error.message,
     });
   }
 }
@@ -123,15 +167,16 @@ async function handlePostCallWebhook(req, res) {
  */
 async function callExternalAPI(combinedData) {
   try {
-    console.log('📡 ===== CALLING EXTERNAL API =====');
-    console.log('🚀 Data to send:', JSON.stringify(combinedData, null, 2));
-    
+    console.log("📡 ===== CALLING EXTERNAL API =====");
+    console.log("🚀 Data to send:", JSON.stringify(combinedData, null, 2));
+
     // TODO: Replace with actual external API endpoint
-    const externalApiUrl = process.env.EXTERNAL_API_URL || 'https://your-api-endpoint.com/webhook';
-    
+    const externalApiUrl =
+      process.env.EXTERNAL_API_URL || "https://your-api-endpoint.com/webhook";
+
     console.log(`📞 Would call external API: ${externalApiUrl}`);
-    console.log('📦 Payload:', combinedData);
-    
+    console.log("📦 Payload:", combinedData);
+
     // Uncomment below when ready to make actual API call
     /*
     const response = await fetch(externalApiUrl, {
@@ -150,15 +195,14 @@ async function callExternalAPI(combinedData) {
       console.error('❌ External API call failed:', response.statusText);
     }
     */
-    
-    console.log('✅ External API call completed (currently mocked)');
-    
+
+    console.log("✅ External API call completed (currently mocked)");
   } catch (error) {
-    console.error('❌ Error calling external API:', error);
+    console.error("❌ Error calling external API:", error);
     throw error;
   }
 }
 
 module.exports = {
-  handlePostCallWebhook
+  handlePostCallWebhook,
 };

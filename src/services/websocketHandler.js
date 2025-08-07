@@ -544,18 +544,18 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   // AUDIO PROCESSING: Apply light noise reduction + amplification
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   
-  // STEP 1: Very light noise gate (only removes extremely quiet background)
-  const noiseReducedBuffer = applyLightNoiseGate(audioBuffer, 80); // Very low threshold to preserve speech
+  // STEP 1: Ultra-light noise gate (only removes dead silence)
+  const noiseReducedBuffer = applyLightNoiseGate(audioBuffer, 30); // Ultra-low threshold to preserve all speech
   
   // STEP 2: Amplify volume for better ElevenLabs recognition
-  const amplifiedAudioBuffer = amplifyAudioVolume(noiseReducedBuffer, 40.0); // 40x amplification
+  const amplifiedAudioBuffer = amplifyAudioVolume(noiseReducedBuffer, 30.0); // 30x amplification
   
   // Check final amplified samples
   if (amplifiedAudioBuffer.length >= 6) {
     const ampSample1 = amplifiedAudioBuffer.readInt16LE(0);
     const ampSample2 = amplifiedAudioBuffer.readInt16LE(2);
     const ampSample3 = amplifiedAudioBuffer.readInt16LE(4);
-    console.log("🔊 After noise reduction + 40x amplification:", ampSample1, ampSample2, ampSample3);
+    console.log("🔊 After noise reduction + 30x amplification:", ampSample1, ampSample2, ampSample3);
     console.log("🎯 Final max amplitude:", Math.max(Math.abs(ampSample1), Math.abs(ampSample2), Math.abs(ampSample3)));
   }
   

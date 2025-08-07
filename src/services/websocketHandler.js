@@ -57,24 +57,25 @@ function handleConnection(websocket, request) {
  * ===============================================================================
  */
 
+
 /**
- * Simple noise gate/reduction filter
- * Reduces low-level background noise by setting quiet samples to zero
+ * Very light noise gate - only removes extremely quiet background noise
+ * Uses very low threshold to preserve all speech
  */
-function applyNoiseReduction(audioBuffer, noiseThreshold = 1000) {
+function applyLightNoiseGate(audioBuffer, noiseThreshold = 150) {
   try {
     const processedBuffer = Buffer.from(audioBuffer);
-    let noiseSamplesFiltered = 0;
+    let quietSamplesFiltered = 0;
     
     // Process 16-bit samples (2 bytes each)
     for (let i = 0; i < processedBuffer.length - 1; i += 2) {
       // Read 16-bit little endian sample
       let sample = processedBuffer.readInt16LE(i);
       
-      // Apply noise gate - if sample is below threshold, set to zero
+      // Only filter extremely quiet samples (very low threshold)
       if (Math.abs(sample) < noiseThreshold) {
         sample = 0;
-        noiseSamplesFiltered++;
+        quietSamplesFiltered++;
       }
       
       // Write back the processed sample
@@ -82,55 +83,13 @@ function applyNoiseReduction(audioBuffer, noiseThreshold = 1000) {
     }
     
     const totalSamples = processedBuffer.length / 2;
-    const noiseReductionPercent = ((noiseSamplesFiltered / totalSamples) * 100).toFixed(1);
-    console.log(`🔇 Noise reduction applied: ${noiseReductionPercent}% samples filtered (threshold: ${noiseThreshold})`);
+    const filteredPercent = ((quietSamplesFiltered / totalSamples) * 100).toFixed(1);
+    console.log(`🔇 Light noise gate applied: ${filteredPercent}% quiet samples filtered (threshold: ${noiseThreshold})`);
     
     return processedBuffer;
     
   } catch (error) {
-    console.error("❌ Error applying noise reduction:", error);
-    return audioBuffer; // Return original on error
-  }
-}
-
-/**
- * Advanced noise reduction using simple moving average filter
- * Smooths out audio to reduce high-frequency noise
- */
-function applySmoothingFilter(audioBuffer, windowSize = 3) {
-  try {
-    const processedBuffer = Buffer.from(audioBuffer);
-    const samples = [];
-    
-    // Read all samples first
-    for (let i = 0; i < processedBuffer.length - 1; i += 2) {
-      samples.push(processedBuffer.readInt16LE(i));
-    }
-    
-    // Apply moving average filter
-    for (let i = 0; i < samples.length; i++) {
-      let sum = 0;
-      let count = 0;
-      
-      // Calculate average of surrounding samples
-      for (let j = Math.max(0, i - Math.floor(windowSize / 2)); 
-           j <= Math.min(samples.length - 1, i + Math.floor(windowSize / 2)); 
-           j++) {
-        sum += samples[j];
-        count++;
-      }
-      
-      const smoothedSample = Math.round(sum / count);
-      
-      // Write back smoothed sample
-      processedBuffer.writeInt16LE(smoothedSample, i * 2);
-    }
-    
-    console.log(`✨ Audio smoothing applied (window size: ${windowSize})`);
-    return processedBuffer;
-    
-  } catch (error) {
-    console.error("❌ Error applying smoothing filter:", error);
+    console.error("❌ Error applying light noise gate:", error);
     return audioBuffer; // Return original on error
   }
 }
@@ -566,15 +525,14 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     "bytes"
   );
 
-  // AUDIO PROCESSING PIPELINE: Light processing to preserve speech quality
+  // AUDIO PROCESSING: Light noise reduction + volume amplification
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   
-  // OPTION 1: Just volume amplification (recommended for speech recognition)
-  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 1.8); // Moderate 1.8x amplification
+  // STEP 1: Very light noise gate (only removes extremely quiet background)
+  const noiseGatedBuffer = applyLightNoiseGate(audioBuffer, 150); // Very low threshold
   
-  // OPTION 2: Add very light noise reduction if needed (uncomment to enable)
-  // const lightNoiseReduced = applyNoiseReduction(audioBuffer, 200); // Very low threshold
-  // const amplifiedAudioBuffer = amplifyAudioVolume(lightNoiseReduced, 1.8);
+  // STEP 2: Amplify volume for better ElevenLabs recognition
+  const amplifiedAudioBuffer = amplifyAudioVolume(noiseGatedBuffer, 3.0); // Higher 3x amplification
   
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
 

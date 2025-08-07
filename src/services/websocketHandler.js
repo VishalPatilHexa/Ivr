@@ -58,6 +58,84 @@ function handleConnection(websocket, request) {
  */
 
 /**
+ * Simple noise gate/reduction filter
+ * Reduces low-level background noise by setting quiet samples to zero
+ */
+function applyNoiseReduction(audioBuffer, noiseThreshold = 1000) {
+  try {
+    const processedBuffer = Buffer.from(audioBuffer);
+    let noiseSamplesFiltered = 0;
+    
+    // Process 16-bit samples (2 bytes each)
+    for (let i = 0; i < processedBuffer.length - 1; i += 2) {
+      // Read 16-bit little endian sample
+      let sample = processedBuffer.readInt16LE(i);
+      
+      // Apply noise gate - if sample is below threshold, set to zero
+      if (Math.abs(sample) < noiseThreshold) {
+        sample = 0;
+        noiseSamplesFiltered++;
+      }
+      
+      // Write back the processed sample
+      processedBuffer.writeInt16LE(sample, i);
+    }
+    
+    const totalSamples = processedBuffer.length / 2;
+    const noiseReductionPercent = ((noiseSamplesFiltered / totalSamples) * 100).toFixed(1);
+    console.log(`🔇 Noise reduction applied: ${noiseReductionPercent}% samples filtered (threshold: ${noiseThreshold})`);
+    
+    return processedBuffer;
+    
+  } catch (error) {
+    console.error("❌ Error applying noise reduction:", error);
+    return audioBuffer; // Return original on error
+  }
+}
+
+/**
+ * Advanced noise reduction using simple moving average filter
+ * Smooths out audio to reduce high-frequency noise
+ */
+function applySmoothingFilter(audioBuffer, windowSize = 3) {
+  try {
+    const processedBuffer = Buffer.from(audioBuffer);
+    const samples = [];
+    
+    // Read all samples first
+    for (let i = 0; i < processedBuffer.length - 1; i += 2) {
+      samples.push(processedBuffer.readInt16LE(i));
+    }
+    
+    // Apply moving average filter
+    for (let i = 0; i < samples.length; i++) {
+      let sum = 0;
+      let count = 0;
+      
+      // Calculate average of surrounding samples
+      for (let j = Math.max(0, i - Math.floor(windowSize / 2)); 
+           j <= Math.min(samples.length - 1, i + Math.floor(windowSize / 2)); 
+           j++) {
+        sum += samples[j];
+        count++;
+      }
+      
+      const smoothedSample = Math.round(sum / count);
+      
+      // Write back smoothed sample
+      processedBuffer.writeInt16LE(smoothedSample, i * 2);
+    }
+    
+    console.log(`✨ Audio smoothing applied (window size: ${windowSize})`);
+    return processedBuffer;
+    
+  } catch (error) {
+    console.error("❌ Error applying smoothing filter:", error);
+    return audioBuffer; // Return original on error
+  }
+}
+
+/**
  * Amplify audio volume by multiplying sample values
  * Assumes 16-bit PCM audio (little endian)
  */
@@ -488,11 +566,19 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     "bytes"
   );
 
-  // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
+  // AUDIO PROCESSING PIPELINE: Clean and enhance audio before sending to ElevenLabs
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   
-  // AUDIO VOLUME AMPLIFICATION: Boost volume before sending to ElevenLabs
-  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.0); // 2x amplification
+  // STEP 1: Apply noise reduction to remove background noise
+  const noiseReducedBuffer = applyNoiseReduction(audioBuffer, 800); // Adjust threshold as needed
+  
+  // STEP 2: Apply smoothing filter to reduce high-frequency noise
+  const smoothedBuffer = applySmoothingFilter(noiseReducedBuffer, 3);
+  
+  // STEP 3: Amplify volume for better clarity
+  const amplifiedAudioBuffer = amplifyAudioVolume(smoothedBuffer, 2.0); // 2x amplification
+  
+  // STEP 4: Convert to base64 for ElevenLabs
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing

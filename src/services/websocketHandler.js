@@ -505,9 +505,19 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     console.log("🔊 Max amplitude in first 3:", Math.max(Math.abs(sample1), Math.abs(sample2), Math.abs(sample3)));
   }
   
-  // AUDIO PROCESSING: Only volume amplification - no filtering to prevent artifacts
+  // AUDIO PROCESSING: Massive amplification needed - Knowlarity audio is extremely quiet
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 3.0); // 3x amplification only
+  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 50.0); // 50x amplification for very quiet input
+  
+  // Check amplified samples
+  if (amplifiedAudioBuffer.length >= 6) {
+    const ampSample1 = amplifiedAudioBuffer.readInt16LE(0);
+    const ampSample2 = amplifiedAudioBuffer.readInt16LE(2);
+    const ampSample3 = amplifiedAudioBuffer.readInt16LE(4);
+    console.log("🔊 After 50x amplification:", ampSample1, ampSample2, ampSample3);
+    console.log("🎯 Max amplified amplitude:", Math.max(Math.abs(ampSample1), Math.abs(ampSample2), Math.abs(ampSample3)));
+  }
+  
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
   
   console.log("📤 Base64 length:", audioBase64Data.length, "characters");

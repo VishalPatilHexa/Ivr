@@ -508,8 +508,8 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   
   // AUDIO PROCESSING: Pure volume amplification only - NO noise processing to prevent artifacts
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 5.0); // 5x amplification - clean and artifact-free
-  
+  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.0); // 2x amplification - clean and artifact-free
+
   // Check final amplified samples
   if (amplifiedAudioBuffer.length >= 6) {
     const ampSample1 = amplifiedAudioBuffer.readInt16LE(0);

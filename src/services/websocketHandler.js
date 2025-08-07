@@ -158,7 +158,7 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       agentConversation = await elevenLabsAgentService.createConversation(
         sessionId,
-        callSession.patientData?.treatmentType || "general consultation"
+        callSession.patientData?.treatmentType || "Piles"
       );
 
       // Store the agent conversation in the connection for cleanup
@@ -508,17 +508,8 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   
   // AUDIO PROCESSING: Pure volume amplification only - NO noise processing to prevent artifacts
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.0); // 2x amplification - clean and artifact-free
+  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.5); // 2.5x amplification - clean and artifact-free
 
-  // Check final amplified samples
-  if (amplifiedAudioBuffer.length >= 6) {
-    const ampSample1 = amplifiedAudioBuffer.readInt16LE(0);
-    const ampSample2 = amplifiedAudioBuffer.readInt16LE(2);
-    const ampSample3 = amplifiedAudioBuffer.readInt16LE(4);
-    console.log("🔊 After 5x amplification (no noise processing):", ampSample1, ampSample2, ampSample3);
-    console.log("🎯 Final max amplitude:", Math.max(Math.abs(ampSample1), Math.abs(ampSample2), Math.abs(ampSample3)));
-  }
-  
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
   
   console.log("📤 Base64 length:", audioBase64Data.length, "characters");

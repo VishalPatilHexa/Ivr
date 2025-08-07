@@ -566,19 +566,16 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     "bytes"
   );
 
-  // AUDIO PROCESSING PIPELINE: Clean and enhance audio before sending to ElevenLabs
+  // AUDIO PROCESSING PIPELINE: Light processing to preserve speech quality
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   
-  // STEP 1: Apply noise reduction to remove background noise
-  const noiseReducedBuffer = applyNoiseReduction(audioBuffer, 800); // Adjust threshold as needed
+  // OPTION 1: Just volume amplification (recommended for speech recognition)
+  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 1.8); // Moderate 1.8x amplification
   
-  // STEP 2: Apply smoothing filter to reduce high-frequency noise
-  const smoothedBuffer = applySmoothingFilter(noiseReducedBuffer, 3);
+  // OPTION 2: Add very light noise reduction if needed (uncomment to enable)
+  // const lightNoiseReduced = applyNoiseReduction(audioBuffer, 200); // Very low threshold
+  // const amplifiedAudioBuffer = amplifyAudioVolume(lightNoiseReduced, 1.8);
   
-  // STEP 3: Amplify volume for better clarity
-  const amplifiedAudioBuffer = amplifyAudioVolume(smoothedBuffer, 2.0); // 2x amplification
-  
-  // STEP 4: Convert to base64 for ElevenLabs
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing

@@ -59,41 +59,6 @@ function handleConnection(websocket, request) {
 
 
 
-/**
- * Very light noise gate - only removes extremely quiet background noise
- * Uses ultra-low threshold to preserve all speech while removing silent gaps
- */
-function applyLightNoiseGate(audioBuffer, noiseThreshold = 80) {
-  try {
-    const processedBuffer = Buffer.from(audioBuffer);
-    let quietSamplesFiltered = 0;
-    
-    // Process 16-bit samples (2 bytes each)
-    for (let i = 0; i < processedBuffer.length - 1; i += 2) {
-      // Read 16-bit little endian sample
-      let sample = processedBuffer.readInt16LE(i);
-      
-      // Only filter extremely quiet samples (ultra-low threshold)
-      if (Math.abs(sample) < noiseThreshold) {
-        sample = 0;
-        quietSamplesFiltered++;
-      }
-      
-      // Write back the processed sample
-      processedBuffer.writeInt16LE(sample, i);
-    }
-    
-    const totalSamples = processedBuffer.length / 2;
-    const filteredPercent = ((quietSamplesFiltered / totalSamples) * 100).toFixed(1);
-    console.log(`🔇 Light noise gate applied: ${filteredPercent}% quiet samples filtered (threshold: ${noiseThreshold})`);
-    
-    return processedBuffer;
-    
-  } catch (error) {
-    console.error("❌ Error applying light noise gate:", error);
-    return audioBuffer; // Return original on error
-  }
-}
 
 /**
  * Amplify audio volume by multiplying sample values
@@ -541,21 +506,16 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     console.log("🔊 Max amplitude in first 3:", Math.max(Math.abs(sample1), Math.abs(sample2), Math.abs(sample3)));
   }
   
-  // AUDIO PROCESSING: Light noise reduction + high amplification for very quiet input
+  // AUDIO PROCESSING: Pure volume amplification only - NO noise processing to prevent artifacts
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  
-  // STEP 1: Very light noise gate (only removes samples below 5 amplitude - dead silence only)
-  const noiseReducedBuffer = applyLightNoiseGate(audioBuffer, 5); // Ultra-low threshold for dead silence only
-  
-  // STEP 2: Balanced amplification to avoid clipping while boosting quiet audio
-  const amplifiedAudioBuffer = amplifyAudioVolume(noiseReducedBuffer, 25.0); // 25x amplification - prevents clipping
+  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 5.0); // 5x amplification - clean and artifact-free
   
   // Check final amplified samples
   if (amplifiedAudioBuffer.length >= 6) {
     const ampSample1 = amplifiedAudioBuffer.readInt16LE(0);
     const ampSample2 = amplifiedAudioBuffer.readInt16LE(2);
     const ampSample3 = amplifiedAudioBuffer.readInt16LE(4);
-    console.log("🔊 After light noise reduction + 25x amplification:", ampSample1, ampSample2, ampSample3);
+    console.log("🔊 After 5x amplification (no noise processing):", ampSample1, ampSample2, ampSample3);
     console.log("🎯 Final max amplitude:", Math.max(Math.abs(ampSample1), Math.abs(ampSample2), Math.abs(ampSample3)));
   }
   

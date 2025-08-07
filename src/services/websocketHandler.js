@@ -490,10 +490,28 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     "bytes"
   );
 
+  // AUDIO FORMAT DEBUGGING: Let's see what Knowlarity is sending
+  console.log("🔍 ===== AUDIO FORMAT DEBUG =====");
+  console.log("📊 Buffer length:", audioBuffer.length, "bytes");
+  console.log("🎵 Sample count:", audioBuffer.length / 2, "(assuming 16-bit)");
+  console.log("⏱️ Duration:", (audioBuffer.length / 2 / 16000).toFixed(3), "seconds (assuming 16kHz)");
+  
+  // Check first few samples for debugging
+  if (audioBuffer.length >= 6) {
+    const sample1 = audioBuffer.readInt16LE(0);
+    const sample2 = audioBuffer.readInt16LE(2);
+    const sample3 = audioBuffer.readInt16LE(4);
+    console.log("🎼 First 3 samples:", sample1, sample2, sample3);
+    console.log("🔊 Max amplitude in first 3:", Math.max(Math.abs(sample1), Math.abs(sample2), Math.abs(sample3)));
+  }
+  
   // AUDIO PROCESSING: Only volume amplification - no filtering to prevent artifacts
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 3.0); // 3x amplification only
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
+  
+  console.log("📤 Base64 length:", audioBase64Data.length, "characters");
+  console.log("🔍 ===== END AUDIO DEBUG =====");
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {

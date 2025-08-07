@@ -58,41 +58,6 @@ function handleConnection(websocket, request) {
  */
 
 
-/**
- * Very light noise gate - only removes extremely quiet background noise
- * Uses very low threshold to preserve all speech
- */
-function applyLightNoiseGate(audioBuffer, noiseThreshold = 150) {
-  try {
-    const processedBuffer = Buffer.from(audioBuffer);
-    let quietSamplesFiltered = 0;
-    
-    // Process 16-bit samples (2 bytes each)
-    for (let i = 0; i < processedBuffer.length - 1; i += 2) {
-      // Read 16-bit little endian sample
-      let sample = processedBuffer.readInt16LE(i);
-      
-      // Only filter extremely quiet samples (very low threshold)
-      if (Math.abs(sample) < noiseThreshold) {
-        sample = 0;
-        quietSamplesFiltered++;
-      }
-      
-      // Write back the processed sample
-      processedBuffer.writeInt16LE(sample, i);
-    }
-    
-    const totalSamples = processedBuffer.length / 2;
-    const filteredPercent = ((quietSamplesFiltered / totalSamples) * 100).toFixed(1);
-    console.log(`🔇 Light noise gate applied: ${filteredPercent}% quiet samples filtered (threshold: ${noiseThreshold})`);
-    
-    return processedBuffer;
-    
-  } catch (error) {
-    console.error("❌ Error applying light noise gate:", error);
-    return audioBuffer; // Return original on error
-  }
-}
 
 /**
  * Amplify audio volume by multiplying sample values
@@ -525,15 +490,9 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     "bytes"
   );
 
-  // AUDIO PROCESSING: Light noise reduction + volume amplification
+  // AUDIO PROCESSING: Only volume amplification - no filtering to prevent artifacts
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  
-  // STEP 1: Very light noise gate (only removes extremely quiet background)
-  const noiseGatedBuffer = applyLightNoiseGate(audioBuffer, 150); // Very low threshold
-  
-  // STEP 2: Amplify volume for better ElevenLabs recognition
-  const amplifiedAudioBuffer = amplifyAudioVolume(noiseGatedBuffer, 3.0); // Higher 3x amplification
-  
+  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 3.0); // 3x amplification only
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing

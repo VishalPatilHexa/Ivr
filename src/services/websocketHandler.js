@@ -547,15 +547,15 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   // STEP 1: Very light noise gate (only removes samples below 5 amplitude - dead silence only)
   const noiseReducedBuffer = applyLightNoiseGate(audioBuffer, 5); // Ultra-low threshold for dead silence only
   
-  // STEP 2: High amplification needed for extremely quiet Knowlarity audio
-  const amplifiedAudioBuffer = amplifyAudioVolume(noiseReducedBuffer, 200.0); // 200x amplification for very quiet input
+  // STEP 2: Balanced amplification to avoid clipping while boosting quiet audio
+  const amplifiedAudioBuffer = amplifyAudioVolume(noiseReducedBuffer, 25.0); // 25x amplification - prevents clipping
   
   // Check final amplified samples
   if (amplifiedAudioBuffer.length >= 6) {
     const ampSample1 = amplifiedAudioBuffer.readInt16LE(0);
     const ampSample2 = amplifiedAudioBuffer.readInt16LE(2);
     const ampSample3 = amplifiedAudioBuffer.readInt16LE(4);
-    console.log("🔊 After light noise reduction + 200x amplification:", ampSample1, ampSample2, ampSample3);
+    console.log("🔊 After light noise reduction + 25x amplification:", ampSample1, ampSample2, ampSample3);
     console.log("🎯 Final max amplitude:", Math.max(Math.abs(ampSample1), Math.abs(ampSample2), Math.abs(ampSample3)));
   }
   

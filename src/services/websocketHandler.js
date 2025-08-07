@@ -60,6 +60,42 @@ function handleConnection(websocket, request) {
 
 
 /**
+ * Very light noise gate - only removes extremely quiet background noise
+ * Uses ultra-low threshold to preserve all speech while removing silent gaps
+ */
+function applyLightNoiseGate(audioBuffer, noiseThreshold = 80) {
+  try {
+    const processedBuffer = Buffer.from(audioBuffer);
+    let quietSamplesFiltered = 0;
+    
+    // Process 16-bit samples (2 bytes each)
+    for (let i = 0; i < processedBuffer.length - 1; i += 2) {
+      // Read 16-bit little endian sample
+      let sample = processedBuffer.readInt16LE(i);
+      
+      // Only filter extremely quiet samples (ultra-low threshold)
+      if (Math.abs(sample) < noiseThreshold) {
+        sample = 0;
+        quietSamplesFiltered++;
+      }
+      
+      // Write back the processed sample
+      processedBuffer.writeInt16LE(sample, i);
+    }
+    
+    const totalSamples = processedBuffer.length / 2;
+    const filteredPercent = ((quietSamplesFiltered / totalSamples) * 100).toFixed(1);
+    console.log(`🔇 Light noise gate applied: ${filteredPercent}% quiet samples filtered (threshold: ${noiseThreshold})`);
+    
+    return processedBuffer;
+    
+  } catch (error) {
+    console.error("❌ Error applying light noise gate:", error);
+    return audioBuffer; // Return original on error
+  }
+}
+
+/**
  * Amplify audio volume by multiplying sample values
  * Assumes 16-bit PCM audio (little endian)
  */
@@ -505,17 +541,22 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
     console.log("🔊 Max amplitude in first 3:", Math.max(Math.abs(sample1), Math.abs(sample2), Math.abs(sample3)));
   }
   
-  // AUDIO PROCESSING: Massive amplification needed - Knowlarity audio is extremely quiet
+  // AUDIO PROCESSING: Apply light noise reduction + amplification
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 50.0); // 50x amplification for very quiet input
   
-  // Check amplified samples
+  // STEP 1: Very light noise gate (only removes extremely quiet background)
+  const noiseReducedBuffer = applyLightNoiseGate(audioBuffer, 80); // Very low threshold to preserve speech
+  
+  // STEP 2: Amplify volume for better ElevenLabs recognition
+  const amplifiedAudioBuffer = amplifyAudioVolume(noiseReducedBuffer, 40.0); // 40x amplification
+  
+  // Check final amplified samples
   if (amplifiedAudioBuffer.length >= 6) {
     const ampSample1 = amplifiedAudioBuffer.readInt16LE(0);
     const ampSample2 = amplifiedAudioBuffer.readInt16LE(2);
     const ampSample3 = amplifiedAudioBuffer.readInt16LE(4);
-    console.log("🔊 After 50x amplification:", ampSample1, ampSample2, ampSample3);
-    console.log("🎯 Max amplified amplitude:", Math.max(Math.abs(ampSample1), Math.abs(ampSample2), Math.abs(ampSample3)));
+    console.log("🔊 After noise reduction + 40x amplification:", ampSample1, ampSample2, ampSample3);
+    console.log("🎯 Final max amplitude:", Math.max(Math.abs(ampSample1), Math.abs(ampSample2), Math.abs(ampSample3)));
   }
   
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");

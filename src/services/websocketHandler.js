@@ -53,6 +53,45 @@ function handleConnection(websocket, request) {
 
 /**
  * ===============================================================================
+ * AUDIO PROCESSING UTILITIES
+ * ===============================================================================
+ */
+
+/**
+ * Amplify audio volume by multiplying sample values
+ * Assumes 16-bit PCM audio (little endian)
+ */
+function amplifyAudioVolume(audioBuffer, amplificationFactor = 2.0) {
+  try {
+    // Create a copy to avoid modifying original buffer
+    const amplifiedBuffer = Buffer.from(audioBuffer);
+    
+    // Process 16-bit samples (2 bytes each)
+    for (let i = 0; i < amplifiedBuffer.length - 1; i += 2) {
+      // Read 16-bit little endian sample
+      let sample = amplifiedBuffer.readInt16LE(i);
+      
+      // Amplify the sample
+      sample = Math.round(sample * amplificationFactor);
+      
+      // Clamp to prevent overflow/distortion
+      sample = Math.max(-32768, Math.min(32767, sample));
+      
+      // Write back the amplified sample
+      amplifiedBuffer.writeInt16LE(sample, i);
+    }
+    
+    console.log(`🔊 Audio amplified by factor ${amplificationFactor}x`);
+    return amplifiedBuffer;
+    
+  } catch (error) {
+    console.error("❌ Error amplifying audio:", error);
+    return audioBuffer; // Return original on error
+  }
+}
+
+/**
+ * ===============================================================================
  * MAIN KNOWLARITY STREAM HANDLER
  * ===============================================================================
  * Handles the complete audio streaming workflow between Knowlarity and ElevenLabs
@@ -451,7 +490,10 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
 
   // AUDIO FORMAT CONVERSION: Convert binary PCM audio to base64 format
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
-  const audioBase64Data = audioBuffer.toString("base64");
+  
+  // AUDIO VOLUME AMPLIFICATION: Boost volume before sending to ElevenLabs
+  const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.0); // 2x amplification
+  const audioBase64Data = amplifiedAudioBuffer.toString("base64");
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {

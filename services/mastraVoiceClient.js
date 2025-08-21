@@ -76,10 +76,14 @@ class MastraVoiceClient {
       case 'call_started':
         this.currentSession = data.sessionId;
         console.log(`📞 Call started: ${data.sessionId}`);
-        console.log(`🎤 Default greeting: ${data.defaultGreeting.text}`);
+        console.log(`🎤 Default greeting: ${data.defaultGreeting?.text || 'No greeting provided'}`);
         
-        // Forward to websocket handler
-        this.forwardToClient(data.sessionId, {
+        // Use the original session ID for consistency with websocket handler
+        const originalSessionId = this.originalSessionId || data.sessionId;
+        console.log(`🔗 Mapping Mastra session ${data.sessionId} to original session ${originalSessionId}`);
+        
+        // Forward to websocket handler using original session ID
+        this.forwardToClient(originalSessionId, {
           type: 'agent_ready',
           message: 'Mastra Bhavna agent is ready for conversation'
         });
@@ -91,20 +95,30 @@ class MastraVoiceClient {
       case 'agent_response':
         console.log(`🤖 Bhavna said: "${data.agentText}"`);
         
+        // Use the original session ID for consistency
+        const responseSessionId = this.originalSessionId || data.sessionId || this.currentSession;
+        
         if (data.audioContent) {
           // Convert base64 audio back to buffer for debugging
           const audioBuffer = Buffer.from(data.audioContent, 'base64');
           console.log(`🔊 Received ${audioBuffer.length} bytes of audio`);
           
           // Forward audio to websocket handler
-          this.forwardToClient(data.sessionId || this.currentSession, {
+          this.forwardToClient(responseSessionId, {
             type: 'agent_audio',
             audio: data.audioContent // Keep as base64 for forwarding
           });
+          
+          // Send audio end signal after a brief delay
+          setTimeout(() => {
+            this.forwardToClient(responseSessionId, {
+              type: 'agent_audio_end'
+            });
+          }, 100);
         }
 
         // Forward agent text response
-        this.forwardToClient(data.sessionId || this.currentSession, {
+        this.forwardToClient(responseSessionId, {
           type: 'agent_response',
           text: data.agentText
         });
@@ -166,6 +180,9 @@ class MastraVoiceClient {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket not connected');
     }
+
+    // Store original session ID for mapping
+    this.originalSessionId = callerId;
 
     const message = {
       type: 'call_start',

@@ -24,7 +24,7 @@ const activeConnections = new Map();
 
 // Import service modules directly
 const elevenLabsAgentService = require("../../services/elevenLabsAgent");
-const customAgentService = require("../../services/customAgent");
+const mastraVoiceClientService = require("../../services/mastraVoiceClient");
 const callManagerService = require("../knowlarity/outboundCallManager");
 
 // Environment configuration for agent selection
@@ -33,10 +33,10 @@ const voiceAgentType = process.env.VOICE_AGENT_TYPE || 'elevenlabs-native';
 // Select agent service based on environment configuration
 const getAgentService = () => {
   switch (voiceAgentType) {
-    case 'custom':
-    case 'hexahealth':
-      console.log('🔧 Using Custom Agent Service');
-      return customAgentService;
+    case 'mastra':
+    case 'mastra-gateway':
+      console.log('🔧 Using Mastra Voice Gateway Client');
+      return mastraVoiceClientService;
     case 'elevenlabs-native':
     case 'elevenlabs':
     default:
@@ -166,7 +166,7 @@ function handleKnowlarityStream(websocket, urlPath) {
     );
   }
 
-  // STEP 2: Initialize Agent conversation (ElevenLabs or Custom)
+  // STEP 2: Initialize Agent conversation (ElevenLabs or Mastra)
   let agentConversation = null;
   const agentService = getAgentService();
 
@@ -307,7 +307,7 @@ function handleKnowlarityStream(websocket, urlPath) {
  * Setup bidirectional audio streaming between Voice Agent and Knowlarity
  *
  * CRITICAL CONNECTION POINT: This function creates the bridge between:
- * - Voice Agent Service (processes AI responses - ElevenLabs or Custom)
+ * - Voice Agent Service (processes AI responses - ElevenLabs or Mastra)
  * - WebSocket Handler (manages caller connections)
  *
  * HOW THE CONNECTION WORKS:
@@ -333,10 +333,10 @@ function setupAudioStreaming(sessionId) {
 
       // CONNECTION VALIDATION: Ensure WebSocket is still open before sending
       if (connection?.websocket?.readyState === WebSocket.OPEN) {
-        // OUTGOING AUDIO STREAM: Voice Agent → Knowlarity → Caller
+        // OUTGOING AUDIO STREAM: ElevenLabs Agent → Knowlarity → Caller
         // This is the main audio response from AI agent to caller
         if (agentMessage.type === "agent_audio" && agentMessage.audio) {
-          console.log(`🔊 Streaming ${voiceAgentType} agent audio to caller`);
+          console.log("🔊 Streaming agent audio to caller");
 
           // Check client type from stored connection data
           const isWebClient = connection.clientType === "web_client";
@@ -348,7 +348,7 @@ function setupAudioStreaming(sessionId) {
               type: "playAudio",
               data: {
                 audioContentType: "raw",
-                sampleRate: 16000, // Voice agents use 16kHz
+                sampleRate: 16000, // ElevenLabs uses 16kHz
                 audioContent: agentMessage.audio, // base64 encoded raw PCM
               },
             };
@@ -499,12 +499,12 @@ function handleInitialMetadata(metadataMessage, sessionId) {
 }
 
 /**
- * INCOMING AUDIO STREAM: Handle audio from caller → Voice Agent
+ * INCOMING AUDIO STREAM: Handle audio from caller → ElevenLabs Agent
  *
- * AUDIO FLOW: Caller speaks → Knowlarity → Binary PCM → Base64 → Voice Agent
+ * AUDIO FLOW: Caller speaks → Knowlarity → Binary PCM → Base64 → ElevenLabs
  *
  * This function processes the incoming audio stream from the caller and forwards
- * it to the selected voice agent for processing and response generation.
+ * it to the ElevenLabs agent for processing and response generation.
  */
 async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   console.log(
@@ -529,7 +529,7 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   }
   
   // AUDIO PROCESSING: Pure volume amplification only - NO noise processing to prevent artifacts
-  // Knowlarity sends raw binary PCM data, Voice agents expect base64 encoded audio
+  // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.5); // 2.5x amplification - clean and artifact-free
 
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
@@ -537,14 +537,14 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   console.log("📤 Base64 length:", audioBase64Data.length, "characters");
   console.log("🔍 ===== END AUDIO DEBUG =====");
 
-  // AUDIO FORWARDING: Send caller's audio to voice agent for processing
+  // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {
     // STREAM TO AGENT: This will trigger AI processing and eventually a response
     // The response will come back through the callback registered in setupAudioStreaming()
     await sendAudioToAgent(sessionId, audioBase64Data);
   } else {
-    // AGENT NOT READY: Voice agent conversation not initialized yet - drop audio
-    console.log(`⚠️ ${voiceAgentType} agent not ready, audio dropped`);
+    // AGENT NOT READY: ElevenLabs conversation not initialized yet - drop audio
+    console.log("⚠️ ElevenLabs not ready, audio dropped");
   }
 }
 
@@ -571,7 +571,7 @@ function handleControlMessages(controlMessage, sessionId, agentConversation) {
         // CALL TERMINATION: Clean up all resources for this call
         handleCallStatusUpdate(sessionId, { status: "completed" });
         if (agentConversation) {
-          // AGENT CLEANUP: End the voice agent conversation and close connection
+          // AGENT CLEANUP: End the ElevenLabs conversation and close WebSocket
           endConversation(sessionId);
         }
         break;
@@ -602,28 +602,28 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
   websocket.on("close", () => {
     console.log("📞 Call stream closed for session:", sessionId);
     
-    // Close agent connection to end the conversation
+    // Close ElevenLabs WebSocket connection to end the conversation
     const connection = activeConnections.get(sessionId);
     if (connection?.agentConversation?.agentWebSocket) {
-      console.log(`🔌 Closing ${voiceAgentType} agent connection to end conversation`);
+      console.log("🔌 Closing ElevenLabs WebSocket to end conversation");
       connection.agentConversation.agentWebSocket.close();
     }
     
-    console.log(`⏳ Waiting for ${voiceAgentType} agent cleanup`);
+    console.log("⏳ Waiting for ElevenLabs webhook for final cleanup");
   });
 
   // Handle connection errors
   websocket.on("error", (connectionError) => {
     console.error("❌ WebSocket error:", connectionError);
     
-    // Close agent connection on error
+    // Close ElevenLabs WebSocket connection on error
     const connection = activeConnections.get(sessionId);
     if (connection?.agentConversation?.agentWebSocket) {
-      console.log(`🔌 Closing ${voiceAgentType} agent connection due to error`);
+      console.log("🔌 Closing ElevenLabs WebSocket due to error");
       connection.agentConversation.agentWebSocket.close();
     }
     
-    console.log(`⚠️ WebSocket error occurred - waiting for ${voiceAgentType} agent cleanup`);
+    console.log("⚠️ WebSocket error occurred - waiting for ElevenLabs webhook for cleanup");
     handleCallStatusUpdate(sessionId, {
       status: "failed",
       reason: connectionError.message,
@@ -646,7 +646,7 @@ function cleanupSession(sessionId, agentConversation) {
   console.log(`📊 Remaining connections: ${activeConnections.size}`);
 
   if (agentConversation) {
-    console.log(`🤖 Ending ${voiceAgentType} conversation...`);
+    console.log("🤖 Ending ElevenLabs conversation...");
     endConversation(sessionId);
   } else {
     console.log("⚠️ No agent conversation to clean up");

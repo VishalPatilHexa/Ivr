@@ -32,17 +32,35 @@ class MastraVoiceClient {
   // Connect to Mastra Gateway
   async connect() {
     return new Promise((resolve, reject) => {
+      console.log('🔗 Attempting to connect to Mastra Gateway:', this.gatewayUrl);
+      
       this.ws = new WebSocket(this.gatewayUrl);
 
+      // Set timeout for connection
+      const connectionTimeout = setTimeout(() => {
+        console.error('⏰ Connection timeout to Mastra Gateway');
+        this.ws.close();
+        reject(new Error('Connection timeout to Mastra Gateway'));
+      }, 10000); // 10 second timeout
+
       this.ws.on('open', () => {
+        clearTimeout(connectionTimeout);
         console.log('✅ Connected to Mastra Voice Gateway');
         this.setupEventHandlers();
         resolve();
       });
 
       this.ws.on('error', (error) => {
-        console.error('❌ Connection error:', error);
+        clearTimeout(connectionTimeout);
+        console.error('❌ Connection error to Mastra Gateway:', error.message);
+        console.error('🔍 Gateway URL:', this.gatewayUrl);
         reject(error);
+      });
+
+      this.ws.on('close', (code, reason) => {
+        clearTimeout(connectionTimeout);
+        console.log('🔌 Connection closed to Mastra Gateway');
+        console.log('🔍 Close code:', code, 'Reason:', reason ? reason.toString() : 'No reason provided');
       });
     });
   }
@@ -289,13 +307,16 @@ const mastraGatewayUrl = process.env.MASTRA_GATEWAY_URL || 'ws://35.154.116.230:
  * Initialize Mastra Voice Client
  */
 async function initializeMastraClient() {
-  if (!mastraClient) {
+  if (!mastraClient || !mastraClient.isConnected()) {
+    console.log('🔄 Initializing new Mastra Voice Client connection...');
     mastraClient = new MastraVoiceClient(mastraGatewayUrl);
     try {
       await mastraClient.connect();
       console.log('✅ Mastra Voice Client initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize Mastra Voice Client:', error);
+      console.error('🔍 Gateway URL:', mastraGatewayUrl);
+      mastraClient = null; // Reset client on failure
       throw error;
     }
   }
@@ -313,6 +334,7 @@ async function initializeMastraClient() {
  */
 async function createConversation(sessionId, patientQuery) {
   try {
+    console.log('🚀 Creating Mastra conversation for session:', sessionId);
     const client = await initializeMastraClient();
     
     const conversationSession = {
@@ -326,13 +348,24 @@ async function createConversation(sessionId, patientQuery) {
 
     activeConversations.set(sessionId, conversationSession);
 
+    // Ensure client is connected before starting call
+    if (!client.isConnected()) {
+      throw new Error('Mastra client is not connected after initialization');
+    }
+
     // Start call with Mastra Gateway
+    console.log('📞 Starting call with Mastra Gateway for session:', sessionId);
     client.startCall(sessionId, 'hi-IN');
 
     console.log('✅ Mastra conversation created for session:', sessionId);
     return conversationSession;
   } catch (error) {
-    console.error('❌ Error creating Mastra conversation:', error);
+    console.error('❌ Error creating Mastra conversation for session:', sessionId);
+    console.error('💥 Error details:', error.message);
+    
+    // Clean up failed conversation
+    activeConversations.delete(sessionId);
+    
     throw error;
   }
 }

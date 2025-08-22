@@ -29,6 +29,7 @@ const callManagerService = require("../knowlarity/outboundCallManager");
 
 // Environment configuration for agent selection
 const voiceAgentType = process.env.VOICE_AGENT_TYPE || 'elevenlabs-native';
+console.log('🔍 Environment VOICE_AGENT_TYPE:', voiceAgentType);
 
 // Select agent service based on environment configuration
 const getAgentService = () => {
@@ -857,5 +858,6 @@ module.exports = {
   cleanup,
   shutdown,
   activeConnections,
-  cleanupSession
+  cleanupSession,
+  initializeWebSocketHandler
 };

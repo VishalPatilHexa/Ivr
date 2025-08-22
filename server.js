@@ -14,6 +14,12 @@ const {
   shutdown
 } = require("./src/services/websocketHandler");
 
+// Initialize WebSocket handler to show which agent service is being used
+const websocketHandler = require("./src/services/websocketHandler");
+if (websocketHandler.initializeWebSocketHandler) {
+  websocketHandler.initializeWebSocketHandler();
+}
+
 // Import routes
 const routes = require("./src/routes");
 
@@ -40,8 +46,7 @@ const wss = new WebSocket.Server({ server });
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
-// WebSocket handler now uses direct imports - no initialization needed
-console.log('✅ WebSocket handler ready with direct service imports');
+// WebSocket handler initialization happens above
 
 // WebSocket handling
 wss.on("connection", (ws, req) => {

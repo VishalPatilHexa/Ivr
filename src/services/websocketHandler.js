@@ -24,7 +24,7 @@ const activeConnections = new Map();
 
 // Import service modules directly
 const elevenLabsAgentService = require("../../services/elevenLabsAgent");
-const mastraVoiceClientService = require("../../services/mastraVoiceClient");
+const mastraBridgeService = require("../services/mastraBridge");
 const callManagerService = require("../knowlarity/outboundCallManager");
 
 // Environment configuration for agent selection
@@ -35,9 +35,10 @@ console.log('🔍 Environment VOICE_AGENT_TYPE:', voiceAgentType);
 const getAgentService = () => {
   switch (voiceAgentType) {
     case 'mastra':
+    case 'mastra-bridge':
     case 'mastra-gateway':
-      console.log('🔧 Using Mastra Voice Gateway Client');
-      return mastraVoiceClientService;
+      console.log('🔧 Using Mastra Bridge Service');
+      return mastraBridgeService;
     case 'elevenlabs-native':
     case 'elevenlabs':
     default:
@@ -305,20 +306,21 @@ function handleKnowlarityStream(websocket, urlPath) {
  */
 
 /**
- * Setup bidirectional audio streaming between Voice Agent and Knowlarity
+ * Setup bidirectional audio streaming between Voice Agent/Bridge and Knowlarity
  *
  * CRITICAL CONNECTION POINT: This function creates the bridge between:
- * - Voice Agent Service (processes AI responses - ElevenLabs or Mastra)
+ * - Voice Agent Service (ElevenLabs direct) OR Mastra Bridge Service (Server2 forwarding)
  * - WebSocket Handler (manages caller connections)
  *
  * HOW THE CONNECTION WORKS:
- * 1. This function registers a CALLBACK with the selected agent service
- * 2. The callback gets STORED in the agent service as 'messageForwardingHandler'
- * 3. When the agent processes audio/text, it calls forwardToClient()
- * 4. forwardToClient() EXECUTES this callback with the agent's response
- * 5. This callback then sends the response to the caller via Knowlarity WebSocket
+ * 1. This function registers a CALLBACK with the selected service
+ * 2. For ElevenLabs: Direct WebSocket to ElevenLabs API
+ * 3. For Mastra Bridge: WebSocket forwarding to Mastra Server (Server2)
+ * 4. Responses come back through the callback and get sent to Knowlarity
  *
- * FLOW: Agent Service → forwardToClient() → THIS CALLBACK → Knowlarity → Caller
+ * FLOW: 
+ * - ElevenLabs: Caller → Server1 → ElevenLabs → Response → Server1 → Caller
+ * - Mastra: Caller → Server1 → MastraBridge → Server2 → Response → Server1 → Caller
  */
 function setupAudioStreaming(sessionId) {
   // CALLBACK REGISTRATION: Register this function with selected agent service

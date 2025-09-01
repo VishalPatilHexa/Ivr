@@ -11,7 +11,7 @@ require("dotenv").config();
 
 async function addDataToSheet(googleSheetEntry) {
   try {
-    const url = process.env.SHEET_URL;
+    const url = process.env.SHEET_URL; 
     const data = {
       function: "addRowToSheet",
       parameters: [googleSheetEntry],

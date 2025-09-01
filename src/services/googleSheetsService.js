@@ -7,7 +7,7 @@
  */
 
 const axios = require("axios");
-require("dotenv").config();
+require("dotenv").config(); 
 
 async function addDataToSheet(googleSheetEntry) {
   try {

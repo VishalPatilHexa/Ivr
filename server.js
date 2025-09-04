@@ -45,13 +45,8 @@ console.log('✅ WebSocket handler ready with direct service imports');
 
 // WebSocket connection logging
 wss.on("connection", (ws, req) => {
-  console.log("🔌 ===== SERVER: NEW WEBSOCKET CONNECTION =====");
-  console.log("📍 Raw URL:", req.url);
-  console.log("🌐 Host Header:", req.headers.host);
-  console.log("🔗 Origin Header:", req.headers.origin || "Not provided");
-  console.log("⚡ Connection State:", ws.readyState);
-  console.log("📊 Total WSS Clients:", wss.clients.size);
-  console.log("🔌 ===== SERVER: ROUTING TO HANDLER =====");
+  console.log("🚨 WEBSOCKET CONNECTION RECEIVED! 🚨");
+  console.log("URL:", req.url);
   
   handleConnection(ws, req);
 });

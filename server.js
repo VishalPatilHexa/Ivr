@@ -47,6 +47,25 @@ console.log('✅ WebSocket handler ready with direct service imports');
 wss.on("connection", (ws, req) => {
   console.log("🚨 WEBSOCKET CONNECTION RECEIVED! 🚨");
   console.log("URL:", req.url);
+  console.log("Time:", new Date().toISOString());
+  
+  // Log ALL incoming messages on this connection
+  ws.on('message', (message) => {
+    console.log("📥 RAW MESSAGE RECEIVED:");
+    console.log("  📍 URL:", req.url);
+    console.log("  📝 Message:", message.toString());
+    console.log("  🔢 Length:", message.length);
+    console.log("  📊 Type:", typeof message);
+    console.log("  🕐 Time:", new Date().toISOString());
+  });
+
+  ws.on('close', () => {
+    console.log("❌ Connection closed:", req.url);
+  });
+
+  ws.on('error', (error) => {
+    console.log("💥 Connection error:", req.url, error.message);
+  });
   
   handleConnection(ws, req);
 });

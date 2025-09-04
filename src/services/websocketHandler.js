@@ -24,14 +24,7 @@ const activeConnections = new Map();
 
 // Import service modules directly
 const elevenLabsAgentService = require("../../services/elevenLabsAgent");
-const callManagerService = require("../knowlarity/outboundCallManager");
 
-/**
- * Initialize WebSocket handler - now using direct imports
- */
-function initializeWebSocketHandler() {
-  console.log("✅ WebSocket handler initialized with direct service imports");
-}
 
 /**
  * Main WebSocket connection handler - routes connections based on URL path
@@ -40,27 +33,15 @@ function handleConnection(websocket, request) {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const urlPath = url.pathname;
   
-  // LOG ALL CONNECTION ATTEMPTS
-  console.log("🔌 ===== NEW WEBSOCKET CONNECTION ATTEMPT =====");
-  console.log("📍 URL Path:", urlPath);
-  console.log("🌐 Host:", request.headers.host);
-  console.log("🔗 Origin:", request.headers.origin || "Not provided");
-  console.log("📱 User-Agent:", request.headers['user-agent'] || "Not provided");
-  console.log("🔑 WebSocket Key:", request.headers['sec-websocket-key'] || "Not provided");
-  console.log("⚡ WebSocket State:", websocket.readyState);
-  console.log("📊 Current Active Connections:", activeConnections.size);
-  console.log("🔌 ===== END CONNECTION DETAILS =====");
 
   // Route to Knowlarity stream handler
   if (urlPath.startsWith("/knowlarity-stream/")) {
-    console.log("✅ Routing to Knowlarity stream handler");
     handleKnowlarityStream(websocket, urlPath);
     return;
   }
 
   // Reject unknown connection types
   console.log("❌ Unknown WebSocket connection path:", urlPath);
-  console.log("🔗 Closing unknown connection type");
   websocket.close(1008, "Unknown connection type");
 }
 
@@ -408,29 +389,19 @@ function setupAudioStreaming(sessionId) {
  */
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
-    console.log("🔥 ===== PARSING NEW KNOWLARITY METADATA FORMAT =====");
     console.log("📋 Received metadata for session:", sessionId);
-    console.log("🔍 Raw message:", metadataMessage.toString());
 
-    // PARSE NEW SIMPLIFIED METADATA FORMAT (Sept 2024 update)
+    // Parse Knowlarity metadata
     const connectionMetadata = JSON.parse(metadataMessage.toString());
+    console.log("📊 Metadata:", JSON.stringify(connectionMetadata, null, 2));
     
-    console.log("✅ Successfully parsed metadata:");
-    console.log("📊 Metadata details:", JSON.stringify(connectionMetadata, null, 2));
-    
-    // UPDATE CLIENT TYPE: Update connection type based on metadata
+    // Store metadata in connection
     const connection = activeConnections.get(sessionId);
     if (connection) {
-      if (connectionMetadata.type === "web_client_connection") {
-        connection.clientType = "web_client";
-        console.log("🔄 Updated client type to web_client for session:", sessionId);
-      } else if (connectionMetadata.callid || connectionMetadata.virtual_number) {
-        // This is Knowlarity metadata format (new simplified format)
-        connection.clientType = "knowlarity";
-        console.log("🔄 Confirmed client type as knowlarity for session:", sessionId);
-      }
+      // Set client type
+      connection.clientType = connectionMetadata.callid ? "knowlarity" : "web_client";
       
-      // Store parsed metadata in connection for webhook processing
+      // Store metadata for webhook processing
       connection.knowlarityMetadata = {
         raw: metadataMessage.toString(),
         parsed: connectionMetadata,
@@ -439,31 +410,12 @@ function handleInitialMetadata(metadataMessage, sessionId) {
         customer_number: connectionMetadata.customer_number,
         metadata: connectionMetadata.metadata
       };
-      console.log("💾 Stored parsed Knowlarity metadata in connection");
     }
 
-    // VALIDATE REQUIRED FIELDS
-    if (!connectionMetadata.callid) {
-      console.warn("⚠️ Missing callid in metadata - this may cause issues");
-    }
-    if (!connectionMetadata.virtual_number) {
-      console.warn("⚠️ Missing virtual_number in metadata");
-    }
-    if (!connectionMetadata.customer_number) {
-      console.warn("⚠️ Missing customer_number in metadata");
-    }
+    // Update status
+    handleCallStatusUpdate(sessionId, { status: "connected" });
 
-    console.log("🔥 ===== END METADATA PARSING =====");
-
-    // STATUS UPDATE: Mark call as connected and store metadata
-    handleCallStatusUpdate(sessionId, {
-      status: "connected",
-      knowlarityMetadata: connection?.knowlarityMetadata || { raw: metadataMessage.toString() },
-      isExternal: true,
-    });
-
-    // SEND ACKNOWLEDGMENT TO KNOWLARITY
-    // This is critical - Knowlarity expects a response after sending metadata
+    // Send acknowledgment to Knowlarity
     if (connection?.websocket?.readyState === WebSocket.OPEN) {
       const ackMessage = JSON.stringify({
         type: "metadata_received",
@@ -472,36 +424,26 @@ function handleInitialMetadata(metadataMessage, sessionId) {
       });
       
       connection.websocket.send(ackMessage);
-      console.log("📤 Sent metadata acknowledgment to Knowlarity:", ackMessage);
-    } else {
-      console.error("❌ Cannot send acknowledgment - WebSocket not open");
+      console.log("📤 Sent acknowledgment to Knowlarity");
     }
 
   } catch (jsonError) {
-    console.error("❌ Failed to parse initial metadata for session:", sessionId);
-    console.error("🔍 Raw message:", metadataMessage.toString());
-    console.error("💥 Parse error:", jsonError.message);
+    console.error("❌ Failed to parse metadata:", jsonError.message);
 
-    // SEND ERROR RESPONSE TO KNOWLARITY
+    // Send error response to Knowlarity
     const connection = activeConnections.get(sessionId);
     if (connection?.websocket?.readyState === WebSocket.OPEN) {
       const errorMessage = JSON.stringify({
         type: "metadata_error",
         status: "error",
-        message: "Failed to parse metadata",
-        error: jsonError.message
+        message: "Failed to parse metadata"
       });
       
       connection.websocket.send(errorMessage);
-      console.log("📤 Sent metadata error to Knowlarity:", errorMessage);
+      console.log("📤 Sent error response to Knowlarity");
     }
 
-    // Try to continue with minimal metadata
-    handleCallStatusUpdate(sessionId, {
-      status: "connected",
-      knowlarityMetadata: { error: "Failed to parse metadata", raw: metadataMessage.toString() },
-      isExternal: true,
-    });
+    handleCallStatusUpdate(sessionId, { status: "connected" });
   }
 }
 
@@ -757,67 +699,20 @@ function shutdown() {
  * ===============================================================================
  */
 
-// Get call session from outbound call manager
+// Simple session getter for external calls  
 function getCallSession(sessionId) {
-  return callManagerService.getCallSession(sessionId);
+  return null; // External Knowlarity calls don't use internal session management
 }
 
 // Update call status
 function handleCallStatusUpdate(sessionId, statusUpdate) {
-  // Validate input parameters
-  if (!sessionId) {
-    console.log("⚠️ Invalid sessionId provided for status update:", sessionId);
-    return;
-  }
-
-  if (!statusUpdate || !statusUpdate.status) {
-    console.log("⚠️ Invalid statusUpdate provided for session:", sessionId);
-    return;
-  }
-
-  console.log(
-    "🔄 Status update for session:",
+  // Simple logging for external Knowlarity sessions
+  console.log("📊 External session status:", {
     sessionId,
-    "Status:",
-    statusUpdate.status
-  );
-
-  try {
-    // Check if this is a web client session (sessions starting with 'web_')
-    const isWebClientSession = sessionId.startsWith("web_");
-
-    if (isWebClientSession) {
-      console.log("ℹ️ Web client session detected - attempting status update");
-    }
-
-    callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
-    console.log("✅ Status update successful for session:", sessionId);
-  } catch (error) {
-    // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
-    if (statusUpdate.isExternal || sessionId.startsWith("web_")) {
-      console.log(
-        "ℹ️ External call session (Knowlarity) - not managed by call manager, this is expected"
-      );
-
-      // Log the attempted status update for monitoring purposes
-      console.log("📊 External session status:", {
-        sessionId,
-        status: statusUpdate.status,
-        source: "Knowlarity",
-        timestamp: new Date().toISOString(),
-      });
-
-      // Continue gracefully without throwing
-      console.log("✅ External session status handled successfully");
-      return;
-    }
-
-    // For internal sessions, we might want to log this as a more serious issue
-    console.error(
-      "❌ Unexpected status update failure for internal session:",
-      sessionId
-    );
-  }
+    status: statusUpdate.status,
+    source: "Knowlarity",
+    timestamp: new Date().toISOString(),
+  });
 }
 
 // ===============================================================================

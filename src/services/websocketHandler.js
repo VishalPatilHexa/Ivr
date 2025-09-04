@@ -408,82 +408,98 @@ function setupAudioStreaming(sessionId) {
  */
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
-    // TODO: METADATA PARSING DISABLED - Will work on this later
-    // // METADATA PARSING: Extract call information from client
-    // // Fix complex nested JSON with step-by-step approach
-    // let fixedMetadata = metadataMessage.toString();
-
-    // // Step 1: Remove problematic template variables
-    // fixedMetadata = fixedMetadata.replace(
-    //   /,\s*'event_timestamp':\s*'[^']*'/,
-    //   ""
-    // );
-    // fixedMetadata = fixedMetadata.replace(/,\s*'initiated_at':\s*'[^']*'/, "");
-
-    // // Step 2: Fix nested object quotes (remove single quotes wrapping inner objects)
-    // fixedMetadata = fixedMetadata.replace(/'\{/g, "{").replace(/\}'/g, "}");
-
-    // // Step 3: Replace remaining single quotes with double quotes
-    // fixedMetadata = fixedMetadata.replace(/'/g, '"');
-
-    // const connectionMetadata = JSON.parse(fixedMetadata);
-    // console.log("📋 Received metadata for session:", sessionId);
-    // console.log("🔥 ===== KNOWLARITY METADATA RECEIVED =====");
-    // console.log(
-    //   "📊 Metadata details:",
-    //   JSON.stringify(connectionMetadata, null, 2)
-    // );
-    // console.log("🔥 ===== END KNOWLARITY METADATA =====");
-
-    // // UPDATE CLIENT TYPE: Update connection type based on metadata
-    // const connection = activeConnections.get(sessionId);
-    // if (connection) {
-    //   if (connectionMetadata.type === "web_client_connection") {
-    //     connection.clientType = "web_client";
-    //     console.log(
-    //       "🔄 Updated client type to web_client for session:",
-    //       sessionId
-    //     );
-    //   } else if (connectionMetadata.ivr_data || connectionMetadata.callid) {
-    //     // This is Knowlarity metadata format
-    //     connection.clientType = "knowlarity";
-    //     console.log(
-    //       "🔄 Confirmed client type as knowlarity for session:",
-    //       sessionId
-    //     );
-    //   }
-    // }
-
-    // Simple logging without parsing
+    console.log("🔥 ===== PARSING NEW KNOWLARITY METADATA FORMAT =====");
     console.log("📋 Received metadata for session:", sessionId);
     console.log("🔍 Raw message:", metadataMessage.toString());
 
-    // Store metadata in connection for webhook processing
+    // PARSE NEW SIMPLIFIED METADATA FORMAT (Sept 2024 update)
+    const connectionMetadata = JSON.parse(metadataMessage.toString());
+    
+    console.log("✅ Successfully parsed metadata:");
+    console.log("📊 Metadata details:", JSON.stringify(connectionMetadata, null, 2));
+    
+    // UPDATE CLIENT TYPE: Update connection type based on metadata
     const connection = activeConnections.get(sessionId);
     if (connection) {
-      connection.knowlarityMetadata = { raw: metadataMessage.toString() };
-      console.log("💾 Stored Knowlarity metadata in connection for webhook processing");
+      if (connectionMetadata.type === "web_client_connection") {
+        connection.clientType = "web_client";
+        console.log("🔄 Updated client type to web_client for session:", sessionId);
+      } else if (connectionMetadata.callid || connectionMetadata.virtual_number) {
+        // This is Knowlarity metadata format (new simplified format)
+        connection.clientType = "knowlarity";
+        console.log("🔄 Confirmed client type as knowlarity for session:", sessionId);
+      }
+      
+      // Store parsed metadata in connection for webhook processing
+      connection.knowlarityMetadata = {
+        raw: metadataMessage.toString(),
+        parsed: connectionMetadata,
+        callid: connectionMetadata.callid,
+        virtual_number: connectionMetadata.virtual_number,
+        customer_number: connectionMetadata.customer_number,
+        metadata: connectionMetadata.metadata
+      };
+      console.log("💾 Stored parsed Knowlarity metadata in connection");
     }
 
+    // VALIDATE REQUIRED FIELDS
+    if (!connectionMetadata.callid) {
+      console.warn("⚠️ Missing callid in metadata - this may cause issues");
+    }
+    if (!connectionMetadata.virtual_number) {
+      console.warn("⚠️ Missing virtual_number in metadata");
+    }
+    if (!connectionMetadata.customer_number) {
+      console.warn("⚠️ Missing customer_number in metadata");
+    }
+
+    console.log("🔥 ===== END METADATA PARSING =====");
+
     // STATUS UPDATE: Mark call as connected and store metadata
-    // This updates the call management system with connection details
     handleCallStatusUpdate(sessionId, {
       status: "connected",
-      knowlarityMetadata: { raw: metadataMessage.toString() },
+      knowlarityMetadata: connection?.knowlarityMetadata || { raw: metadataMessage.toString() },
       isExternal: true,
     });
+
+    // SEND ACKNOWLEDGMENT TO KNOWLARITY
+    // This is critical - Knowlarity expects a response after sending metadata
+    if (connection?.websocket?.readyState === WebSocket.OPEN) {
+      const ackMessage = JSON.stringify({
+        type: "metadata_received",
+        status: "success",
+        message: "Metadata processed successfully"
+      });
+      
+      connection.websocket.send(ackMessage);
+      console.log("📤 Sent metadata acknowledgment to Knowlarity:", ackMessage);
+    } else {
+      console.error("❌ Cannot send acknowledgment - WebSocket not open");
+    }
+
   } catch (jsonError) {
-    console.error(
-      "❌ Failed to parse initial metadata for session:",
-      sessionId
-    );
+    console.error("❌ Failed to parse initial metadata for session:", sessionId);
     console.error("🔍 Raw message:", metadataMessage.toString());
     console.error("💥 Parse error:", jsonError.message);
+
+    // SEND ERROR RESPONSE TO KNOWLARITY
+    const connection = activeConnections.get(sessionId);
+    if (connection?.websocket?.readyState === WebSocket.OPEN) {
+      const errorMessage = JSON.stringify({
+        type: "metadata_error",
+        status: "error",
+        message: "Failed to parse metadata",
+        error: jsonError.message
+      });
+      
+      connection.websocket.send(errorMessage);
+      console.log("📤 Sent metadata error to Knowlarity:", errorMessage);
+    }
 
     // Try to continue with minimal metadata
     handleCallStatusUpdate(sessionId, {
       status: "connected",
-      knowlarityMetadata: { error: "Failed to parse metadata" },
+      knowlarityMetadata: { error: "Failed to parse metadata", raw: metadataMessage.toString() },
       isExternal: true,
     });
   }

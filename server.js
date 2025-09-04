@@ -37,7 +37,11 @@ app.use(routes);
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-console.log("  🔗 WebSocket Server created:", wss);
+console.log("🔧 WebSocket Server Configuration:");
+console.log("  📡 Port:", process.env.PORT || 3000);
+console.log("  🌐 Binding to server:", !!server);
+console.log("  🔗 WebSocket Server created:", !!wss);
+console.log("  📊 Server listening state:", server.listening);
 
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
@@ -45,15 +49,19 @@ app.use("/uploads", express.static("uploads"));
 // WebSocket handler now uses direct imports - no initialization needed
 console.log("✅ WebSocket handler ready with direct service imports");
 
-// WebSocket connection logging
+console.log("🔧 Setting up WebSocket connection handler...");
+
+// WebSocket connection logging  
 wss.on("connection", (ws, req) => {
-  console.log("🚨 WEBSOCKET CONNECTION RECEIVED! 🚨");
-  console.log("URL:", req.url);
-  console.log("Time:", new Date().toISOString());
+  console.log("🚨🚨🚨 WEBSOCKET CONNECTION RECEIVED! 🚨🚨🚨");
+  console.log("📍 URL:", req.url);
+  console.log("🕐 Time:", new Date().toISOString());
+  console.log("🌐 Origin:", req.headers.origin);
+  console.log("📱 User-Agent:", req.headers['user-agent']);
 
   // Log ALL incoming messages on this connection
   ws.on("message", (message) => {
-    console.log("📥 RAW MESSAGE RECEIVED:");
+    console.log("📥📥📥 RAW MESSAGE RECEIVED 📥📥📥");
     console.log("  📍 URL:", req.url);
     console.log("  📝 Message:", message.toString());
     console.log("  🔢 Length:", message.length);
@@ -61,16 +69,23 @@ wss.on("connection", (ws, req) => {
     console.log("  🕐 Time:", new Date().toISOString());
   });
 
-  ws.on("close", () => {
-    console.log("❌ Connection closed:", req.url);
+  ws.on("close", (code, reason) => {
+    console.log("❌❌❌ CONNECTION CLOSED ❌❌❌");
+    console.log("  📍 URL:", req.url);
+    console.log("  💔 Code:", code);
+    console.log("  📝 Reason:", reason?.toString());
   });
 
   ws.on("error", (error) => {
-    console.log("💥 Connection error:", req.url, error.message);
+    console.log("💥💥💥 CONNECTION ERROR 💥💥💥");
+    console.log("  📍 URL:", req.url);
+    console.log("  💥 Error:", error.message);
   });
 
   handleConnection(ws, req);
 });
+
+console.log("✅ WebSocket connection handler configured");
 
 // WebSocket server error handling
 wss.on("error", (error) => {

@@ -19,15 +19,6 @@ async function handleKnowlarityStream(websocket, urlPath) {
     agentConversation: null
   });
 
-  // Create call session
-  const callSession = {
-    sessionId,
-    status: "external_connection",
-    createdAt: new Date(),
-    isExternal: true,
-    source: "knowlarity"
-  };
-
   // Initialize ElevenLabs conversation
   try {
     await initializeAgentConversation(sessionId);

@@ -39,15 +39,28 @@ function initializeWebSocketHandler() {
 function handleConnection(websocket, request) {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const urlPath = url.pathname;
+  
+  // LOG ALL CONNECTION ATTEMPTS
+  console.log("🔌 ===== NEW WEBSOCKET CONNECTION ATTEMPT =====");
+  console.log("📍 URL Path:", urlPath);
+  console.log("🌐 Host:", request.headers.host);
+  console.log("🔗 Origin:", request.headers.origin || "Not provided");
+  console.log("📱 User-Agent:", request.headers['user-agent'] || "Not provided");
+  console.log("🔑 WebSocket Key:", request.headers['sec-websocket-key'] || "Not provided");
+  console.log("⚡ WebSocket State:", websocket.readyState);
+  console.log("📊 Current Active Connections:", activeConnections.size);
+  console.log("🔌 ===== END CONNECTION DETAILS =====");
 
   // Route to Knowlarity stream handler
   if (urlPath.startsWith("/knowlarity-stream/")) {
+    console.log("✅ Routing to Knowlarity stream handler");
     handleKnowlarityStream(websocket, urlPath);
     return;
   }
 
   // Reject unknown connection types
-  console.log("🔗 Unknown WebSocket connection, closing");
+  console.log("❌ Unknown WebSocket connection path:", urlPath);
+  console.log("🔗 Closing unknown connection type");
   websocket.close(1008, "Unknown connection type");
 }
 

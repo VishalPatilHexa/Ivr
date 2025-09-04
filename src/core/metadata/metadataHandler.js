@@ -71,6 +71,14 @@ function parseKnowlarityMetadata(rawMetadata) {
     try {
       const directParse = JSON.parse(cleanMetadata);
       console.log('✅ Direct JSON parse successful');
+      
+      // Check if the result is a string (double-encoded JSON)
+      if (typeof directParse === 'string') {
+        console.log('🔄 Result is a string, parsing again...');
+        const secondParse = JSON.parse(directParse.replace(/'/g, '"'));
+        return processMetadataObject(secondParse);
+      }
+      
       return processMetadataObject(directParse);
     } catch (directError) {
       console.log('❌ Direct JSON parse failed:', directError.message);

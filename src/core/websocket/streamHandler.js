@@ -9,8 +9,19 @@ const config = require('../../config');
  * Handle Knowlarity stream connection
  */
 async function handleKnowlarityStream(websocket, urlPath) {
+  console.log(`🔍 URL path received: ${urlPath}`);
+  console.log(`🔍 URL path parts:`, urlPath.split("/"));
+  
   const sessionId = urlPath.split("/")[2];
+  console.log(`📞 Extracted session ID: ${sessionId}`);
   console.log(`📞 New Knowlarity stream connection for session: ${sessionId}`);
+
+  // Validate session ID
+  if (!sessionId || sessionId.trim() === '') {
+    console.error(`❌ Invalid session ID extracted from URL: ${urlPath}`);
+    websocket.close(1008, "Invalid session ID");
+    return;
+  }
 
   // Store connection
   addConnection(sessionId, {
@@ -33,12 +44,28 @@ async function handleKnowlarityStream(websocket, urlPath) {
 
   websocket.on("message", async (incomingMessage) => {
     try {
-      // Handle initial metadata
+      console.log(`📨 Message received for session: ${sessionId}`);
+      console.log(`📊 Message type: ${incomingMessage instanceof Buffer ? 'Buffer' : typeof incomingMessage}`);
+      console.log(`📏 Message length: ${incomingMessage.length}`);
+      console.log(`🔤 First 20 bytes as string:`, incomingMessage.toString().substring(0, 20));
+      console.log(`🔢 First 10 bytes as numbers:`, Array.from(incomingMessage.slice(0, 10)));
+      
+      // Handle first message - could be metadata or audio
       if (isFirstMessage) {
-        console.log(`🎆 Processing first message (metadata) for session: ${sessionId}`);
-        await processInitialMetadata(incomingMessage, sessionId);
-        isFirstMessage = false;
-        return;
+        console.log(`🎆 *** THIS IS THE FIRST MESSAGE *** for session: ${sessionId}`);
+        
+        // Check if first message is JSON metadata or binary audio
+        if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
+          console.log(`📋 First message was metadata for session: ${sessionId}`);
+          isFirstMessage = false;
+          return;
+        } else {
+          console.log(`🎵 First message is audio data for session: ${sessionId}`);
+          // Continue to process as audio below
+          isFirstMessage = false;
+        }
+      } else {
+        console.log(`📨 Subsequent message for session: ${sessionId}`);
       }
 
       // Route audio and control messages
@@ -118,6 +145,30 @@ function setupAudioStreaming(sessionId) {
       }
     }
   });
+}
+
+/**
+ * Try to process message as metadata, return true if successful
+ */
+async function tryProcessAsMetadata(incomingMessage, sessionId) {
+  try {
+    const messageStr = incomingMessage.toString();
+    
+    // Quick check - if it starts with '{' or contains common metadata fields, try as JSON
+    if (messageStr.startsWith('{') || messageStr.includes('callid') || messageStr.includes('virtual_number')) {
+      console.log(`🔍 Message looks like JSON metadata for session: ${sessionId}`);
+      await processInitialMetadata(incomingMessage, sessionId);
+      return true;
+    }
+    
+    // If it doesn't look like JSON, treat as binary audio
+    console.log(`🎵 Message doesn't look like JSON metadata, treating as audio for session: ${sessionId}`);
+    return false;
+    
+  } catch (error) {
+    console.log(`⚠️ Failed to process as metadata, treating as audio for session: ${sessionId} - ${error.message}`);
+    return false;
+  }
 }
 
 /**

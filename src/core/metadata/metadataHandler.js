@@ -9,6 +9,10 @@ async function processInitialMetadata(metadataMessage, sessionId) {
 
     // Parse metadata (handle single quotes format)
     const rawMetadata = metadataMessage.toString();
+    console.log('📥 Raw metadata received:', rawMetadata);
+    console.log('📏 Raw metadata length:', rawMetadata.length);
+    console.log('🔍 First 100 chars:', rawMetadata.substring(0, 100));
+    
     const metadata = parseKnowlarityMetadata(rawMetadata);
     console.log('📊 Parsed Metadata:', JSON.stringify(metadata, null, 2));
 
@@ -48,10 +52,51 @@ async function processInitialMetadata(metadataMessage, sessionId) {
  * Parse Knowlarity metadata format
  */
 function parseKnowlarityMetadata(rawMetadata) {
-  // Handle the single quote format from Knowlarity
-  const jsonString = rawMetadata.replace(/'/g, '"');
-  const metadata = JSON.parse(jsonString);
-  
+  try {
+    console.log('🔧 Starting metadata parsing...');
+    
+    // Clean up the raw metadata - remove any leading/trailing whitespace and BOM
+    let cleanMetadata = rawMetadata.trim();
+    
+    // Remove BOM (Byte Order Mark) if present
+    if (cleanMetadata.charCodeAt(0) === 0xFEFF) {
+      cleanMetadata = cleanMetadata.slice(1);
+      console.log('🧹 Removed BOM from metadata');
+    }
+    
+    console.log('🧼 Cleaned metadata:', cleanMetadata);
+    console.log('🔤 Cleaned metadata first char code:', cleanMetadata.charCodeAt(0));
+    
+    // Try parsing as JSON first (in case it's already proper JSON)
+    try {
+      const directParse = JSON.parse(cleanMetadata);
+      console.log('✅ Direct JSON parse successful');
+      return processMetadataObject(directParse);
+    } catch (directError) {
+      console.log('❌ Direct JSON parse failed:', directError.message);
+    }
+    
+    // Handle the single quote format from Knowlarity
+    console.log('🔄 Attempting single quote replacement...');
+    const jsonString = cleanMetadata.replace(/'/g, '"');
+    console.log('📝 After quote replacement:', jsonString);
+    
+    const metadata = JSON.parse(jsonString);
+    console.log('✅ Single quote replacement successful');
+    
+    return processMetadataObject(metadata);
+    
+  } catch (error) {
+    console.error('❌ All parsing attempts failed:', error.message);
+    console.error('🔍 Raw input was:', JSON.stringify(rawMetadata));
+    throw new Error(`Failed to parse metadata: ${error.message}`);
+  }
+}
+
+/**
+ * Process metadata object and decode inner metadata if present
+ */
+function processMetadataObject(metadata) {
   // Decode URL-encoded metadata if present
   if (metadata.metadata) {
     try {
@@ -127,6 +172,7 @@ async function sendErrorResponse(connection, errorMessage) {
 module.exports = {
   processInitialMetadata,
   parseKnowlarityMetadata,
+  processMetadataObject,
   determineClientType,
   validateMetadata,
   sendAcknowledgment,

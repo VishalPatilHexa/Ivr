@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 const config = require('../../config');
-const { getConnection } = require('../../core/websocket/connectionManager');
+const { getConnection, removeConnection } = require('../../core/websocket/connectionManager');
 const { createPlayAudioMessage } = require('../../core/audio/audioProcessor');
 
 // Store active ElevenLabs conversations
@@ -62,11 +62,22 @@ function setupWebSocketHandlers(agentWebSocket, conversationSession) {
   agentWebSocket.on('close', (code, reason) => {
     console.log(`🔌 ElevenLabs WebSocket closed for session: ${conversationSession.sessionId}`);
     console.log(`🔍 Close code: ${code} Reason: ${reason.toString()}`);
+    
+    // Clean up the conversation
     activeConversations.delete(conversationSession.sessionId);
+    
+    // Also close the Knowlarity connection when ElevenLabs closes
+    closeKnowlarityConnection(conversationSession.sessionId);
   });
 
   agentWebSocket.on('error', (error) => {
     console.error(`❌ ElevenLabs WebSocket error for session ${conversationSession.sessionId}:`, error.message);
+    
+    // Clean up conversation on error
+    activeConversations.delete(conversationSession.sessionId);
+    
+    // Also close Knowlarity connection on ElevenLabs error
+    closeKnowlarityConnection(conversationSession.sessionId);
   });
 }
 
@@ -233,6 +244,25 @@ function waitForConnection(webSocket) {
       reject(error);
     });
   });
+}
+
+/**
+ * Close Knowlarity connection when ElevenLabs closes
+ */
+function closeKnowlarityConnection(sessionId) {
+  console.log(`🔌 Closing Knowlarity connection due to ElevenLabs closure: ${sessionId}`);
+  
+  const connection = getConnection(sessionId);
+  if (connection?.websocket && connection.websocket.readyState === 1) {
+    console.log(`📞 Terminating Knowlarity WebSocket for session: ${sessionId}`);
+    connection.websocket.close(1000, "ElevenLabs conversation ended");
+  }
+  
+  // Remove from connection manager
+  const removed = removeConnection(sessionId);
+  if (removed) {
+    console.log(`🧹 Knowlarity connection cleaned up for session: ${sessionId}`);
+  }
 }
 
 /**

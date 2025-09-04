@@ -43,9 +43,27 @@ app.use("/uploads", express.static("uploads"));
 // WebSocket handler now uses direct imports - no initialization needed
 console.log('✅ WebSocket handler ready with direct service imports');
 
-// WebSocket handling
+// WebSocket connection logging
 wss.on("connection", (ws, req) => {
+  console.log("🔌 ===== SERVER: NEW WEBSOCKET CONNECTION =====");
+  console.log("📍 Raw URL:", req.url);
+  console.log("🌐 Host Header:", req.headers.host);
+  console.log("🔗 Origin Header:", req.headers.origin || "Not provided");
+  console.log("⚡ Connection State:", ws.readyState);
+  console.log("📊 Total WSS Clients:", wss.clients.size);
+  console.log("🔌 ===== SERVER: ROUTING TO HANDLER =====");
+  
   handleConnection(ws, req);
+});
+
+// WebSocket server error handling
+wss.on("error", (error) => {
+  console.error("❌ WebSocket Server Error:", error);
+});
+
+// Log when server starts listening
+wss.on("listening", () => {
+  console.log("👂 WebSocket Server is listening for connections");
 });
 
 // Cleanup function for expired sessions

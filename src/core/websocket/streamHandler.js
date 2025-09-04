@@ -14,7 +14,6 @@ async function handleKnowlarityStream(websocket, urlPath) {
   
   const sessionId = urlPath.split("/")[2];
   console.log(`📞 Extracted session ID: ${sessionId}`);
-  console.log(`📞 New Knowlarity stream connection for session: ${sessionId}`);
 
   // Validate session ID
   if (!sessionId || sessionId.trim() === '') {
@@ -23,24 +22,11 @@ async function handleKnowlarityStream(websocket, urlPath) {
     return;
   }
 
-  // Store connection
-  addConnection(sessionId, {
-    websocket,
-    clientType: 'knowlarity',
-    agentConversation: null
-  });
+  console.log(`📞 New Knowlarity stream connection for session: ${sessionId}`);
 
-  // Initialize ElevenLabs conversation
-  try {
-    await initializeAgentConversation(sessionId);
-  } catch (error) {
-    console.error('❌ Failed to initialize agent conversation:', error.message);
-    websocket.close(1011, "Failed to initialize conversation");
-    return;
-  }
-
-  // Setup message handling
+  // Setup message handling IMMEDIATELY - metadata arrives right after sessionId extraction
   let isFirstMessage = true;
+  console.log(`⚡ Setting up message handler immediately for session: ${sessionId}`);
 
   websocket.on("message", async (incomingMessage) => {
     try {
@@ -86,6 +72,22 @@ async function handleKnowlarityStream(websocket, urlPath) {
     console.error(`❌ WebSocket error for session ${sessionId}:`, error.message);
     cleanupSession(sessionId);
   });
+
+  // Store connection after message handler is set up
+  addConnection(sessionId, {
+    websocket,
+    clientType: 'knowlarity',
+    agentConversation: null
+  });
+
+  // Initialize ElevenLabs conversation
+  try {
+    await initializeAgentConversation(sessionId);
+  } catch (error) {
+    console.error('❌ Failed to initialize agent conversation:', error.message);
+    websocket.close(1011, "Failed to initialize conversation");
+    return;
+  }
 }
 
 /**

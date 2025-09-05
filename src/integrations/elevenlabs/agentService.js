@@ -10,11 +10,10 @@ let clientMessageHandler = null;
 /**
  * Create a new conversation with ElevenLabs agent
  */
-async function createConversation(sessionId, treatmentType = config.session.defaultTreatmentType) {
+async function createConversation(sessionId, treatmentType = config.session.defaultTreatmentType, agentId = config.elevenlabs.agentId, dynamicFields = {}) {
   try {
-    console.log(`🤖 Initializing ElevenLabs conversation for session: ${sessionId}`);
 
-    const agentWebSocket = new WebSocket(`${config.elevenlabs.websocketUrl}/v1/convai/conversation?agent_id=${config.elevenlabs.agentId}`, {
+    const agentWebSocket = new WebSocket(`${config.elevenlabs.websocketUrl}/v1/convai/conversation?agent_id=${agentId}`, {
       headers: {
         'xi-api-key': config.elevenlabs.apiKey
       }
@@ -26,7 +25,9 @@ async function createConversation(sessionId, treatmentType = config.session.defa
       conversationId: null,
       audioFormat: null,
       isReady: false,
-      treatmentType
+      treatmentType,
+      agentId,
+      dynamicFields
     };
 
     // Handle WebSocket events
@@ -85,22 +86,36 @@ function setupWebSocketHandlers(agentWebSocket, conversationSession) {
  * Initialize conversation with ElevenLabs agent
  */
 function initializeConversation(conversationSession) {
+  const { dynamicFields } = conversationSession;
+  
+  // Build dynamic variables from Knowlarity metadata
+  const dynamicVariables = {
+    user_name: dynamicFields.user_name || "Patient",
+    language: dynamicFields.language || config.session.defaultLanguage,
+    user_id: conversationSession.sessionId,
+    treatmentType: conversationSession.treatmentType,
+    callid: dynamicFields.callid,
+    virtual_number: dynamicFields.virtual_number,
+    customer_number: dynamicFields.customer_number,
+  };
+
+  // Add any extra dynamic fields from Knowlarity
+  Object.keys(dynamicFields).forEach(key => {
+    if (!dynamicVariables[key]) {
+      dynamicVariables[key] = dynamicFields[key];
+    }
+  });
+
   const initMessage = {
     type: "conversation_initiation_client_data",
-    dynamic_variables: {
-      user_name: "Patient",
-      language: config.session.defaultLanguage,
-      user_id: conversationSession.sessionId,
-      treatmentType: conversationSession.treatmentType
-    },
+    dynamic_variables: dynamicVariables,
     conversation_config_override: {
       agent: {
-        language: "hi"
+        language: dynamicFields.language || "hi"
       }
     }
   };
 
-  console.log('📤 Initializing conversation with agent');
   conversationSession.agentWebSocket.send(JSON.stringify(initMessage));
 }
 
@@ -110,7 +125,6 @@ function initializeConversation(conversationSession) {
 function handleElevenLabsMessage(data, conversationSession) {
   try {
     const message = JSON.parse(data.toString());
-    console.log(`📋 Processing ElevenLabs message: ${message.type}`);
 
     switch (message.type) {
       case 'conversation_initiation_metadata':
@@ -126,11 +140,11 @@ function handleElevenLabsMessage(data, conversationSession) {
         break;
 
       case 'ping':
-        console.log('📡 Ping received from ElevenLabs');
+        // Ping received - no action needed
         break;
 
       default:
-        console.log(`📋 Unhandled ElevenLabs message type: ${message.type}`);
+        // Unhandled message type
     }
 
   } catch (error) {
@@ -142,8 +156,6 @@ function handleElevenLabsMessage(data, conversationSession) {
  * Handle conversation ready event
  */
 function handleConversationReady(message, conversationSession) {
-  console.log(`🎯 Conversation ready for session: ${conversationSession.sessionId}`);
-  
   // Store conversation metadata
   conversationSession.conversationId = message.conversation_initiation_metadata_event?.conversation_id;
   conversationSession.audioFormat = message.conversation_initiation_metadata_event?.agent_output_audio_format;
@@ -160,7 +172,6 @@ function handleAgentAudio(message, conversationSession) {
       audio: message.audio_event?.audio_base_64
     };
     
-    console.log('🔊 Forwarding agent audio to client');
     clientMessageHandler(conversationSession.sessionId, agentMessage);
   }
 }
@@ -169,8 +180,6 @@ function handleAgentAudio(message, conversationSession) {
  * Handle text response from agent
  */
 function handleAgentResponse(message, conversationSession) {
-  console.log(`🤖 Agent response: ${message.agent_response_event?.agent_response || 'No text'}`);
-  
   if (clientMessageHandler) {
     const agentMessage = {
       type: "agent_response",

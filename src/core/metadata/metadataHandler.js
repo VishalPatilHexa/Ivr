@@ -1,23 +1,22 @@
-const { getConnection, updateConnection } = require('../websocket/connectionManager');
+const {
+  getConnection,
+  updateConnection,
+} = require("../websocket/connectionManager");
 
 /**
  * Process initial metadata from Knowlarity
  */
 async function processInitialMetadata(metadataMessage, sessionId) {
   try {
-    console.log(`📋 Processing metadata for session: ${sessionId}`);
-
     // Parse metadata (handle single quotes format)
     const rawMetadata = metadataMessage.toString();
-    console.log('📥 Raw metadata received:', rawMetadata);
-    console.log('📏 Raw metadata length:', rawMetadata.length);
-    console.log('🔍 First 100 chars:', rawMetadata.substring(0, 100));
-    
     const metadata = parseKnowlarityMetadata(rawMetadata);
-    console.log('📊 Parsed Metadata:', JSON.stringify(metadata, null, 2));
 
     // Validate required fields
     validateMetadata(metadata);
+
+    // Extract dynamic fields from decoded metadata
+    const dynamicFields = extractDynamicFields(metadata);
 
     // Update connection with metadata
     const connection = getConnection(sessionId);
@@ -25,14 +24,12 @@ async function processInitialMetadata(metadataMessage, sessionId) {
       updateConnection(sessionId, {
         clientType: determineClientType(metadata),
         knowlarityMetadata: {
-          raw: rawMetadata,
-          parsed: metadata,
           callid: metadata.callid,
           virtual_number: metadata.virtual_number,
           customer_number: metadata.customer_number,
-          metadata: metadata.metadata,
-          decodedMetadata: metadata.decodedMetadata
-        }
+          metadata: metadata.decodedMetadata,
+          dynamicFields: dynamicFields,
+        },
       });
     }
 
@@ -40,9 +37,8 @@ async function processInitialMetadata(metadataMessage, sessionId) {
     await sendAcknowledgment(connection, sessionId);
 
     return { success: true, metadata };
-
   } catch (error) {
-    console.error('❌ Failed to process metadata:', error.message);
+    console.error("❌ Failed to process metadata:", error.message);
     await sendErrorResponse(getConnection(sessionId), error.message);
     return { success: false, error: error.message };
   }
@@ -53,50 +49,33 @@ async function processInitialMetadata(metadataMessage, sessionId) {
  */
 function parseKnowlarityMetadata(rawMetadata) {
   try {
-    console.log('🔧 Starting metadata parsing...');
-    
     // Clean up the raw metadata - remove any leading/trailing whitespace and BOM
     let cleanMetadata = rawMetadata.trim();
-    
+
     // Remove BOM (Byte Order Mark) if present
-    if (cleanMetadata.charCodeAt(0) === 0xFEFF) {
+    if (cleanMetadata.charCodeAt(0) === 0xfeff) {
       cleanMetadata = cleanMetadata.slice(1);
-      console.log('🧹 Removed BOM from metadata');
     }
-    
-    console.log('🧼 Cleaned metadata:', cleanMetadata);
-    console.log('🔤 Cleaned metadata first char code:', cleanMetadata.charCodeAt(0));
-    
+
     // Try parsing as JSON first (in case it's already proper JSON)
     try {
       const directParse = JSON.parse(cleanMetadata);
-      console.log('✅ Direct JSON parse successful');
-      
+
       // Check if the result is a string (double-encoded JSON)
-      if (typeof directParse === 'string') {
-        console.log('🔄 Result is a string, parsing again...');
+      if (typeof directParse === "string") {
         const secondParse = JSON.parse(directParse.replace(/'/g, '"'));
         return processMetadataObject(secondParse);
       }
-      
+
       return processMetadataObject(directParse);
     } catch (directError) {
-      console.log('❌ Direct JSON parse failed:', directError.message);
+      // Handle the single quote format from Knowlarity
+      const jsonString = cleanMetadata.replace(/'/g, '"');
+      const metadata = JSON.parse(jsonString);
+      return processMetadataObject(metadata);
     }
-    
-    // Handle the single quote format from Knowlarity
-    console.log('🔄 Attempting single quote replacement...');
-    const jsonString = cleanMetadata.replace(/'/g, '"');
-    console.log('📝 After quote replacement:', jsonString);
-    
-    const metadata = JSON.parse(jsonString);
-    console.log('✅ Single quote replacement successful');
-    
-    return processMetadataObject(metadata);
-    
   } catch (error) {
-    console.error('❌ All parsing attempts failed:', error.message);
-    console.error('🔍 Raw input was:', JSON.stringify(rawMetadata));
+    console.error("❌ Failed to parse metadata:", error.message);
     throw new Error(`Failed to parse metadata: ${error.message}`);
   }
 }
@@ -110,34 +89,86 @@ function processMetadataObject(metadata) {
     try {
       const decodedMetadataString = decodeURIComponent(metadata.metadata);
       metadata.decodedMetadata = JSON.parse(decodedMetadataString);
-      console.log('📊 Decoded inner metadata:', metadata.decodedMetadata);
     } catch (error) {
-      console.warn('⚠️ Failed to decode inner metadata:', error.message);
       metadata.decodedMetadata = null;
     }
   }
-  
+
   return metadata;
+}
+
+/**
+ * Extract dynamic fields from metadata for ElevenLabs
+ */
+function extractDynamicFields(metadata) {
+  const dynamicFields = {
+    // Core call information
+    callid: metadata.callid,
+    virtual_number: metadata.virtual_number,
+    customer_number: metadata.customer_number,
+  };
+
+  // Extract fields from decoded metadata
+  if (metadata.decodedMetadata) {
+    // Agent configuration
+    if (metadata.decodedMetadata.agentId) {
+      dynamicFields.agentId = metadata.decodedMetadata.agentId;
+    }
+    
+    // Campaign information
+    if (metadata.decodedMetadata.campaign_id) {
+      dynamicFields.campaign_id = metadata.decodedMetadata.campaign_id;
+    }
+
+    // Treatment type
+    if (metadata.decodedMetadata.treatmentType) {
+      dynamicFields.treatmentType = metadata.decodedMetadata.treatmentType;
+    }
+
+    // Language preference
+    if (metadata.decodedMetadata.language) {
+      dynamicFields.language = metadata.decodedMetadata.language;
+    }
+
+    // User information
+    if (metadata.decodedMetadata.user_name) {
+      dynamicFields.user_name = metadata.decodedMetadata.user_name;
+    }
+
+    // Any extra parameters
+    if (metadata.decodedMetadata.extra_param) {
+      dynamicFields.extra_param = metadata.decodedMetadata.extra_param;
+    }
+
+    // Add any other fields from decodedMetadata
+    Object.keys(metadata.decodedMetadata).forEach(key => {
+      if (!dynamicFields[key]) {
+        dynamicFields[key] = metadata.decodedMetadata[key];
+      }
+    });
+  }
+
+  return dynamicFields;
 }
 
 /**
  * Determine client type from metadata
  */
 function determineClientType(metadata) {
-  if (metadata.callid) return 'knowlarity';
-  if (metadata.type === 'web_client_connection') return 'web_client';
-  return 'unknown';
+  if (metadata.callid) return "knowlarity";
+  if (metadata.type === "web_client_connection") return "web_client";
+  return "unknown";
 }
 
 /**
  * Validate metadata structure
  */
 function validateMetadata(metadata) {
-  const requiredFields = ['callid', 'virtual_number', 'customer_number'];
-  const missingFields = requiredFields.filter(field => !metadata[field]);
-  
+  const requiredFields = ["callid", "virtual_number", "customer_number"];
+  const missingFields = requiredFields.filter((field) => !metadata[field]);
+
   if (missingFields.length > 0) {
-    console.warn(`⚠️ Missing metadata fields: ${missingFields.join(', ')}`);
+    console.warn(`⚠️ Missing metadata fields: ${missingFields.join(", ")}`);
   }
 }
 
@@ -146,17 +177,16 @@ function validateMetadata(metadata) {
  */
 async function sendAcknowledgment(connection, sessionId) {
   if (!connection?.websocket || connection.websocket.readyState !== 1) {
-    throw new Error('WebSocket not available for acknowledgment');
+    throw new Error("WebSocket not available for acknowledgment");
   }
 
   const ackMessage = JSON.stringify({
     type: "metadata_received",
     status: "success",
-    message: "Metadata processed successfully"
+    message: "Metadata processed successfully",
   });
 
   connection.websocket.send(ackMessage);
-  console.log('📤 Sent acknowledgment to Knowlarity');
 }
 
 /**
@@ -170,17 +200,17 @@ async function sendErrorResponse(connection, errorMessage) {
   const errorResponse = JSON.stringify({
     type: "metadata_error",
     status: "error",
-    message: errorMessage
+    message: errorMessage,
   });
 
   connection.websocket.send(errorResponse);
-  console.log('📤 Sent error response to Knowlarity');
 }
 
 module.exports = {
   processInitialMetadata,
   parseKnowlarityMetadata,
   processMetadataObject,
+  extractDynamicFields,
   determineClientType,
   validateMetadata,
   sendAcknowledgment,

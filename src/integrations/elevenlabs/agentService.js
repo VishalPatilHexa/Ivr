@@ -86,32 +86,18 @@ function setupWebSocketHandlers(agentWebSocket, conversationSession) {
  * Initialize conversation with ElevenLabs agent
  */
 function initializeConversation(conversationSession) {
-  const { dynamicFields } = conversationSession;
-  
-  // Build dynamic variables from Knowlarity metadata
-  const dynamicVariables = {
-    user_name: dynamicFields.user_name || "Patient",
-    language: dynamicFields.language || config.session.defaultLanguage,
+  // Use static fields for verification - not dynamic
+  const staticVariables = {
     user_id: conversationSession.sessionId,
-    treatmentType: conversationSession.treatmentType,
-    callid: dynamicFields.callid,
-    virtual_number: dynamicFields.virtual_number,
-    customer_number: dynamicFields.customer_number,
+    treatmentType: "Piles"
   };
 
-  // Add any extra dynamic fields from Knowlarity
-  Object.keys(dynamicFields).forEach(key => {
-    if (!dynamicVariables[key]) {
-      dynamicVariables[key] = dynamicFields[key];
-    }
-  });
-
-  // Don't override agent language - let agent use its configured language
   const initMessage = {
     type: "conversation_initiation_client_data",
-    dynamic_variables: dynamicVariables
+    dynamic_variables: staticVariables
   };
 
+  console.log('🔧 Using static fields for ElevenLabs:', JSON.stringify(staticVariables, null, 2));
   conversationSession.agentWebSocket.send(JSON.stringify(initMessage));
 }
 

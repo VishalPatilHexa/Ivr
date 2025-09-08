@@ -39,11 +39,20 @@ async function handleKnowlarityStream(websocket, urlPath) {
     try {
       // Handle first message - could be metadata or audio
       if (isFirstMessage) {
+        console.log(`🎆 *** FIRST MESSAGE DEBUG *** for session: ${sessionId}`);
+        console.log(`📊 Message type: ${incomingMessage instanceof Buffer ? "Buffer" : typeof incomingMessage}`);
+        console.log(`📏 Message length: ${incomingMessage.length}`);
+        console.log(`🔤 First 50 bytes as string:`, incomingMessage.toString().substring(0, 50));
+        console.log(`🔢 First 20 bytes as numbers:`, Array.from(incomingMessage.slice(0, 20)));
+        console.log(`📥 Full message content:`, incomingMessage.toString());
+        
         // Check if first message is JSON metadata or binary audio
         if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
+          console.log(`✅ Successfully processed as metadata`);
           isFirstMessage = false;
           return;
         } else {
+          console.log(`❌ Failed to process as metadata, treating as audio`);
           // Continue to process as audio below
           isFirstMessage = false;
         }

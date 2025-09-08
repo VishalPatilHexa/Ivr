@@ -212,7 +212,8 @@ async function sendAudioToAgent(sessionId, audioBase64Data) {
   }
 
   const audioMessage = {
-    user_audio_chunk: audioBase64Data
+    type: "user_audio_chunk",
+    audio_data: audioBase64Data
   };
 
   try {

@@ -60,6 +60,15 @@ function setupWebSocketHandlers(agentWebSocket, conversationSession) {
     handleElevenLabsMessage(data, conversationSession);
   });
 
+  agentWebSocket.on('ping', (data) => {
+    console.log('📡 Received ping from ElevenLabs');
+    agentWebSocket.pong(data);
+  });
+
+  agentWebSocket.on('pong', (data) => {
+    console.log('📡 Received pong from ElevenLabs');
+  });
+
   agentWebSocket.on('close', (code, reason) => {
     console.log(`🔌 ElevenLabs WebSocket closed for session: ${conversationSession.sessionId}`);
     console.log(`🔍 Close code: ${code} Reason: ${reason.toString()}`);
@@ -86,10 +95,15 @@ function setupWebSocketHandlers(agentWebSocket, conversationSession) {
  * Initialize conversation with ElevenLabs agent
  */
 function initializeConversation(conversationSession) {
-  // Use static fields for verification - not dynamic
+  // Check connection state before sending
+  if (conversationSession.agentWebSocket.readyState !== 1) {
+    console.error('❌ Cannot initialize - WebSocket not ready');
+    return;
+  }
+
+  // Use minimal static fields for verification
   const staticVariables = {
-    user_id: conversationSession.sessionId,
-    treatmentType: "Piles"
+    user_id: conversationSession.sessionId
   };
 
   const initMessage = {
@@ -97,8 +111,15 @@ function initializeConversation(conversationSession) {
     dynamic_variables: staticVariables
   };
 
-  console.log('🔧 Using static fields for ElevenLabs:', JSON.stringify(staticVariables, null, 2));
-  conversationSession.agentWebSocket.send(JSON.stringify(initMessage));
+  console.log('🔧 Using minimal static fields for ElevenLabs:', JSON.stringify(staticVariables, null, 2));
+  console.log('📤 Sending initialization message:', JSON.stringify(initMessage, null, 2));
+  
+  try {
+    conversationSession.agentWebSocket.send(JSON.stringify(initMessage));
+    console.log('✅ Initialization message sent successfully');
+  } catch (error) {
+    console.error('❌ Failed to send initialization message:', error.message);
+  }
 }
 
 /**
@@ -183,11 +204,21 @@ async function sendAudioToAgent(sessionId, audioBase64Data) {
     return;
   }
 
+  // Check connection state before sending audio
+  if (conversation.agentWebSocket.readyState !== 1) {
+    console.log('⚠️ ElevenLabs WebSocket not ready for session:', sessionId);
+    return;
+  }
+
   const audioMessage = {
     user_audio_chunk: audioBase64Data
   };
 
-  conversation.agentWebSocket.send(JSON.stringify(audioMessage));
+  try {
+    conversation.agentWebSocket.send(JSON.stringify(audioMessage));
+  } catch (error) {
+    console.error('❌ Failed to send audio to ElevenLabs:', error.message);
+  }
 }
 
 /**

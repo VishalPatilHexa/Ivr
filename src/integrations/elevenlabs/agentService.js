@@ -106,14 +106,10 @@ function initializeConversation(conversationSession) {
     }
   });
 
+  // Don't override agent language - let agent use its configured language
   const initMessage = {
     type: "conversation_initiation_client_data",
-    dynamic_variables: dynamicVariables,
-    conversation_config_override: {
-      agent: {
-        language: dynamicFields.language || "hi"
-      }
-    }
+    dynamic_variables: dynamicVariables
   };
 
   conversationSession.agentWebSocket.send(JSON.stringify(initMessage));

@@ -101,22 +101,28 @@ function initializeConversation(conversationSession) {
     return;
   }
 
-  // Use static fields with required treatmentType
-  const staticVariables = {
-    user_id: conversationSession.sessionId,
-    treatmentType: "piles"
+  // Use the working format from successful implementation
+  const initializationMessage = {
+    type: 'conversation_initiation_client_data',
+    dynamic_variables: {
+      user_name: 'Patient',
+      language: 'hindi',
+      user_id: conversationSession.sessionId,
+      treatmentType: conversationSession.treatmentType || 'piles'
+    },
+    // Add conversation config override - this is required for working version
+    conversation_config_override: {
+      agent: {
+        language: 'hi'  // Set agent language to Hindi
+      }
+    }
   };
-
-  const initMessage = {
-    type: "conversation_initiation_client_data",
-    dynamic_variables: staticVariables
-  };
-
-  console.log('🔧 Using minimal static fields for ElevenLabs:', JSON.stringify(staticVariables, null, 2));
-  console.log('📤 Sending initialization message:', JSON.stringify(initMessage, null, 2));
+  
+  console.log('📤 Initializing conversation with correct client data structure');
+  console.log('🔍 Initialization message:', JSON.stringify(initializationMessage, null, 2));
   
   try {
-    conversationSession.agentWebSocket.send(JSON.stringify(initMessage));
+    conversationSession.agentWebSocket.send(JSON.stringify(initializationMessage));
     console.log('✅ Initialization message sent successfully');
   } catch (error) {
     console.error('❌ Failed to send initialization message:', error.message);

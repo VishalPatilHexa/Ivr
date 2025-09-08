@@ -101,9 +101,10 @@ function initializeConversation(conversationSession) {
     return;
   }
 
-  // Use minimal static fields for verification
+  // Use static fields with required treatmentType
   const staticVariables = {
-    user_id: conversationSession.sessionId
+    user_id: conversationSession.sessionId,
+    treatmentType: "piles"
   };
 
   const initMessage = {

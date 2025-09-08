@@ -87,16 +87,8 @@ async function handleKnowlarityStream(websocket, urlPath) {
     websocket,
     clientType: "knowlarity",
     agentConversation: null,
+    elevenLabsInitialized: false,
   });
-
-  // Initialize ElevenLabs conversation
-  try {
-    await initializeAgentConversation(sessionId);
-  } catch (error) {
-    console.error("❌ Failed to initialize agent conversation:", error.message);
-    websocket.close(1011, "Failed to initialize conversation");
-    return;
-  }
 }
 
 /**

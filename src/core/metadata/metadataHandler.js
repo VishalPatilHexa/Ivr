@@ -14,15 +14,11 @@ const config = require("../../config");
  */
 async function processInitialMetadata(metadataMessage, sessionId) {
   try {
-    console.log(`🔍 *** PROCESSING METADATA *** for session: ${sessionId}`);
+    console.log(`📋 Processing metadata for session: ${sessionId}`);
     
     // Parse metadata (handle single quotes format)
     const rawMetadata = metadataMessage.toString();
-    console.log(`📥 Raw metadata received:`, rawMetadata);
-    console.log(`📏 Raw metadata length:`, rawMetadata.length);
-    
     const metadata = parseKnowlarityMetadata(rawMetadata);
-    console.log(`📊 Parsed metadata:`, JSON.stringify(metadata, null, 2));
 
     // Validate required fields
     validateMetadata(metadata);

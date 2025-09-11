@@ -56,8 +56,8 @@ function setupWebSocketHandlers(agentWebSocket, conversationSession) {
     initializeConversation(conversationSession);
   });
 
-  agentWebSocket.on('message', (data) => {
-    handleElevenLabsMessage(data, conversationSession);
+  agentWebSocket.on('message', async (data) => {
+    await handleElevenLabsMessage(data, conversationSession);
   });
 
   agentWebSocket.on('ping', (data) => {
@@ -132,13 +132,13 @@ function initializeConversation(conversationSession) {
 /**
  * Handle messages from ElevenLabs
  */
-function handleElevenLabsMessage(data, conversationSession) {
+async function handleElevenLabsMessage(data, conversationSession) {
   try {
     const message = JSON.parse(data.toString());
 
     switch (message.type) {
       case 'conversation_initiation_metadata':
-        handleConversationReady(message, conversationSession);
+        await handleConversationReady(message, conversationSession);
         break;
 
       case 'audio':
@@ -165,11 +165,25 @@ function handleElevenLabsMessage(data, conversationSession) {
 /**
  * Handle conversation ready event
  */
-function handleConversationReady(message, conversationSession) {
+async function handleConversationReady(message, conversationSession) {
   // Store conversation metadata
   conversationSession.conversationId = message.conversation_initiation_metadata_event?.conversation_id;
   conversationSession.audioFormat = message.conversation_initiation_metadata_event?.agent_output_audio_format;
   conversationSession.isReady = true;
+  
+  console.log(`✅ ElevenLabs conversation ready for session: ${conversationSession.sessionId}`);
+  
+  // Process any buffered audio now that conversation is ready
+  const connection = getConnection(conversationSession.sessionId);
+  if (connection?.audioBuffer && connection.audioBuffer.length > 0) {
+    console.log(`🔄 Processing ${connection.audioBuffer.length} buffered audio chunks for session: ${conversationSession.sessionId}`);
+    for (const bufferedAudio of connection.audioBuffer) {
+      console.log(`🔊 Sending buffered audio to ElevenLabs agent for session: ${conversationSession.sessionId}`);
+      await sendAudioToAgent(conversationSession.sessionId, bufferedAudio);
+    }
+    connection.audioBuffer = []; // Clear buffer
+    console.log(`✅ Buffered audio processed and cleared for session: ${conversationSession.sessionId}`);
+  }
 }
 
 /**

@@ -159,16 +159,11 @@ async function initializeAgentAfterMetadata(sessionId) {
     connection.agentConversation = agentConversation;
     console.log(`💾 Agent conversation stored for session: ${sessionId}`);
 
-    // Process any buffered audio that arrived before ElevenLabs was ready
-    if (connection.audioBuffer && connection.audioBuffer.length > 0) {
-      console.log(`🔄 Processing ${connection.audioBuffer.length} buffered audio chunks for session: ${sessionId}`);
-      for (const bufferedAudio of connection.audioBuffer) {
-        console.log(`🔊 Sending buffered audio to ElevenLabs agent for session: ${sessionId}`);
-        await sendAudioToAgent(sessionId, bufferedAudio);
-      }
-      connection.audioBuffer = []; // Clear buffer
-      console.log(`✅ Buffered audio processed and cleared for session: ${sessionId}`);
-    }
+    // Set up callback to process buffered audio when conversation becomes ready
+    console.log(`⏳ ElevenLabs connected but waiting for conversation ready signal...`);
+    
+    // The buffered audio will be processed when handleConversationReady is called
+    // This happens when ElevenLabs sends the conversation_initiation_metadata event
 
     // Notify client that agent is ready
     if (connection?.websocket?.readyState === 1) {
@@ -259,14 +254,15 @@ async function handleIncomingAudio(audioBuffer, sessionId) {
 
   // Send to ElevenLabs agent or buffer if not ready
   const connection = getConnection(sessionId);
-  if (connection?.agentConversation) {
+  if (connection?.agentConversation?.isReady) {
     console.log(`🔊 Sending audio to ElevenLabs agent for session: ${sessionId}`);
     await sendAudioToAgent(sessionId, audioResult.audioData);
   } else {
-    // Buffer audio until ElevenLabs is ready
+    // Buffer audio until ElevenLabs conversation is fully ready
     if (connection?.audioBuffer) {
       connection.audioBuffer.push(audioResult.audioData);
-      console.log(`🔄 Buffered audio chunk for session: ${sessionId} (buffer size: ${connection.audioBuffer.length})`);
+      const readyStatus = connection?.agentConversation ? 'connected but not ready' : 'not connected';
+      console.log(`🔄 Buffered audio chunk for session: ${sessionId} (buffer size: ${connection.audioBuffer.length}, status: ${readyStatus})`);
     } else {
       console.log(`⚠️ No connection found for session: ${sessionId} - audio dropped`);
     }

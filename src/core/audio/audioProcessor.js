@@ -5,26 +5,14 @@ const config = require('../../config');
  */
 async function processIncomingAudio(audioBuffer, sessionId) {
   try {
-    // Apply audio processing pipeline
-    let processedAudio = audioBuffer;
-    
-    // 1. Apply noise reduction
-    processedAudio = applyNoiseReduction(processedAudio);
-    
-    // 2. Normalize audio levels
-    processedAudio = normalizeAudio(processedAudio);
-    
-    // 3. Apply standard amplification
-    processedAudio = amplifyAudio(processedAudio);
-
-    // Convert to base64 for ElevenLabs
-    const audioBase64 = processedAudio.toString('base64');
+    // Pass audio without amplification - direct conversion to base64
+    const audioBase64 = audioBuffer.toString('base64');
 
     return {
       success: true,
       audioData: audioBase64,
       originalSize: audioBuffer.length,
-      processedSize: processedAudio.length
+      processedSize: audioBuffer.length
     };
 
   } catch (error) {

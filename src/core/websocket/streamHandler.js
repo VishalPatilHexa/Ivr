@@ -37,8 +37,11 @@ async function handleKnowlarityStream(websocket, urlPath) {
 
   websocket.on("message", async (incomingMessage) => {
     try {
+      console.log(`📥 Message received for session ${sessionId}: ${incomingMessage instanceof Buffer ? `Buffer(${incomingMessage.length})` : `Text(${incomingMessage.length})`}`);
+      
       // Handle first message - could be metadata or audio
       if (isFirstMessage) {
+        console.log(`🎆 Processing first message for session: ${sessionId}`);
         // Check if first message is JSON metadata or binary audio
         if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
           isFirstMessage = false;
@@ -50,6 +53,7 @@ async function handleKnowlarityStream(websocket, urlPath) {
       }
 
       // Route audio and control messages
+      console.log(`🔀 Routing message for session: ${sessionId}`);
       await routeIncomingMessage(incomingMessage, sessionId);
     } catch (error) {
       console.error(
@@ -226,6 +230,8 @@ async function routeIncomingMessage(incomingMessage, sessionId) {
  * Handle incoming audio from caller
  */
 async function handleIncomingAudio(audioBuffer, sessionId) {
+  console.log(`🎵 Received audio from caller, size: ${audioBuffer.length} bytes`);
+
   // Process audio
   const audioResult = await processIncomingAudio(audioBuffer, sessionId);
 
@@ -237,10 +243,15 @@ async function handleIncomingAudio(audioBuffer, sessionId) {
     return;
   }
 
+  console.log(`📤 Base64 length: ${audioResult.audioData.length} characters`);
+
   // Send to ElevenLabs agent
   const connection = getConnection(sessionId);
   if (connection?.agentConversation) {
+    console.log(`🔊 Sending audio to ElevenLabs agent for session: ${sessionId}`);
     await sendAudioToAgent(sessionId, audioResult.audioData);
+  } else {
+    console.log(`⚠️ No agent conversation available for session: ${sessionId} - audio dropped`);
   }
 }
 

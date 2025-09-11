@@ -119,6 +119,57 @@ function setupGlobalAudioStreaming() {
 setupGlobalAudioStreaming();
 
 /**
+ * Initialize ElevenLabs agent after metadata is processed
+ */
+async function initializeAgentAfterMetadata(sessionId) {
+  const connection = getConnection(sessionId);
+  if (!connection || connection.agentConversation) {
+    return; // Already initialized or no connection
+  }
+
+  console.log(`🤖 Initializing ElevenLabs conversation for session: ${sessionId}`);
+
+  // Get dynamic fields from connection metadata
+  const dynamicFields = connection?.knowlarityMetadata?.dynamicFields || {};
+  console.log(`🔄 Using dynamic fields for ElevenLabs:`, JSON.stringify(dynamicFields, null, 2));
+
+  // Use dynamic agentId if provided, otherwise use default
+  const agentId = dynamicFields.agentId || config.elevenlabs.agentId;
+  const treatmentType = dynamicFields.treatmentType || config.session.defaultTreatmentType;
+  const language = dynamicFields.language || config.session.defaultLanguage;
+
+  console.log(`🤖 Using agentId: ${agentId}`);
+  console.log(`🎯 Using treatmentType: ${treatmentType}`);
+  console.log(`🌐 Using language: ${language}`);
+
+  try {
+    const agentConversation = await createConversation(
+      sessionId,
+      treatmentType,
+      agentId,
+      dynamicFields
+    );
+
+    // Update connection with agent conversation
+    connection.agentConversation = agentConversation;
+    console.log(`💾 Agent conversation stored for session: ${sessionId}`);
+
+    // Notify client that agent is ready
+    if (connection?.websocket?.readyState === 1) {
+      connection.websocket.send(
+        JSON.stringify({
+          type: "agent_ready",
+          message: "ElevenLabs agent is ready for conversation",
+        })
+      );
+      console.log("📤 Sent agent_ready notification to client");
+    }
+  } catch (error) {
+    console.error(`❌ Failed to initialize ElevenLabs: ${error.message}`);
+  }
+}
+
+/**
  * Try to process message as metadata, return true if successful
  */
 async function tryProcessAsMetadata(incomingMessage, sessionId) {
@@ -127,7 +178,13 @@ async function tryProcessAsMetadata(incomingMessage, sessionId) {
 
     // Quick check - if it contains common metadata fields, try as JSON
     if (messageStr.includes("metadata") || messageStr.includes("callid")) {
-      await processInitialMetadata(incomingMessage, sessionId);
+      const metadataResult = await processInitialMetadata(incomingMessage, sessionId);
+      
+      if (metadataResult.success) {
+        // Initialize ElevenLabs AFTER metadata is processed
+        await initializeAgentAfterMetadata(sessionId);
+      }
+      
       return true;
     }
 

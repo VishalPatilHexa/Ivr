@@ -2,12 +2,6 @@ const {
   getConnection,
   updateConnection,
 } = require("../websocket/connectionManager");
-const {
-  createConversation,
-  setClientMessageHandler,
-} = require("../../integrations/elevenlabs/agentService");
-const { sendAudioToCaller } = require("../../integrations/knowlarity/messageHandler");
-const config = require("../../config");
 
 /**
  * Process initial metadata from Knowlarity
@@ -44,17 +38,6 @@ async function processInitialMetadata(metadataMessage, sessionId) {
 
     // Send acknowledgment
     await sendAcknowledgment(connection, sessionId);
-
-    // Initialize ElevenLabs AFTER metadata is processed
-    if (connection && !connection.elevenLabsInitialized) {
-      console.log(`🔄 Initializing ElevenLabs with dynamic fields for session: ${sessionId}`);
-      try {
-        await initializeElevenLabsWithMetadata(sessionId, dynamicFields);
-        connection.elevenLabsInitialized = true;
-      } catch (error) {
-        console.error(`❌ Failed to initialize ElevenLabs: ${error.message}`);
-      }
-    }
 
     return { success: true, metadata };
   } catch (error) {
@@ -192,47 +175,6 @@ function validateMetadata(metadata) {
   }
 }
 
-/**
- * Initialize ElevenLabs with metadata
- */
-async function initializeElevenLabsWithMetadata(sessionId, dynamicFields) {
-  console.log(`🤖 Initializing ElevenLabs with metadata for session: ${sessionId}`);
-  console.log(`🔄 Using dynamic fields:`, JSON.stringify(dynamicFields, null, 2));
-
-  // Use dynamic agentId if provided, otherwise use default
-  const agentId = dynamicFields.agentId || config.elevenlabs.agentId;
-  const treatmentType = dynamicFields.treatmentType || config.session.defaultTreatmentType;
-  const language = dynamicFields.language || config.session.defaultLanguage;
-
-  console.log(`🤖 Using agentId: ${agentId}`);
-  console.log(`🎯 Using treatmentType: ${treatmentType}`);
-  console.log(`🌐 Using language: ${language}`);
-
-  const agentConversation = await createConversation(
-    sessionId,
-    treatmentType,
-    agentId,
-    dynamicFields
-  );
-
-  // Update connection with agent conversation
-  const connection = getConnection(sessionId);
-  if (connection) {
-    connection.agentConversation = agentConversation;
-    console.log(`💾 Agent conversation stored for session: ${sessionId}`);
-  }
-
-  // Notify client that agent is ready
-  if (connection?.websocket?.readyState === 1) {
-    connection.websocket.send(
-      JSON.stringify({
-        type: "agent_ready",
-        message: "ElevenLabs agent is ready for conversation",
-      })
-    );
-    console.log("📤 Sent agent_ready notification to client");
-  }
-}
 
 
 /**
@@ -274,7 +216,6 @@ module.exports = {
   parseKnowlarityMetadata,
   processMetadataObject,
   extractDynamicFields,
-  initializeElevenLabsWithMetadata,
   determineClientType,
   validateMetadata,
   sendAcknowledgment,

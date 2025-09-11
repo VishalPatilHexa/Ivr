@@ -43,18 +43,17 @@ async function handleKnowlarityStream(websocket, urlPath) {
       // Handle first message - could be metadata or audio
       if (isFirstMessage) {
         console.log(`🎆 Processing first message for session: ${sessionId}`);
+        // Mark metadata as processed IMMEDIATELY to prevent race conditions
+        if (connection) {
+          connection.metadataProcessed = true;
+        }
+        
         // Check if first message is JSON metadata or binary audio
         if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
-          // Mark metadata as processed in connection
-          if (connection) {
-            connection.metadataProcessed = true;
-          }
+          console.log(`✅ Metadata processed successfully for session: ${sessionId}`);
           return;
         } else {
-          // Not metadata, treat as audio and mark metadata as processed
-          if (connection) {
-            connection.metadataProcessed = true;
-          }
+          console.log(`📤 First message was audio, not metadata for session: ${sessionId}`);
         }
       }
 

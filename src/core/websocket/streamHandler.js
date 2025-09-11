@@ -32,23 +32,29 @@ async function handleKnowlarityStream(websocket, urlPath) {
 
   console.log(`📞 New Knowlarity connection: ${sessionId}`);
 
-  // Setup message handling IMMEDIATELY - metadata arrives right after sessionId extraction
-  let isFirstMessage = true;
-
   websocket.on("message", async (incomingMessage) => {
     try {
       console.log(`📥 Message received for session ${sessionId}: ${incomingMessage instanceof Buffer ? `Buffer(${incomingMessage.length})` : `Text(${incomingMessage.length})`}`);
+      
+      // Get connection to check if metadata has been processed
+      const connection = getConnection(sessionId);
+      const isFirstMessage = !connection?.metadataProcessed;
       
       // Handle first message - could be metadata or audio
       if (isFirstMessage) {
         console.log(`🎆 Processing first message for session: ${sessionId}`);
         // Check if first message is JSON metadata or binary audio
         if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
-          isFirstMessage = false;
+          // Mark metadata as processed in connection
+          if (connection) {
+            connection.metadataProcessed = true;
+          }
           return;
         } else {
-          // Continue to process as audio below
-          isFirstMessage = false;
+          // Not metadata, treat as audio and mark metadata as processed
+          if (connection) {
+            connection.metadataProcessed = true;
+          }
         }
       }
 
@@ -84,6 +90,7 @@ async function handleKnowlarityStream(websocket, urlPath) {
     agentConversation: null,
     elevenLabsInitialized: false,
     audioBuffer: [], // Initialize buffer for incoming audio
+    metadataProcessed: false, // Track if metadata has been processed
   });
 
   // ✅ Setup audio buffer immediately to capture incoming audio

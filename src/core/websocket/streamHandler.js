@@ -83,94 +83,40 @@ async function handleKnowlarityStream(websocket, urlPath) {
 }
 
 /**
- * Initialize ElevenLabs conversation
+ * Setup global audio streaming handler (called once during startup)
  */
-async function initializeAgentConversation(sessionId) {
-  console.log(
-    `🤖 Initializing ElevenLabs conversation for session: ${sessionId}`
-  );
-
-  // Get dynamic fields from connection metadata
-  const sessionConnection = getConnection(sessionId);
-  const dynamicFields =
-    sessionConnection?.knowlarityMetadata?.dynamicFields || {};
-  console.log(
-    `🔄 Using dynamic fields for ElevenLabs:`,
-    JSON.stringify(dynamicFields, null, 2)
-  );
-
-  // Use dynamic agentId if provided, otherwise use default
-  const agentId = dynamicFields.agentId || config.elevenlabs.agentId;
-  const treatmentType =
-    dynamicFields.treatmentType || config.session.defaultTreatmentType;
-  const language = dynamicFields.language || config.session.defaultLanguage;
-
-  console.log(`🤖 Using agentId: ${agentId}`);
-  console.log(`🎯 Using treatmentType: ${treatmentType}`);
-  console.log(`🌐 Using language: ${language}`);
-
-  const agentConversation = await createConversation(
-    sessionId,
-    treatmentType,
-    agentId,
-    dynamicFields
-  );
-
-  // Update connection with agent conversation
-  if (sessionConnection) {
-    sessionConnection.agentConversation = agentConversation;
-    console.log(`💾 Agent conversation stored for session: ${sessionId}`);
-  }
-
-  // Setup bidirectional audio streaming
-  setupAudioStreaming(sessionId);
-
-  // Notify client that agent is ready
-  if (sessionConnection?.websocket?.readyState === 1) {
-    sessionConnection.websocket.send(
-      JSON.stringify({
-        type: "agent_ready",
-        message: "ElevenLabs agent is ready for conversation",
-      })
-    );
-    console.log("📤 Sent agent_ready notification to client");
-  }
-}
-
-/**
- * Setup bidirectional audio streaming
- */
-function setupAudioStreaming(sessionId) {
+function setupGlobalAudioStreaming() {
   setClientMessageHandler((currentSessionId, agentMessage) => {
-    if (currentSessionId === sessionId) {
-      const connection = getConnection(sessionId);
+    const connection = getConnection(currentSessionId);
 
-      if (connection?.websocket?.readyState === 1) {
-        // Handle agent audio
-        if (agentMessage.type === "agent_audio" && agentMessage.audio) {
-          console.log("🔊 Streaming agent audio to caller");
-          sendAudioToCaller(sessionId, agentMessage.audio);
-        }
+    if (connection?.websocket?.readyState === 1) {
+      // Handle agent audio
+      if (agentMessage.type === "agent_audio" && agentMessage.audio) {
+        console.log("🔊 Streaming agent audio to caller");
+        sendAudioToCaller(currentSessionId, agentMessage.audio);
+      }
 
-        // Handle agent response text
-        if (agentMessage.type === "agent_response" && agentMessage.text) {
-          console.log(
-            `💬 Agent response: ${agentMessage.text.substring(0, 100)}...`
-          );
-        }
-
-        // Handle audio end
-        if (agentMessage.type === "agent_audio_end") {
-          console.log("✅ Agent finished speaking");
-        }
-      } else {
+      // Handle agent response text
+      if (agentMessage.type === "agent_response" && agentMessage.text) {
         console.log(
-          `⚠️ Cannot send to caller - WebSocket connection lost for session: ${sessionId}`
+          `💬 Agent response: ${agentMessage.text.substring(0, 100)}...`
         );
       }
+
+      // Handle audio end
+      if (agentMessage.type === "agent_audio_end") {
+        console.log("✅ Agent finished speaking");
+      }
+    } else {
+      console.log(
+        `⚠️ Cannot send to caller - WebSocket connection lost for session: ${currentSessionId}`
+      );
     }
   });
 }
+
+// Setup the global handler once when module loads
+setupGlobalAudioStreaming();
 
 /**
  * Try to process message as metadata, return true if successful

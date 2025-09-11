@@ -222,9 +222,6 @@ async function initializeElevenLabsWithMetadata(sessionId, dynamicFields) {
     console.log(`💾 Agent conversation stored for session: ${sessionId}`);
   }
 
-  // Setup bidirectional audio streaming
-  setupAudioStreamingForMetadata(sessionId);
-
   // Notify client that agent is ready
   if (connection?.websocket?.readyState === 1) {
     connection.websocket.send(
@@ -237,36 +234,6 @@ async function initializeElevenLabsWithMetadata(sessionId, dynamicFields) {
   }
 }
 
-/**
- * Setup bidirectional audio streaming for metadata handler
- */
-function setupAudioStreamingForMetadata(sessionId) {
-  setClientMessageHandler((currentSessionId, agentMessage) => {
-    if (currentSessionId === sessionId) {
-      const connection = getConnection(sessionId);
-
-      if (connection?.websocket?.readyState === 1) {
-        // Handle agent audio
-        if (agentMessage.type === "agent_audio" && agentMessage.audio) {
-          console.log("🔊 Streaming agent audio to caller");
-          sendAudioToCaller(sessionId, agentMessage.audio);
-        }
-
-        // Handle agent response text
-        if (agentMessage.type === "agent_response" && agentMessage.text) {
-          console.log(`💬 Agent response: ${agentMessage.text.substring(0, 100)}...`);
-        }
-
-        // Handle audio end
-        if (agentMessage.type === "agent_audio_end") {
-          console.log("✅ Agent finished speaking");
-        }
-      } else {
-        console.log(`⚠️ Cannot send to caller - WebSocket connection lost for session: ${sessionId}`);
-      }
-    }
-  });
-}
 
 /**
  * Send acknowledgment to Knowlarity
@@ -308,7 +275,6 @@ module.exports = {
   processMetadataObject,
   extractDynamicFields,
   initializeElevenLabsWithMetadata,
-  setupAudioStreamingForMetadata,
   determineClientType,
   validateMetadata,
   sendAcknowledgment,

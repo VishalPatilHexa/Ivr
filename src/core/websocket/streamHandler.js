@@ -83,6 +83,7 @@ async function handleKnowlarityStream(websocket, urlPath) {
     clientType: "knowlarity",
     agentConversation: null,
     elevenLabsInitialized: false,
+    audioBuffer: [], // Buffer audio until ElevenLabs is ready
   });
 }
 
@@ -157,6 +158,17 @@ async function initializeAgentAfterMetadata(sessionId) {
     // Update connection with agent conversation
     connection.agentConversation = agentConversation;
     console.log(`💾 Agent conversation stored for session: ${sessionId}`);
+
+    // Process any buffered audio that arrived before ElevenLabs was ready
+    if (connection.audioBuffer && connection.audioBuffer.length > 0) {
+      console.log(`🔄 Processing ${connection.audioBuffer.length} buffered audio chunks for session: ${sessionId}`);
+      for (const bufferedAudio of connection.audioBuffer) {
+        console.log(`🔊 Sending buffered audio to ElevenLabs agent for session: ${sessionId}`);
+        await sendAudioToAgent(sessionId, bufferedAudio);
+      }
+      connection.audioBuffer = []; // Clear buffer
+      console.log(`✅ Buffered audio processed and cleared for session: ${sessionId}`);
+    }
 
     // Notify client that agent is ready
     if (connection?.websocket?.readyState === 1) {
@@ -245,13 +257,19 @@ async function handleIncomingAudio(audioBuffer, sessionId) {
 
   console.log(`📤 Base64 length: ${audioResult.audioData.length} characters`);
 
-  // Send to ElevenLabs agent
+  // Send to ElevenLabs agent or buffer if not ready
   const connection = getConnection(sessionId);
   if (connection?.agentConversation) {
     console.log(`🔊 Sending audio to ElevenLabs agent for session: ${sessionId}`);
     await sendAudioToAgent(sessionId, audioResult.audioData);
   } else {
-    console.log(`⚠️ No agent conversation available for session: ${sessionId} - audio dropped`);
+    // Buffer audio until ElevenLabs is ready
+    if (connection?.audioBuffer) {
+      connection.audioBuffer.push(audioResult.audioData);
+      console.log(`🔄 Buffered audio chunk for session: ${sessionId} (buffer size: ${connection.audioBuffer.length})`);
+    } else {
+      console.log(`⚠️ No connection found for session: ${sessionId} - audio dropped`);
+    }
   }
 }
 

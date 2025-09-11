@@ -83,8 +83,16 @@ async function handleKnowlarityStream(websocket, urlPath) {
     clientType: "knowlarity",
     agentConversation: null,
     elevenLabsInitialized: false,
-    audioBuffer: [], // Buffer audio until ElevenLabs is ready
+    audioBuffer: [], // Initialize buffer for incoming audio
   });
+
+  // ✅ Setup audio buffer immediately to capture incoming audio
+  // ElevenLabs will be initialized when metadata arrives with agentId
+  const connection = getConnection(sessionId);
+  if (connection) {
+    connection.audioBuffer = [];
+    console.log(`🔄 Audio buffer ready for session: ${sessionId} - waiting for metadata`);
+  }
 }
 
 /**
@@ -122,6 +130,7 @@ function setupGlobalAudioStreaming() {
 
 // Setup the global handler once when module loads
 setupGlobalAudioStreaming();
+
 
 /**
  * Initialize ElevenLabs agent after metadata is processed

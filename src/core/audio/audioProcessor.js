@@ -5,14 +5,20 @@ const config = require('../../config');
  */
 async function processIncomingAudio(audioBuffer, sessionId) {
   try {
-    // Pass audio without amplification - direct conversion to base64
-    const audioBase64 = audioBuffer.toString('base64');
+    // Apply audio amplification like the working dev branch
+    let processedAudio = audioBuffer;
+    
+    // Apply standard amplification (2.5x like in dev branch)
+    processedAudio = amplifyAudio(processedAudio);
+
+    // Convert to base64 for ElevenLabs
+    const audioBase64 = processedAudio.toString('base64');
 
     return {
       success: true,
       audioData: audioBase64,
       originalSize: audioBuffer.length,
-      processedSize: audioBuffer.length
+      processedSize: processedAudio.length
     };
 
   } catch (error) {

@@ -32,21 +32,18 @@ async function handleKnowlarityStream(websocket, urlPath) {
 
   console.log(`📞 New Knowlarity connection: ${sessionId}`);
 
+  // Use same pattern as working dev branch - simple synchronous flag
+  let isFirstMessage = true;
+
   websocket.on("message", async (incomingMessage) => {
     try {
       console.log(`📥 Message received for session ${sessionId}: ${incomingMessage instanceof Buffer ? `Buffer(${incomingMessage.length})` : `Text(${incomingMessage.length})`}`);
       
-      // Get connection to check if metadata has been processed
-      const connection = getConnection(sessionId);
-      const isFirstMessage = !connection?.metadataProcessed;
-      
-      // Handle first message - could be metadata or audio
+      // Handle first message - could be metadata or audio (like working dev branch)
       if (isFirstMessage) {
         console.log(`🎆 Processing first message for session: ${sessionId}`);
-        // Mark metadata as processed IMMEDIATELY to prevent race conditions
-        if (connection) {
-          connection.metadataProcessed = true;
-        }
+        // Set flag IMMEDIATELY and SYNCHRONOUSLY to prevent race condition
+        isFirstMessage = false;
         
         // Check if first message is JSON metadata or binary audio
         if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
@@ -89,7 +86,6 @@ async function handleKnowlarityStream(websocket, urlPath) {
     agentConversation: null,
     elevenLabsInitialized: false,
     audioBuffer: [], // Initialize buffer for incoming audio
-    metadataProcessed: false, // Track if metadata has been processed
   });
 
   // ✅ Setup audio buffer immediately to capture incoming audio

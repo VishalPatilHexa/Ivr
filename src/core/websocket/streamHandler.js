@@ -85,16 +85,9 @@ async function handleKnowlarityStream(websocket, urlPath) {
     clientType: "knowlarity",
     agentConversation: null,
     elevenLabsInitialized: false,
-    audioBuffer: [], // Initialize buffer for incoming audio
   });
 
-  // ✅ Setup audio buffer immediately to capture incoming audio
-  // ElevenLabs will be initialized when metadata arrives with agentId
-  const connection = getConnection(sessionId);
-  if (connection) {
-    connection.audioBuffer = [];
-    console.log(`🔄 Audio buffer ready for session: ${sessionId} - waiting for metadata`);
-  }
+  console.log(`🔊 Ready for real-time audio streaming when ElevenLabs initializes - no buffering`);
 }
 
 /**
@@ -263,20 +256,15 @@ async function handleIncomingAudio(audioBuffer, sessionId) {
 
   console.log(`📤 Base64 length: ${audioResult.audioData.length} characters`);
 
-  // Send to ElevenLabs agent or buffer if not ready
+  // Send to ElevenLabs agent ONLY if ready - NO BUFFERING (like working dev branch)
   const connection = getConnection(sessionId);
   if (connection?.agentConversation?.isReady) {
     console.log(`🔊 Sending audio to ElevenLabs agent for session: ${sessionId}`);
     await sendAudioToAgent(sessionId, audioResult.audioData);
   } else {
-    // Buffer audio until ElevenLabs conversation is fully ready
-    if (connection?.audioBuffer) {
-      connection.audioBuffer.push(audioResult.audioData);
-      const readyStatus = connection?.agentConversation ? 'connected but not ready' : 'not connected';
-      console.log(`🔄 Buffered audio chunk for session: ${sessionId} (buffer size: ${connection.audioBuffer.length}, status: ${readyStatus})`);
-    } else {
-      console.log(`⚠️ No connection found for session: ${sessionId} - audio dropped`);
-    }
+    // Drop audio until ElevenLabs is ready - NO BUFFERING to match dev branch behavior
+    const readyStatus = connection?.agentConversation ? 'connected but not ready' : 'not connected';
+    console.log(`⚠️ Audio dropped for session: ${sessionId} - ElevenLabs ${readyStatus}`);
   }
 }
 

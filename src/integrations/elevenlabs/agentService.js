@@ -101,22 +101,29 @@ function initializeConversation(conversationSession) {
     return;
   }
 
-  // Use the working format from successful implementation
+  // Use dynamic fields from metadata for proper agent initialization
+  const dynamicVariables = {
+    user_name: conversationSession.dynamicFields?.user_name || 'Patient',
+    language: conversationSession.dynamicFields?.language || 'hindi',
+    user_id: conversationSession.sessionId,
+    treatmentType: conversationSession.treatmentType || 'piles',
+    // Pass all additional dynamic fields from metadata
+    ...conversationSession.dynamicFields
+  };
+
   const initializationMessage = {
     type: 'conversation_initiation_client_data',
-    dynamic_variables: {
-      user_name: 'Patient',
-      language: 'hindi',
-      user_id: conversationSession.sessionId,
-      treatmentType: conversationSession.treatmentType || 'piles'
-    },
+    dynamic_variables: dynamicVariables,
     // Add conversation config override - this is required for working version
     conversation_config_override: {
       agent: {
-        language: 'hi'  // Set agent language to Hindi
+        language: conversationSession.dynamicFields?.language || 'hi'  // Use language from metadata
       }
     }
   };
+  
+  console.log('📤 Initializing conversation with dynamic fields from metadata');
+  console.log('🔍 Dynamic variables:', JSON.stringify(dynamicVariables, null, 2));
   
   console.log('📤 Initializing conversation with correct client data structure');
   console.log('🔍 Initialization message:', JSON.stringify(initializationMessage, null, 2));
@@ -172,19 +179,8 @@ async function handleConversationReady(message, conversationSession) {
   conversationSession.isReady = true;
   
   console.log(`✅ ElevenLabs conversation ready for session: ${conversationSession.sessionId}`);
-  
-  // Process any buffered audio now that conversation is ready
-  const connection = getConnection(conversationSession.sessionId);
-  if (connection?.audioBuffer && connection.audioBuffer.length > 0) {
-    console.log(`🔄 Processing ${connection.audioBuffer.length} buffered audio chunks for session: ${conversationSession.sessionId}`);
-    for (const bufferedAudio of connection.audioBuffer) {
-      console.log(`🔊 Sending buffered audio to ElevenLabs agent for session: ${conversationSession.sessionId}`);
-      await sendAudioToAgent(conversationSession.sessionId, bufferedAudio);
-    }
-    connection.audioBuffer = []; // Clear buffer
-    console.log(`✅ Buffered audio processed and cleared for session: ${conversationSession.sessionId}`);
+  console.log(`🔊 Ready for real-time audio streaming (no buffering) - like working dev branch`);
   }
-}
 
 /**
  * Handle audio from ElevenLabs agent

@@ -174,6 +174,8 @@ function handleKnowlarityStream(websocket, urlPath) {
           })
         );
         console.log("📤 Sent agent_ready notification to client");
+        console.log("🔍 Agent WebSocket state:", agentConversation?.agentWebSocket?.readyState);
+        console.log("🔍 Session stored in activeConnections:", !!activeConnections.get(sessionId));
       }
     } catch (error) {
       console.error("❌ Error creating ElevenLabs conversation:", error);
@@ -216,15 +218,14 @@ function handleKnowlarityStream(websocket, urlPath) {
             const audioBuffer = Buffer.from(parsedMessage.audio, "base64");
             await handleIncomingAudio(
               audioBuffer,
-              sessionId,
-              agentConversation
+              sessionId
             );
           } else {
             console.log(
               "📝 Processing JSON control message for session:",
               sessionId
             );
-            handleControlMessages(messageStr, sessionId, agentConversation);
+            handleControlMessages(messageStr, sessionId);
           }
         } catch (parseError) {
           // Not JSON, treat as binary audio
@@ -234,13 +235,12 @@ function handleKnowlarityStream(websocket, urlPath) {
           );
           await handleIncomingAudio(
             incomingMessage,
-            sessionId,
-            agentConversation
+            sessionId
           );
         }
       } else {
         console.log("📝 Processing control message for session:", sessionId);
-        handleControlMessages(incomingMessage, sessionId, agentConversation);
+        handleControlMessages(incomingMessage, sessionId);
       }
     } catch (error) {
       console.error("❌ Error processing message for session:", sessionId);
@@ -264,7 +264,7 @@ function handleKnowlarityStream(websocket, urlPath) {
   });
 
   // STEP 5: Setup connection lifecycle handlers
-  setupConnectionLifecycle(websocket, sessionId, agentConversation);
+  setupConnectionLifecycle(websocket, sessionId);
 
   // Initialize the conversation
   initializeAgentConversation();
@@ -455,7 +455,7 @@ function handleInitialMetadata(metadataMessage, sessionId) {
  * This function processes the incoming audio stream from the caller and forwards
  * it to the ElevenLabs agent for processing and response generation.
  */
-async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
+async function handleIncomingAudio(audioBuffer, sessionId) {
   console.log(
     "🎵 Received audio from caller, size:",
     audioBuffer.length,
@@ -486,14 +486,22 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
   console.log("📤 Base64 length:", audioBase64Data.length, "characters");
   console.log("🔍 ===== END AUDIO DEBUG =====");
 
+  // CRITICAL FIX: Get the actual agent conversation from stored connection
+  // This fixes the async initialization race condition
+  const connection = activeConnections.get(sessionId);
+  const actualAgentConversation = connection?.agentConversation;
+
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
-  if (agentConversation) {
+  if (actualAgentConversation) {
     // STREAM TO AGENT: This will trigger AI processing and eventually a response
     // The response will come back through the callback registered in setupAudioStreaming()
+    console.log("✅ Sending audio to ElevenLabs agent for session:", sessionId);
     await sendAudioToAgent(sessionId, audioBase64Data);
   } else {
     // AGENT NOT READY: ElevenLabs conversation not initialized yet - drop audio
-    console.log("⚠️ ElevenLabs not ready, audio dropped");
+    console.log("⚠️ ElevenLabs conversation not ready for session:", sessionId);
+    console.log("🔍 Connection exists:", !!connection);
+    console.log("🔍 Agent conversation exists:", !!connection?.agentConversation);
   }
 }
 
@@ -503,7 +511,7 @@ async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
  * CONTROL CHANNEL: Processes non-audio messages from Knowlarity
  * These include call lifecycle events and user input (DTMF tones)
  */
-function handleControlMessages(controlMessage, sessionId, agentConversation) {
+function handleControlMessages(controlMessage, sessionId) {
   try {
     // CONTROL MESSAGE PARSING: Extract control commands from Knowlarity
     const controlData = JSON.parse(controlMessage);
@@ -519,7 +527,8 @@ function handleControlMessages(controlMessage, sessionId, agentConversation) {
       case "call_end":
         // CALL TERMINATION: Clean up all resources for this call
         handleCallStatusUpdate(sessionId, { status: "completed" });
-        if (agentConversation) {
+        const connection = activeConnections.get(sessionId);
+        if (connection?.agentConversation) {
           // AGENT CLEANUP: End the ElevenLabs conversation and close WebSocket
           endConversation(sessionId);
         }
@@ -529,6 +538,24 @@ function handleControlMessages(controlMessage, sessionId, agentConversation) {
         // DTMF TONES: Handle keypad input from caller (could be used for menu navigation)
         console.log("📞 DTMF received:", controlData.digit);
         // TODO: Could forward DTMF to agent for handling menu options
+        break;
+
+      case "ping":
+        // CRITICAL: Handle ping from Knowlarity to keep connection alive
+        console.log("📡 Ping received from Knowlarity");
+        const knowlarityConnection = activeConnections.get(sessionId);
+        if (knowlarityConnection?.websocket?.readyState === WebSocket.OPEN) {
+          // Send pong response after specified delay
+          const pingDelay = controlData.ping_ms || 0;
+          setTimeout(() => {
+            const pongResponse = {
+              type: "pong",
+              event_id: controlData.event_id
+            };
+            knowlarityConnection.websocket.send(JSON.stringify(pongResponse));
+            console.log("📤 Sent pong response to Knowlarity");
+          }, pingDelay);
+        }
         break;
     }
   } catch (jsonError) {
@@ -546,7 +573,7 @@ function handleControlMessages(controlMessage, sessionId, agentConversation) {
 /**
  * Setup WebSocket connection lifecycle handlers
  */
-function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
+function setupConnectionLifecycle(websocket, sessionId) {
   // Handle connection close
   websocket.on("close", () => {
     console.log("📞 Call stream closed for session:", sessionId);

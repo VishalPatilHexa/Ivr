@@ -274,14 +274,21 @@ function handleAgentTextResponse(sessionId, responseMessage) {
  */
 function handleAgentAudioChunk(sessionId, audioMessage) {
   if (audioMessage.agent_response_audio_delta_event?.delta_audio_base_64) {
-    console.log('🔊 Agent audio chunk received');
+    const audioData = audioMessage.agent_response_audio_delta_event.delta_audio_base_64;
+    console.log('🔊 Agent audio chunk received - Size:', audioData.length, 'chars');
+    console.log('🔍 Audio chunk preview:', audioData.substring(0, 50) + '...');
     
     // AUDIO FORWARDING: Send audio chunk to caller via the registered callback
     // This triggers the callback in setupAudioStreaming() which sends audio to Knowlarity
     forwardToClient(sessionId, {
       type: 'agent_audio',
-      audio: audioMessage.agent_response_audio_delta_event.delta_audio_base_64
+      audio: audioData
     });
+    
+    console.log('✅ Audio chunk forwarded to callback handler');
+  } else {
+    console.log('⚠️ Agent audio chunk missing delta_audio_base_64 field');
+    console.log('🔍 Available fields:', Object.keys(audioMessage.agent_response_audio_delta_event || {}));
   }
 }
 
@@ -290,11 +297,19 @@ function handleAgentAudioChunk(sessionId, audioMessage) {
  */
 function handleDirectAudio(sessionId, directAudioMessage) {
   if (directAudioMessage.audio_event?.audio_base_64) {
-    console.log('🔊 Direct audio received');
+    const audioData = directAudioMessage.audio_event.audio_base_64;
+    console.log('🔊 Direct audio received - Size:', audioData.length, 'chars');
+    console.log('🔍 Direct audio preview:', audioData.substring(0, 50) + '...');
+    
     forwardToClient(sessionId, {
       type: 'agent_audio',
-      audio: directAudioMessage.audio_event.audio_base_64
+      audio: audioData
     });
+    
+    console.log('✅ Direct audio forwarded to callback handler');
+  } else {
+    console.log('⚠️ Direct audio message missing audio_base_64 field');
+    console.log('🔍 Available fields:', Object.keys(directAudioMessage.audio_event || {}));
   }
 }
 
@@ -350,10 +365,14 @@ function handleConversationReady(sessionId, readyMessage, conversationSession) {
   // Send initial greeting to activate agent
   setTimeout(() => {
     if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
-      conversationSession.agentWebSocket.send(JSON.stringify({
-        user_text: 'Hi'
-      }));
-      console.log('📤 Sent greeting to activate agent');
+      // CRITICAL FIX: Don't send immediate text greeting to prevent premature activation
+      // Let the caller speak first for a more natural conversation flow
+      console.log('🎯 Agent ready - waiting for caller audio input');
+      
+      // Optional: Send a minimal prompt to prepare the agent but don't force speech
+      // conversationSession.agentWebSocket.send(JSON.stringify({
+      //   user_text: 'Hi'
+      // }));
     }
   }, 1000);
   
@@ -385,12 +404,15 @@ async function sendAudioToAgent(sessionId, audioData) {
     };
     
     console.log(`🎵 Sending audio to ElevenLabs - Session: ${sessionId}, Data size: ${audioData.length} chars`);
+    console.log('🔍 Audio preview:', audioData.substring(0, 50) + '...');
     
     // SEND TO AGENT: Forward caller's audio to ElevenLabs for processing
     // This will trigger AI processing and eventually generate response audio
     await sendToElevenLabs(sessionId, audioMessage);
+    console.log('✅ Audio message sent to ElevenLabs WebSocket');
   } catch (error) {
     console.error('❌ Error sending audio to agent:', error);
+    console.error('🔍 Error details:', error.message);
   }
 }
 

@@ -109,7 +109,13 @@ async function createElevenLabsWebSocket(sessionId) {
     });
 
     agentWebSocket.on('message', (messageData) => {
-      handleElevenLabsMessage(sessionId, messageData);
+      try {
+        console.log(`📨 Raw ElevenLabs message received: ${messageData.length} bytes for session: ${sessionId}`);
+        handleElevenLabsMessage(sessionId, messageData);
+      } catch (error) {
+        console.error(`❌ ERROR in WebSocket message handler for session ${sessionId}:`, error.message);
+        console.error(`🔍 Stack trace:`, error.stack);
+      }
     });
 
     agentWebSocket.on('error', (connectionError) => {
@@ -118,9 +124,11 @@ async function createElevenLabsWebSocket(sessionId) {
     });
 
     agentWebSocket.on('close', (code, reason) => {
-      console.log('🔌 ElevenLabs WebSocket closed for session:', sessionId);
-      console.log('🔍 Close code:', code, 'Reason:', reason ? reason.toString() : 'No reason provided');
+      console.error(`🔌 CRITICAL: ElevenLabs WebSocket CLOSED for session: ${sessionId}`);
+      console.error(`🔍 Close code: ${code} Reason: ${reason ? reason.toString() : 'No reason provided'}`);
+      console.error(`🔍 Active conversations before cleanup: ${activeConversations.size}`);
       endConversation(sessionId);
+      console.error(`🔍 Active conversations after cleanup: ${activeConversations.size}`);
     });
   });
 }

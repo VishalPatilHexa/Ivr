@@ -565,7 +565,12 @@ function handleAcephoneControlMessages(controlMessage, sessionId) {
   try {
     // CONTROL MESSAGE PARSING: Extract control commands from Acephone
     const controlData = JSON.parse(controlMessage);
-    console.log("📋 Acephone Control message:", controlData.type);
+    console.log("📋 ========== ACEPHONE CONTROL MESSAGE DEBUG ==========");
+    console.log("📋 Raw message:", controlMessage.toString());
+    console.log("📋 Parsed object:", JSON.stringify(controlData, null, 2));
+    console.log("📋 Message type:", controlData.type);
+    console.log("📋 All object keys:", Object.keys(controlData));
+    console.log("📋 ================================================");
 
     // CONTROL MESSAGE ROUTING: Handle different types of call events
     switch (controlData.type) {

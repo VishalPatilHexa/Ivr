@@ -1158,6 +1158,7 @@ function endConversation(sessionId) {
 
 module.exports = {
   handleConnection,
+  handleAcephone,
   transferCall,
   terminateStream,
   killAudio,

@@ -1,5 +1,6 @@
 const WebSocket = require("ws");
 var base64 = require("base-64");
+const { v4: uuidv4 } = require("uuid");
 
 /*
  * ===============================================================================
@@ -25,18 +26,22 @@ const activeConnections = new Map();
 // Import service modules directly
 const elevenLabsAgentService = require("../../services/elevenLabsAgent");
 
-
 /**
  * Main WebSocket connection handler - routes connections based on URL path
  */
 function handleConnection(websocket, request) {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const urlPath = url.pathname;
-  
 
   // Route to Knowlarity stream handler
   if (urlPath.startsWith("/knowlarity-stream/")) {
     handleKnowlarityStream(websocket, urlPath);
+    return;
+  }
+
+  // Route to Acephone stream handler
+  if (urlPath.startsWith("/acephone")) {
+    handleAcephone(websocket, urlPath);
     return;
   }
 
@@ -51,9 +56,6 @@ function handleConnection(websocket, request) {
  * ===============================================================================
  */
 
-
-
-
 /**
  * Amplify audio volume by multiplying sample values
  * Assumes 16-bit PCM audio (little endian)
@@ -62,25 +64,24 @@ function amplifyAudioVolume(audioBuffer, amplificationFactor = 2.0) {
   try {
     // Create a copy to avoid modifying original buffer
     const amplifiedBuffer = Buffer.from(audioBuffer);
-    
+
     // Process 16-bit samples (2 bytes each)
     for (let i = 0; i < amplifiedBuffer.length - 1; i += 2) {
       // Read 16-bit little endian sample
       let sample = amplifiedBuffer.readInt16LE(i);
-      
+
       // Amplify the sample
       sample = Math.round(sample * amplificationFactor);
-      
+
       // Clamp to prevent overflow/distortion
       sample = Math.max(-32768, Math.min(32767, sample));
-      
+
       // Write back the amplified sample
       amplifiedBuffer.writeInt16LE(sample, i);
     }
-    
+
     console.log(`🔊 Audio amplified by factor ${amplificationFactor}x`);
     return amplifiedBuffer;
-    
   } catch (error) {
     console.error("❌ Error amplifying audio:", error);
     return audioBuffer; // Return original on error
@@ -104,7 +105,7 @@ function handleKnowlarityStream(websocket, urlPath) {
 
   // STEP 1: Store connection and setup call session
   // Detect client type from session ID or will be updated from metadata
-  const clientType = sessionId.startsWith("web_") ? "web_client" : "knowlarity";
+  const clientType = "knowlarity";
 
   activeConnections.set(sessionId, {
     websocket,
@@ -174,8 +175,14 @@ function handleKnowlarityStream(websocket, urlPath) {
           })
         );
         console.log("📤 Sent agent_ready notification to client");
-        console.log("🔍 Agent WebSocket state:", agentConversation?.agentWebSocket?.readyState);
-        console.log("🔍 Session stored in activeConnections:", !!activeConnections.get(sessionId));
+        console.log(
+          "🔍 Agent WebSocket state:",
+          agentConversation?.agentWebSocket?.readyState
+        );
+        console.log(
+          "🔍 Session stored in activeConnections:",
+          !!activeConnections.get(sessionId)
+        );
       }
     } catch (error) {
       console.error("❌ Error creating ElevenLabs conversation:", error);
@@ -216,10 +223,7 @@ function handleKnowlarityStream(websocket, urlPath) {
             );
             // Convert base64 audio to binary
             const audioBuffer = Buffer.from(parsedMessage.audio, "base64");
-            await handleIncomingAudio(
-              audioBuffer,
-              sessionId
-            );
+            await handleIncomingAudio(audioBuffer, sessionId);
           } else {
             console.log(
               "📝 Processing JSON control message for session:",
@@ -233,10 +237,7 @@ function handleKnowlarityStream(websocket, urlPath) {
             "🎵 Processing binary audio data for session:",
             sessionId
           );
-          await handleIncomingAudio(
-            incomingMessage,
-            sessionId
-          );
+          await handleIncomingAudio(incomingMessage, sessionId);
         }
       } else {
         console.log("📝 Processing control message for session:", sessionId);
@@ -268,6 +269,341 @@ function handleKnowlarityStream(websocket, urlPath) {
 
   // Initialize the conversation
   initializeAgentConversation();
+}
+
+/**
+ * ===============================================================================
+ * ACEPHONE STREAM HANDLER
+ * ===============================================================================
+ * Handles audio streaming workflow for Acephone connections with unique session ID generation
+ */
+function handleAcephone(websocket, urlPath) {
+  // Generate unique session ID for this connection
+  const sessionId = generateUniqueSessionId();
+  console.log(
+    "📞 New Acephone call stream connection with generated session:",
+    sessionId
+  );
+  console.log("🔍 URL Path:", urlPath);
+  console.log("🌐 WebSocket Ready State:", websocket.readyState);
+
+  // STEP 1: Store connection and setup call session
+  const clientType = "acephone";
+
+  activeConnections.set(sessionId, {
+    websocket,
+    clientType,
+    connectedAt: new Date(),
+    agentConversation: null, // Will be set when ElevenLabs agent is initialized
+  });
+  console.log(
+    "💾 Stored connection for session:",
+    sessionId,
+    "type:",
+    clientType
+  );
+  console.log("📊 Total active connections:", activeConnections.size);
+
+  let callSession = getCallSession(sessionId);
+  if (!callSession) {
+    // Create temporary session for external calls (Acephone)
+    callSession = {
+      sessionId: sessionId,
+      status: "external_connection",
+      createdAt: new Date(),
+      isExternal: true,
+      source: "acephone",
+    };
+    console.log("✅ Temporary session created for external call:", sessionId);
+    console.log("📋 Session details:", JSON.stringify(callSession, null, 2));
+  } else {
+    console.log("🔄 Using existing call session:", sessionId);
+    console.log(
+      "📋 Existing session details:",
+      JSON.stringify(callSession, null, 2)
+    );
+  }
+
+  // STEP 2: Initialize ElevenLabs conversation IMMEDIATELY on connection
+  let agentConversation = null;
+
+  const initializeAgentConversation = async () => {
+    try {
+      console.log(
+        "🤖 Initializing ElevenLabs conversation IMMEDIATELY for acephone session:",
+        sessionId
+      );
+
+      agentConversation = await elevenLabsAgentService.createConversation(
+        sessionId,
+        callSession.patientData?.treatmentType || "General"
+      );
+
+      // Store the agent conversation in the connection for cleanup
+      const connection = activeConnections.get(sessionId);
+      if (connection) {
+        connection.agentConversation = agentConversation;
+        console.log("💾 Agent conversation stored for session:", sessionId);
+      }
+
+      // STEP 3: Setup bidirectional audio streaming
+      setupAudioStreaming(sessionId);
+
+      // STEP 4: Notify client that agent is ready and send session ID
+      if (connection?.websocket?.readyState === WebSocket.OPEN) {
+        connection.websocket.send(
+          JSON.stringify({
+            type: "agent_ready",
+            sessionId: sessionId,
+            message: "ElevenLabs agent is ready for conversation",
+          })
+        );
+        console.log(
+          "📤 Sent agent_ready notification with session ID to acephone client"
+        );
+        console.log(
+          "🔍 Agent WebSocket state:",
+          agentConversation?.agentWebSocket?.readyState
+        );
+        console.log(
+          "🔍 Session stored in activeConnections:",
+          !!activeConnections.get(sessionId)
+        );
+      }
+    } catch (error) {
+      console.error("❌ Error creating ElevenLabs conversation:", error);
+      websocket.close(1011, "Failed to initialize conversation");
+    }
+  };
+
+  // STEP 4: Setup message handling for audio streaming
+  let isFirstMessage = true;
+  let messageCount = 0;
+
+  websocket.on("message", async (incomingMessage) => {
+    try {
+      messageCount++;
+
+      // Handle initial metadata from Acephone
+      if (isFirstMessage) {
+        console.log(
+          "🎆 Processing first message (metadata) for session:",
+          sessionId
+        );
+        handleAcephoneInitialMetadata(incomingMessage, sessionId);
+        isFirstMessage = false;
+        return;
+      }
+
+      // Route audio and control messages
+      if (incomingMessage instanceof Buffer) {
+        // Try to parse as JSON first (for client audio messages)
+        try {
+          const messageStr = incomingMessage.toString();
+          const parsedMessage = JSON.parse(messageStr);
+
+          if (parsedMessage.type === "audio-chunk" && parsedMessage.audio) {
+            console.log(
+              "🎵 Processing JSON audio chunk for session:",
+              sessionId
+            );
+            // Convert base64 audio to binary
+            const audioBuffer = Buffer.from(parsedMessage.audio, "base64");
+            await handleIncomingAudio(audioBuffer, sessionId);
+          } else {
+            console.log(
+              "📝 Processing JSON control message for session:",
+              sessionId
+            );
+            handleAcephoneControlMessages(messageStr, sessionId);
+          }
+        } catch (parseError) {
+          // Not JSON, treat as binary audio
+          console.log(
+            "🎵 Processing binary audio data for session:",
+            sessionId
+          );
+          await handleIncomingAudio(incomingMessage, sessionId);
+        }
+      } else {
+        console.log("📝 Processing control message for session:", sessionId);
+        handleAcephoneControlMessages(incomingMessage, sessionId);
+      }
+    } catch (error) {
+      console.error("❌ Error processing message for session:", sessionId);
+      console.error("💥 Error details:", error.message);
+      console.error(
+        "🔍 Message type:",
+        incomingMessage instanceof Buffer ? "Binary" : "Text"
+      );
+      console.error(
+        "🔍 Message preview:",
+        incomingMessage instanceof Buffer
+          ? `Buffer(${incomingMessage.length})`
+          : incomingMessage.toString().substring(0, 100)
+      );
+    }
+  });
+
+  websocket.on("error", (event) => {
+    console.error("❌ WebSocket error for session:", event);
+    console.error("💥 Error details:", event.message);
+  });
+
+  // STEP 5: Setup connection lifecycle handlers
+  setupConnectionLifecycle(websocket, sessionId);
+
+  // Initialize the conversation IMMEDIATELY - no waiting for metadata
+  console.log("🚀 Starting ElevenLabs initialization immediately for acephone");
+  initializeAgentConversation();
+}
+
+/**
+ * Generate unique session ID using UUID
+ */
+function generateUniqueSessionId() {
+  return uuidv4();
+}
+
+/**
+ * Handle initial metadata message from Acephone
+ */
+function handleAcephoneInitialMetadata(metadataMessage, sessionId) {
+  try {
+    console.log("📋 ========== ACEPHONE METADATA RECEIVED ==========");
+    console.log("📋 Session ID:", sessionId);
+    console.log("📋 Raw message length:", metadataMessage.length, "bytes");
+    console.log("📋 Raw message type:", typeof metadataMessage);
+
+    // Parse Acephone metadata
+    const connectionMetadata = JSON.parse(metadataMessage.toString());
+
+    console.log("📊 ========== PARSED ACEPHONE METADATA ==========");
+    console.log(
+      "📊 Full Metadata Object:",
+      JSON.stringify(connectionMetadata, null, 2)
+    );
+    console.log("📊 Call ID:", connectionMetadata.callid || "NOT PROVIDED");
+    console.log(
+      "📊 Customer Number:",
+      connectionMetadata.customer_number || "NOT PROVIDED"
+    );
+    console.log(
+      "📊 Virtual Number:",
+      connectionMetadata.virtual_number || "NOT PROVIDED"
+    );
+    console.log(
+      "📊 Additional Metadata:",
+      connectionMetadata.metadata || "NOT PROVIDED"
+    );
+    console.log("📊 ===============================================");
+
+    // Store metadata in connection
+    const connection = activeConnections.get(sessionId);
+    if (connection) {
+      // Set client type
+      connection.clientType = "acephone";
+
+      // Store metadata for processing
+      connection.acephoneMetadata = {
+        raw: metadataMessage.toString(),
+        parsed: connectionMetadata,
+        callid: connectionMetadata.callid,
+        customer_number: connectionMetadata.customer_number,
+        metadata: connectionMetadata.metadata,
+      };
+    }
+
+    // Update status
+    handleCallStatusUpdate(sessionId, { status: "connected" });
+
+    // Send acknowledgment to Acephone with session ID
+    if (connection?.websocket?.readyState === WebSocket.OPEN) {
+      const ackMessage = JSON.stringify({
+        type: "metadata_received",
+        status: "success",
+        sessionId: sessionId,
+        message: "Acephone metadata processed successfully",
+      });
+
+      connection.websocket.send(ackMessage);
+      console.log("📤 Sent acknowledgment with session ID to Acephone");
+    }
+  } catch (jsonError) {
+    console.error("❌ Failed to parse Acephone metadata:", jsonError.message);
+
+    // Send error response to Acephone
+    const connection = activeConnections.get(sessionId);
+    if (connection?.websocket?.readyState === WebSocket.OPEN) {
+      const errorMessage = JSON.stringify({
+        type: "metadata_error",
+        status: "error",
+        sessionId: sessionId,
+        message: "Failed to parse metadata",
+      });
+
+      connection.websocket.send(errorMessage);
+      console.log("📤 Sent error response to Acephone");
+    }
+
+    handleCallStatusUpdate(sessionId, { status: "connected" });
+  }
+}
+
+/**
+ * Handle control messages from Acephone (call events, DTMF)
+ */
+function handleAcephoneControlMessages(controlMessage, sessionId) {
+  try {
+    // CONTROL MESSAGE PARSING: Extract control commands from Acephone
+    const controlData = JSON.parse(controlMessage);
+    console.log("📋 Acephone Control message:", controlData.type);
+
+    // CONTROL MESSAGE ROUTING: Handle different types of call events
+    switch (controlData.type) {
+      case "call_start":
+        // CALL ACTIVATION: Mark call as active (beyond just connected)
+        handleCallStatusUpdate(sessionId, { status: "active" });
+        break;
+
+      case "call_end":
+        // CALL TERMINATION: Clean up all resources for this call
+        handleCallStatusUpdate(sessionId, { status: "completed" });
+        const connection = activeConnections.get(sessionId);
+        if (connection?.agentConversation) {
+          // AGENT CLEANUP: End the ElevenLabs conversation and close WebSocket
+          endConversation(sessionId);
+        }
+        break;
+
+      case "dtmf":
+        // DTMF TONES: Handle keypad input from caller
+        console.log("📞 DTMF received:", controlData.digit);
+        break;
+
+      case "ping":
+        // CRITICAL: Handle ping from Acephone to keep connection alive
+        console.log("📡 Ping received from Acephone");
+        const acephoneConnection = activeConnections.get(sessionId);
+        if (acephoneConnection?.websocket?.readyState === WebSocket.OPEN) {
+          // Send pong response after specified delay
+          const pingDelay = controlData.ping_ms || 0;
+          setTimeout(() => {
+            const pongResponse = {
+              type: "pong",
+              sessionId: sessionId,
+              event_id: controlData.event_id,
+            };
+            acephoneConnection.websocket.send(JSON.stringify(pongResponse));
+            console.log("📤 Sent pong response to Acephone");
+          }, pingDelay);
+        }
+        break;
+    }
+  } catch (jsonError) {
+    // INVALID CONTROL MESSAGE: Not valid JSON, log and continue
+    console.log("⚠️ Non-JSON control message received from Acephone");
+  }
 }
 
 /**
@@ -311,9 +647,9 @@ function setupAudioStreaming(sessionId) {
           console.log("🔊 Streaming agent audio to caller");
 
           // Check client type from stored connection data
-          const isWebClient = connection.clientType === "web_client";
+          const clientType = connection.clientType;
 
-          if (!isWebClient) {
+          if (clientType === "knowlarity") {
             // KNOWLARITY FORMAT: Send as playAudio JSON message
             // Note: Knowlarity expects raw PCM audio with specific sample rate
             const knowlarityAudioMessage = {
@@ -335,6 +671,31 @@ function setupAudioStreaming(sessionId) {
             } catch (sendError) {
               console.error(
                 "❌ Failed to send Knowlarity audio:",
+                sendError.message
+              );
+            }
+          } else if (clientType === "acephone") {
+            // ACEPHONE FORMAT: Send as playAudio JSON message with session ID
+            const acephoneAudioMessage = {
+              type: "playAudio",
+              sessionId: sessionId,
+              data: {
+                audioContentType: "raw",
+                sampleRate: 16000, // ElevenLabs uses 16kHz
+                audioContent: agentMessage.audio, // base64 encoded raw PCM
+              },
+            };
+
+            console.log(
+              `📤 Sending Acephone playAudio message (${agentMessage.audio.length} chars base64)`
+            );
+
+            try {
+              connection.websocket.send(JSON.stringify(acephoneAudioMessage));
+              console.log("✅ Acephone audio JSON sent successfully");
+            } catch (sendError) {
+              console.error(
+                "❌ Failed to send Acephone audio:",
                 sendError.message
               );
             }
@@ -394,13 +755,15 @@ function handleInitialMetadata(metadataMessage, sessionId) {
     // Parse Knowlarity metadata
     const connectionMetadata = JSON.parse(metadataMessage.toString());
     console.log("📊 Metadata:", JSON.stringify(connectionMetadata, null, 2));
-    
+
     // Store metadata in connection
     const connection = activeConnections.get(sessionId);
     if (connection) {
       // Set client type
-      connection.clientType = connectionMetadata.callid ? "knowlarity" : "web_client";
-      
+      connection.clientType = connectionMetadata.callid
+        ? "knowlarity"
+        : "web_client";
+
       // Store metadata for webhook processing
       connection.knowlarityMetadata = {
         raw: metadataMessage.toString(),
@@ -408,7 +771,7 @@ function handleInitialMetadata(metadataMessage, sessionId) {
         callid: connectionMetadata.callid,
         virtual_number: connectionMetadata.virtual_number,
         customer_number: connectionMetadata.customer_number,
-        metadata: connectionMetadata.metadata
+        metadata: connectionMetadata.metadata,
       };
     }
 
@@ -420,13 +783,12 @@ function handleInitialMetadata(metadataMessage, sessionId) {
       const ackMessage = JSON.stringify({
         type: "metadata_received",
         status: "success",
-        message: "Metadata processed successfully"
+        message: "Metadata processed successfully",
       });
-      
+
       connection.websocket.send(ackMessage);
       console.log("📤 Sent acknowledgment to Knowlarity");
     }
-
   } catch (jsonError) {
     console.error("❌ Failed to parse metadata:", jsonError.message);
 
@@ -436,9 +798,9 @@ function handleInitialMetadata(metadataMessage, sessionId) {
       const errorMessage = JSON.stringify({
         type: "metadata_error",
         status: "error",
-        message: "Failed to parse metadata"
+        message: "Failed to parse metadata",
       });
-      
+
       connection.websocket.send(errorMessage);
       console.log("📤 Sent error response to Knowlarity");
     }
@@ -466,23 +828,30 @@ async function handleIncomingAudio(audioBuffer, sessionId) {
   console.log("🔍 ===== AUDIO FORMAT DEBUG =====");
   console.log("📊 Buffer length:", audioBuffer.length, "bytes");
   console.log("🎵 Sample count:", audioBuffer.length / 2, "(assuming 16-bit)");
-  console.log("⏱️ Duration:", (audioBuffer.length / 2 / 16000).toFixed(3), "seconds (assuming 16kHz)");
-  
+  console.log(
+    "⏱️ Duration:",
+    (audioBuffer.length / 2 / 16000).toFixed(3),
+    "seconds (assuming 16kHz)"
+  );
+
   // Check first few samples for debugging
   if (audioBuffer.length >= 6) {
     const sample1 = audioBuffer.readInt16LE(0);
     const sample2 = audioBuffer.readInt16LE(2);
     const sample3 = audioBuffer.readInt16LE(4);
     console.log("🎼 First 3 samples:", sample1, sample2, sample3);
-    console.log("🔊 Max amplitude in first 3:", Math.max(Math.abs(sample1), Math.abs(sample2), Math.abs(sample3)));
+    console.log(
+      "🔊 Max amplitude in first 3:",
+      Math.max(Math.abs(sample1), Math.abs(sample2), Math.abs(sample3))
+    );
   }
-  
+
   // AUDIO PROCESSING: Pure volume amplification only - NO noise processing to prevent artifacts
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.5); // 2.5x amplification - clean and artifact-free
 
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
-  
+
   console.log("📤 Base64 length:", audioBase64Data.length, "characters");
   console.log("🔍 ===== END AUDIO DEBUG =====");
 
@@ -501,7 +870,10 @@ async function handleIncomingAudio(audioBuffer, sessionId) {
     // AGENT NOT READY: ElevenLabs conversation not initialized yet - drop audio
     console.log("⚠️ ElevenLabs conversation not ready for session:", sessionId);
     console.log("🔍 Connection exists:", !!connection);
-    console.log("🔍 Agent conversation exists:", !!connection?.agentConversation);
+    console.log(
+      "🔍 Agent conversation exists:",
+      !!connection?.agentConversation
+    );
   }
 }
 
@@ -550,7 +922,7 @@ function handleControlMessages(controlMessage, sessionId) {
           setTimeout(() => {
             const pongResponse = {
               type: "pong",
-              event_id: controlData.event_id
+              event_id: controlData.event_id,
             };
             knowlarityConnection.websocket.send(JSON.stringify(pongResponse));
             console.log("📤 Sent pong response to Knowlarity");
@@ -577,29 +949,31 @@ function setupConnectionLifecycle(websocket, sessionId) {
   // Handle connection close
   websocket.on("close", () => {
     console.log("📞 Call stream closed for session:", sessionId);
-    
+
     // Close ElevenLabs WebSocket connection to end the conversation
     const connection = activeConnections.get(sessionId);
     if (connection?.agentConversation?.agentWebSocket) {
       console.log("🔌 Closing ElevenLabs WebSocket to end conversation");
       connection.agentConversation.agentWebSocket.close();
     }
-    
+
     console.log("⏳ Waiting for ElevenLabs webhook for final cleanup");
   });
 
   // Handle connection errors
   websocket.on("error", (connectionError) => {
     console.error("❌ WebSocket error:", connectionError);
-    
+
     // Close ElevenLabs WebSocket connection on error
     const connection = activeConnections.get(sessionId);
     if (connection?.agentConversation?.agentWebSocket) {
       console.log("🔌 Closing ElevenLabs WebSocket due to error");
       connection.agentConversation.agentWebSocket.close();
     }
-    
-    console.log("⚠️ WebSocket error occurred - waiting for ElevenLabs webhook for cleanup");
+
+    console.log(
+      "⚠️ WebSocket error occurred - waiting for ElevenLabs webhook for cleanup"
+    );
     handleCallStatusUpdate(sessionId, {
       status: "failed",
       reason: connectionError.message,
@@ -726,7 +1100,7 @@ function shutdown() {
  * ===============================================================================
  */
 
-// Simple session getter for external calls  
+// Simple session getter for external calls
 function getCallSession(sessionId) {
   return null; // External Knowlarity calls don't use internal session management
 }
@@ -746,7 +1120,6 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
 // ELEVENLABS AGENT SERVICE INTEGRATION
 // ===============================================================================
 // These functions create the bridge between WebSocket handler and ElevenLabs agent
-
 
 /**
  * CALLBACK REGISTRATION: Register callback function with ElevenLabs agent
@@ -783,5 +1156,5 @@ module.exports = {
   cleanup,
   shutdown,
   activeConnections,
-  cleanupSession
+  cleanupSession,
 };

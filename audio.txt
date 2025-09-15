@@ -1,0 +1,24 @@
+ Audio Flow in Your IVR System
+
+  1. Receiving Audio (Knowlarity → Your System)
+
+  - Knowlarity sends 16-bit PCM binary audio via WebSocket
+  - Your system receives these raw audio chunks
+  - Converts binary PCM to base64 format
+  - Forwards to ElevenLabs AI agent for processing
+
+  2. Processing Audio (ElevenLabs AI)
+
+  - Receives base64 audio as user_audio_chunk
+  - Transcribes speech to text automatically
+  - Generates AI responses in Hindi/English
+  - Returns audio responses as base64 agent_response_audio_delta
+
+  3. Sending Audio (Your System → Knowlarity)
+
+  - Takes ElevenLabs base64 audio output
+  - Converts to raw audio format
+  - Sends as playAudio command to Knowlarity with:
+    - audioContentType: 'raw'
+    - sampleRate: 16000
+    - Audio content as raw data

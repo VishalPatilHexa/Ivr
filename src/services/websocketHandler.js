@@ -418,6 +418,13 @@ function handleAcephone(websocket, urlPath) {
             // Convert base64 audio to binary
             const audioBuffer = Buffer.from(parsedMessage.audio, "base64");
             await handleIncomingAudio(audioBuffer, sessionId);
+          } else if (parsedMessage.event === "media" && parsedMessage.media?.payload) {
+            console.log(
+              "🎵 Processing acephone media chunk for session:",
+              sessionId
+            );
+            // Handle acephone media format
+            handleAcephoneControlMessages(messageStr, sessionId);
           } else {
             console.log(
               "📝 Processing JSON control message for session:",
@@ -568,19 +575,38 @@ function handleAcephoneControlMessages(controlMessage, sessionId) {
     console.log("📋 ========== ACEPHONE CONTROL MESSAGE DEBUG ==========");
     console.log("📋 Raw message:", controlMessage.toString());
     console.log("📋 Parsed object:", JSON.stringify(controlData, null, 2));
-    console.log("📋 Message type:", controlData.type);
+    console.log("📋 Event type:", controlData.event);
     console.log("📋 All object keys:", Object.keys(controlData));
     console.log("📋 ================================================");
 
-    // CONTROL MESSAGE ROUTING: Handle different types of call events
-    switch (controlData.type) {
-      case "call_start":
-        // CALL ACTIVATION: Mark call as active (beyond just connected)
+    // CONTROL MESSAGE ROUTING: Handle different types of acephone events
+    switch (controlData.event) {
+      case "connected":
+        console.log("📞 Acephone connection established");
+        handleCallStatusUpdate(sessionId, { status: "connected" });
+        break;
+        
+      case "start":
+        // CALL ACTIVATION: Extract call information and mark as active
+        console.log("📞 Call started from:", controlData.start?.from, "to:", controlData.start?.to);
+        console.log("📞 Media format:", controlData.start?.mediaFormat);
+        console.log("📞 Agent ID:", controlData.start?.customParameters?.metadata?.agentID);
         handleCallStatusUpdate(sessionId, { status: "active" });
         break;
 
-      case "call_end":
+      case "media":
+        // AUDIO DATA: Handle incoming audio from acephone
+        if (controlData.media?.payload) {
+          console.log("🎵 Acephone audio chunk received:", controlData.media.chunk, "timestamp:", controlData.media.timestamp);
+          // Convert base64 payload to buffer and process as audio
+          const audioBuffer = Buffer.from(controlData.media.payload, 'base64');
+          handleIncomingAudio(audioBuffer, sessionId);
+        }
+        break;
+
+      case "stop":
         // CALL TERMINATION: Clean up all resources for this call
+        console.log("📞 Call ended by acephone");
         handleCallStatusUpdate(sessionId, { status: "completed" });
         const connection = activeConnections.get(sessionId);
         if (connection?.agentConversation) {

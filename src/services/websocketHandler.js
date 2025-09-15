@@ -344,7 +344,7 @@ function handleAcephone(websocket, urlPath) {
 
       agentConversation = await elevenLabsAgentService.createConversation(
         sessionId,
-        callSession.patientData?.treatmentType || "General"
+        callSession.patientData?.treatmentType || "Piles"
       );
 
       // Store the agent conversation in the connection for cleanup

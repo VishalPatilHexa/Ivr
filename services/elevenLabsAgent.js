@@ -90,7 +90,7 @@ async function createConversation(sessionId, patientQuery) {
 /**
  * Create WebSocket connection to ElevenLabs Conversational AI
  */
-async function createElevenLabsWebSocket(sessionId) {
+async function createElevenLabsWebSocket(sessionId, elevenLabsAgentId) {
   return new Promise((resolve, reject) => {
     const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${elevenLabsAgentId}`;
     
@@ -140,7 +140,7 @@ function initializeConversation(agentWebSocket, sessionId) {
   const conversationSession = activeConversations.get(sessionId);
   
   const initializationMessage = {
-    type: 'conversation_initiation_client_data',
+    type: 'conversation_initiation_metadata',
     dynamic_variables: {
       user_name: 'Patient',
       language: 'hindi',

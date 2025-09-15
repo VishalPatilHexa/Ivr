@@ -70,7 +70,7 @@ async function createConversation(sessionId, patientQuery) {
     activeConversations.set(sessionId, conversationSession);
 
     // Establish WebSocket connection to ElevenLabs
-    const agentWebSocket = await createElevenLabsWebSocket(sessionId);
+    const agentWebSocket = await createElevenLabsWebSocket(sessionId, elevenLabsAgentId);
     conversationSession.agentWebSocket = agentWebSocket;
 
     console.log('✅ Conversation created for session:', sessionId);

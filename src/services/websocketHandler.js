@@ -32,21 +32,29 @@ const elevenLabsAgentService = require("../../services/elevenLabsAgent");
 function handleConnection(websocket, request) {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const urlPath = url.pathname;
+  
+  console.log("🔍 DEBUG: WebSocket connection attempt");
+  console.log("🔍 Raw URL:", request.url);
+  console.log("🔍 Parsed URL path:", urlPath);
+  console.log("🔍 Checking routes...");
 
   // Route to Knowlarity stream handler
   if (urlPath.startsWith("/knowlarity-stream/")) {
+    console.log("✅ Routing to Knowlarity handler");
     handleKnowlarityStream(websocket, urlPath);
     return;
   }
 
   // Route to Acephone stream handler
   if (urlPath.startsWith("/acephone")) {
+    console.log("✅ Routing to Acephone handler");
     handleAcephone(websocket, urlPath);
     return;
   }
 
   // Reject unknown connection types
   console.log("❌ Unknown WebSocket connection path:", urlPath);
+  console.log("❌ Does not match /knowlarity-stream/ or /acephone");
   websocket.close(1008, "Unknown connection type");
 }
 

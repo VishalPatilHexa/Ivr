@@ -92,9 +92,11 @@ async function createConversation(sessionId, patientQuery) {
  */
 async function createElevenLabsWebSocket(sessionId, elevenLabsAgentId) {
   return new Promise((resolve, reject) => {
+    // Simple WebSocket URL - dynamic variables sent in first message
     const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${elevenLabsAgentId}`;
     
     console.log('🔗 Connecting to ElevenLabs WebSocket for session:', sessionId);
+    console.log('🎯 WebSocket URL with dynamic variables:', websocketUrl);
     
     const agentWebSocket = new WebSocket(websocketUrl, {
       headers: { 'xi-api-key': elevenLabsApiKey }
@@ -137,15 +139,15 @@ async function createElevenLabsWebSocket(sessionId, elevenLabsAgentId) {
  * Initialize conversation with user context and settings
  */
 function initializeConversation(agentWebSocket, sessionId) {
-  const conversationSession = activeConversations.get(sessionId);
-  
+  // Pass all required dynamic variables statically - no metadata dependency
   const initializationMessage = {
     type: 'conversation_initiation_metadata',
     dynamic_variables: {
       user_name: 'Patient',
       language: 'hindi',
       user_id: sessionId,
-      treatmentType: conversationSession?.patientQuery || 'general consultation'
+      treatmentType: 'Piles',
+      agentId: 'agent_2801k10mggvefy5vjfrybj2grs5j'
     },
     // Optional: Add conversation config overrides
     conversation_config_override: {

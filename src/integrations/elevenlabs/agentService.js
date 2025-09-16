@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 const config = require('../../config');
-const { getConnection, removeConnection } = require('../../core/websocket/connectionManager');
+const { getConnection, removeConnection,updateConnection } = require('../../core/websocket/connectionManager');
 const { createPlayAudioMessage } = require('../../core/audio/audioProcessor');
 
 // Store active ElevenLabs conversations
@@ -201,6 +201,15 @@ async function handleConversationReady(message, conversationSession) {
   conversationSession.conversationId = message.conversation_initiation_metadata_event?.conversation_id;
   conversationSession.audioFormat = message.conversation_initiation_metadata_event?.agent_output_audio_format;
   conversationSession.isReady = true;
+
+  updateConnection(
+    conversationSession.sessionId,
+    {
+      conversationId: conversationSession.conversationId,
+      audioFormat: conversationSession.audioFormat,
+      isReady: true
+    }
+  )
   
   console.log(`✅ ElevenLabs conversation ready for session: ${conversationSession.sessionId}`);
   console.log(`🔊 Ready for real-time audio streaming (no buffering) - like working dev branch`);

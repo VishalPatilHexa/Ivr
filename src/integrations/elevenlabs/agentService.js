@@ -205,6 +205,8 @@ async function handleConversationReady(message, conversationSession) {
   updateConnection(
     conversationSession.sessionId,
     {
+      agentConversation: conversationSession,
+      elevenlabsInitialized: true,
       conversationId: conversationSession.conversationId,
       audioFormat: conversationSession.audioFormat,
       isReady: true

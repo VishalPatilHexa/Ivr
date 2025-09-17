@@ -360,6 +360,9 @@ function setupAudioStreaming(sessionId) {
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     const connectionMetadata = JSON.parse(metadataMessage.toString());
+    console.log("📋 Received initial metadata for session:", connectionMetadata);
+    
+    return
     
     // Store metadata in connection
     const connection = activeConnections.get(sessionId);
@@ -379,7 +382,7 @@ function handleInitialMetadata(metadataMessage, sessionId) {
     }
 
     // Update status
-    handleCallStatusUpdate(sessionId, { status: "connected" });
+    // handleCallStatusUpdate(sessionId, { status: "connected" });
 
     // Send acknowledgment to Knowlarity
     if (connection?.websocket?.readyState === WebSocket.OPEN) {

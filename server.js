@@ -76,44 +76,6 @@ wss.on("listening", () => {
   console.log("👂 WebSocket Server is listening for connections");
 });
 
-// Add test endpoint to verify server is working
-app.get("/test-ws", (req, res) => {
-  res.send(`
-    <html>
-    <body>
-      <h2>WebSocket Test</h2>
-      <div id="status">Connecting...</div>
-      <div id="logs"></div>
-      <script>
-        const ws = new WebSocket('${
-          req.protocol === "https" ? "wss" : "ws"
-        }://${req.get("host")}/knowlarity-stream/test-browser-connection');
-        const status = document.getElementById('status');
-        const logs = document.getElementById('logs');
-        
-        ws.onopen = () => {
-          status.textContent = 'Connected!';
-          logs.innerHTML += '<div>✅ WebSocket Connected</div>';
-        };
-        
-        ws.onmessage = (event) => {
-          logs.innerHTML += '<div>📥 Received: ' + event.data + '</div>';
-        };
-        
-        ws.onerror = (error) => {
-          status.textContent = 'Error!';
-          logs.innerHTML += '<div>❌ Error: ' + error + '</div>';
-        };
-        
-        ws.onclose = () => {
-          status.textContent = 'Closed!';
-          logs.innerHTML += '<div>❌ Connection Closed</div>';
-        };
-      </script>
-    </body>
-    </html>
-  `);
-});
 
 // Cleanup function for expired sessions
 setInterval(() => {

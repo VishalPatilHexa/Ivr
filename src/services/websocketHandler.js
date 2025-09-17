@@ -581,9 +581,14 @@ function downsamplePcm16to8(pcm16Buffer) {
   // Simple downsampling: take every other sample
   const pcm8Buffer = Buffer.alloc(pcm16Buffer.length / 2);
   
-  for (let i = 0; i < pcm16Buffer.length; i += 4) { // 4 bytes = 2 samples at 16-bit
+  let outputIndex = 0;
+  for (let i = 0; i < pcm16Buffer.length - 1; i += 4) { // 4 bytes = 2 samples at 16-bit
     // Take every other sample (decimation by 2)
-    pcm8Buffer.writeInt16LE(pcm16Buffer.readInt16LE(i), i / 2);
+    if (outputIndex < pcm8Buffer.length - 1) {
+      const sample = pcm16Buffer.readInt16LE(i);
+      pcm8Buffer.writeInt16LE(sample, outputIndex);
+      outputIndex += 2; // Move by 2 bytes (1 sample)
+    }
   }
   
   return pcm8Buffer;

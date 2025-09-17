@@ -252,32 +252,22 @@ function handleAcephoneStream(websocket, urlPath) {
   console.log("📞 New Acephone call stream connection for streamSid:", streamSid);
   console.log("🔍 URL Path:", urlPath);
 
-  // Create hardcoded metadata for Acephone
-  const acephoneMetadata = {
-    agentId: "agent_2801k10mggvefy5vjfrybj2grs5j",
-    treatmentType: "kidney stone",
-    language: "hi",
-    user_name: "Dr. Smith",
-    campaign_id: "HEALTH_CAMP_2024",
-    department: "cardiology",
-    priority: "high",
-    appointment_id: "APT_789"
-  };
-
-  // Store connection with Acephone-specific properties
+  // Store connection with Acephone-specific properties (no static metadata)
   activeConnections.set(sessionId, {
     websocket,
     clientType: "acephone",
     connectedAt: new Date(),
     agentConversation: null,
-    acephoneMetadata: acephoneMetadata,
+    acephoneMetadata: null, // Will be populated from start event
     streamSid: streamSid,
     sequenceNumber: 0,
     callStarted: false,
-    agentHasSpoken: false
+    agentHasSpoken: false,
+    metadataReceived: false
   });
 
   console.log("💾 Stored Acephone connection for streamSid:", streamSid);
+  console.log("⏳ Waiting for Acephone start event with metadata...");
 
   // Send 'connected' event to Acephone
   sendAcephoneEvent(websocket, sessionId, {
@@ -381,22 +371,36 @@ async function handleAcephoneStart(sessionId, startMessage) {
   connection.callStarted = true;
   connection.mediaFormat = startMessage.start?.mediaFormat;
   
-  // Store any metadata from the start event
-  if (startMessage.start) {
-    connection.acephoneStartMetadata = startMessage.start;
-    console.log("💾 Stored Acephone start metadata:", JSON.stringify(startMessage.start, null, 2));
+  // Extract and validate metadata from Acephone start event
+  if (!startMessage.start?.customParameters?.metadata) {
+    console.error("❌ No metadata found in Acephone start event!");
+    connection.websocket.close(1008, "Missing required metadata");
+    return;
   }
 
-  // Use metadata from Acephone start event if available
-  let metadataToUse = connection.acephoneMetadata; // fallback to hardcoded
-  if (startMessage.start?.customParameters?.metadata) {
-    metadataToUse = startMessage.start.customParameters.metadata;
-    console.log("🎯 Using Acephone metadata from start event:", JSON.stringify(metadataToUse, null, 2));
+  const metadata = startMessage.start.customParameters.metadata;
+  
+  // Validate required metadata fields
+  if (!metadata.agentId) {
+    console.error("❌ Missing required agentId in metadata!");
+    connection.websocket.close(1008, "Missing agentId in metadata");
+    return;
   }
 
-  // Initialize ElevenLabs conversation after start event
+  // Store the extracted metadata
+  connection.acephoneMetadata = metadata;
+  connection.metadataReceived = true;
+  connection.acephoneStartMetadata = startMessage.start;
+
+  console.log("✅ Extracted Acephone metadata:", JSON.stringify(metadata, null, 2));
+  console.log("🎯 Using agentId:", metadata.agentId);
+  console.log("🏥 Treatment type:", metadata.treatmentType || "Not specified");
+  console.log("🗣️ Language:", metadata.language || "Not specified");
+
+  // Now initialize ElevenLabs conversation with extracted metadata
   try {
-    await initializeAgentConversationAfterMetaData(sessionId, { metadata: metadataToUse });
+    console.log("🚀 Initializing ElevenLabs with extracted metadata...");
+    await initializeAgentConversationAfterMetaData(sessionId, { metadata: metadata });
     console.log("✅ Acephone agent conversation initialized for streamSid:", connection.streamSid);
   } catch (error) {
     console.error("❌ Failed to initialize Acephone conversation:", error);
@@ -409,6 +413,12 @@ async function handleAcephoneStart(sessionId, startMessage) {
  */
 async function handleAcephoneMedia(sessionId, mediaMessage) {
   const connection = activeConnections.get(sessionId);
+  
+  if (!connection?.metadataReceived) {
+    console.log("⏳ Media received before metadata extracted - ignoring");
+    return;
+  }
+
   if (!connection?.callStarted) {
     console.log("⏳ Media received before call started - ignoring");
     return;

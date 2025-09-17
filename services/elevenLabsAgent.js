@@ -194,6 +194,7 @@ async function handleElevenLabsMessage(sessionId, messageData) {
     }
 
     console.log("📋 Processing ElevenLabs message:", parsedMessage.type);
+    console.log("🔍 Message details:", JSON.stringify(parsedMessage, null, 2));
 
     switch (parsedMessage.type) {
       case "user_transcript":
@@ -379,15 +380,18 @@ function handleConversationReady(sessionId, readyMessage, conversationSession) {
       readyMessage.conversation_initiation_metadata_event?.agent_output_audio_format;
   }
 
-  // Send initial greeting to activate agent
+  // Trigger initial agent response for phone calls
   setTimeout(() => {
     if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
+      // For phone calls, we need the agent to speak first
+      // Send a minimal audio chunk to trigger agent response
+      const silentAudio = Buffer.alloc(320, 0).toString('base64'); // 20ms of silence at 16kHz
       conversationSession.agentWebSocket.send(
         JSON.stringify({
-          user_text: "Hi",
+          user_audio_chunk: silentAudio,
         })
       );
-      console.log("📤 Sent greeting to activate agent");
+      console.log("📤 Sent silent audio to trigger agent greeting");
     }
   }, 1000);
 
@@ -516,10 +520,13 @@ async function sendToElevenLabs(sessionId, messageToSend) {
  * FLOW: ElevenLabs → THIS FUNCTION → CALLBACK → WebSocket → Knowlarity → Caller
  */
 function forwardToClient(sessionId, messageToForward) {
+  console.log(`🔗 Forwarding message to client for session ${sessionId}:`, messageToForward.type);
+  
   // CALLBACK EXECUTION: Execute the callback registered by websocketHandler
   if (messageForwardingHandler) {
     // THIS IS THE BRIDGE: Calls the callback from setupAudioStreaming()
     // The callback will send the message to the caller via Knowlarity WebSocket
+    console.log("✅ Executing message forwarding handler");
     messageForwardingHandler(sessionId, messageToForward);
   } else {
     // NO CALLBACK: WebSocket handler hasn't registered a callback yet

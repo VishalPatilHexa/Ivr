@@ -273,7 +273,8 @@ function handleAcephoneStream(websocket, urlPath) {
     acephoneMetadata: acephoneMetadata,
     streamSid: streamSid,
     sequenceNumber: 0,
-    callStarted: false
+    callStarted: false,
+    agentHasSpoken: false
   });
 
   console.log("💾 Stored Acephone connection for streamSid:", streamSid);
@@ -418,15 +419,27 @@ async function handleAcephoneMedia(sessionId, mediaMessage) {
     return;
   }
 
+  // Wait for agent to send initial greeting before processing user audio
+  if (!connection.agentHasSpoken) {
+    console.log("⏳ Media received before agent greeting - ignoring");
+    return;
+  }
+
   try {
     // Extract µ-law audio payload (base64 encoded)
     const ulawAudioBase64 = mediaMessage.media?.payload;
     if (!ulawAudioBase64) return;
 
+    // Skip silent audio (all 0xFF bytes indicate silence in µ-law)
+    const ulawBuffer = Buffer.from(ulawAudioBase64, "base64");
+    const isSilent = ulawBuffer.every(byte => byte === 0xFF);
+    if (isSilent) {
+      return; // Skip silent chunks
+    }
+
     console.log(`🎤 Processing Acephone media chunk ${mediaMessage.media?.chunk} (${ulawAudioBase64.length} chars)`);
 
     // Convert µ-law to PCM for ElevenLabs
-    const ulawBuffer = Buffer.from(ulawAudioBase64, "base64");
     const pcmBuffer = convertUlawToPcm(ulawBuffer);
     
     // Convert PCM to base64 for ElevenLabs
@@ -603,6 +616,12 @@ function setupAudioStreaming(sessionId) {
               const ulawBase64 = ulawBuffer.toString("base64");
               
               console.log(`📤 Sending ${ulawBuffer.length} bytes µ-law audio to Acephone`);
+
+              // Mark that agent has spoken (for first audio chunk)
+              if (!connection.agentHasSpoken) {
+                connection.agentHasSpoken = true;
+                console.log("🎤 Agent has now spoken - ready to process user audio");
+              }
 
               sendAcephoneEvent(connection.websocket, currentSessionId, {
                 event: "media",

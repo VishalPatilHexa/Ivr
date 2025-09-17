@@ -51,20 +51,37 @@ function handleConnection(websocket, request) {
  * Amplify audio volume by multiplying sample values
  * Assumes 16-bit PCM audio (little endian)
  */
-function amplifyAudioVolume(audioBuffer, amplificationFactor = 2.0) {
+function calculateOptimalAmplification(audioBuffer, targetPeakLevel = 0.8) {
+  let maxSample = 0;
+
+  for (let i = 0; i < audioBuffer.length; i += 2) {
+    const sample = Math.abs(audioBuffer.readInt16LE(i));
+    maxSample = Math.max(maxSample, sample);
+  }
+
+  // Calculate factor to reach target level (80% of max to avoid clipping)
+  const targetValue = 32767 * targetPeakLevel;
+  return maxSample > 0 ? targetValue / maxSample : 1.0;
+}
+
+function amplifyAudioVolume(audioBuffer, targetPeakLevel = 0.8) {
   try {
     // Create a copy to avoid modifying original buffer
     const amplifiedBuffer = Buffer.from(audioBuffer);
+    const optimalAmplification = calculateOptimalAmplification(
+      amplifiedBuffer,
+      targetPeakLevel
+    );
 
     // Process 16-bit samples (2 bytes each)
-    for (let i = 0; i < amplifiedBuffer.length - 1; i += 2) {
+    for (let i = 0; i < amplifiedBuffer.length; i += 2) {
       // Read 16-bit little endian sample
       let sample = amplifiedBuffer.readInt16LE(i);
 
       // Amplify the sample
-      sample = Math.round(sample * amplificationFactor);
+      sample = Math.round(sample * optimalAmplification);
 
-      // Clamp to prevent overflow/distortion
+      // Clamp to prevent overflow/distortion (though shouldn't be needed with proper calculation)
       sample = Math.max(-32768, Math.min(32767, sample));
 
       // Write back the amplified sample

@@ -360,7 +360,7 @@ function setupAudioStreaming(sessionId) {
 function handleInitialMetadata(metadataMessage, sessionId) {
   try {
     const connectionMetadata = JSON.parse(metadataMessage.toString());
-    console.log("📋 Received initial metadata for session:", connectionMetadata);
+    console.log("📊 Metadata:", JSON.stringify(connectionMetadata, null, 2));
     
     return
     

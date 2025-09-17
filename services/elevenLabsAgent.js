@@ -135,7 +135,9 @@ async function createElevenLabsWebSocket(agentId, sessionId, patientQuery) {
         "Reason:",
         reason ? reason.toString() : "No reason provided"
       );
-      endConversation(sessionId);
+
+      // Trigger conversation end to properly close Knowlarity connection
+      handleConversationEnd(sessionId);
     });
   });
 }

@@ -394,6 +394,10 @@ async function handleAcephoneStart(sessionId, startMessage) {
   connection.acephoneMetadata = metadata;
   connection.metadataReceived = true;
   connection.acephoneStartMetadata = startMessage.start;
+  
+  // IMPORTANT: Use Acephone's streamSid, not our generated one
+  connection.acephoneStreamSid = startMessage.start.streamSid;
+  console.log(`🆔 Using Acephone's streamSid: ${connection.acephoneStreamSid} (not our generated: ${connection.streamSid})`);
 
   console.log("✅ Extracted Acephone metadata:", JSON.stringify(metadata, null, 2));
   console.log("🎯 Using agentId:", metadata.agentId);
@@ -441,28 +445,48 @@ async function handleAcephoneMedia(sessionId, mediaMessage) {
   try {
     // Extract µ-law audio payload (base64 encoded)
     const ulawAudioBase64 = mediaMessage.media?.payload;
-    if (!ulawAudioBase64) return;
-
-    // Skip silent audio (all 0xFF bytes indicate silence in µ-law)
-    const ulawBuffer = Buffer.from(ulawAudioBase64, "base64");
-    const isSilent = ulawBuffer.every(byte => byte === 0xFF);
-    if (isSilent) {
-      return; // Skip silent chunks
+    if (!ulawAudioBase64) {
+      console.log("⚠️ No payload in media message");
+      return;
     }
 
-    console.log(`🎤 Processing Acephone media chunk ${mediaMessage.media?.chunk} (${ulawAudioBase64.length} chars)`);
+    console.log(`🎤 Processing Acephone media chunk ${mediaMessage.media?.chunk} (${ulawAudioBase64.length} chars base64)`);
 
-    // Convert µ-law to PCM for ElevenLabs
-    const pcmBuffer = convertUlawToPcm(ulawBuffer);
+    // Convert base64 to µ-law buffer
+    const ulawBuffer = Buffer.from(ulawAudioBase64, "base64");
+    console.log(`📦 Decoded ${ulawBuffer.length} bytes µ-law audio`);
+
+    // Skip silent audio (all 0xFF bytes indicate silence in µ-law)
+    const isSilent = ulawBuffer.every(byte => byte === 0xFF);
+    if (isSilent) {
+      console.log("🔇 Skipping silent audio chunk");
+      return;
+    }
+
+    // Check for valid µ-law data (should not be all zeros or all same value)
+    const uniqueBytes = new Set(ulawBuffer);
+    if (uniqueBytes.size < 3) {
+      console.log(`⚠️ Suspicious audio data - only ${uniqueBytes.size} unique byte values`);
+    }
+
+    // Convert µ-law to PCM for ElevenLabs (upsample from 8kHz to 16kHz)
+    const pcm8Buffer = convertUlawToPcm(ulawBuffer);
+    console.log(`🔄 Converted µ-law to ${pcm8Buffer.length} bytes PCM (8kHz)`);
+    
+    // Upsample from 8kHz to 16kHz for ElevenLabs
+    const pcm16Buffer = upsamplePcm8to16(pcm8Buffer);
+    console.log(`⬆️ Upsampled to ${pcm16Buffer.length} bytes PCM (16kHz)`);
     
     // Convert PCM to base64 for ElevenLabs
-    const pcmBase64 = pcmBuffer.toString("base64");
+    const pcmBase64 = pcm16Buffer.toString("base64");
     
     // Send to ElevenLabs agent
+    console.log(`📤 Sending ${pcm16Buffer.length} bytes PCM to ElevenLabs...`);
     await sendAudioToAgent(sessionId, pcmBase64);
-    console.log(`✅ Sent ${pcmBuffer.length} bytes PCM to ElevenLabs`);
+    console.log(`✅ Successfully sent audio to ElevenLabs`);
   } catch (error) {
     console.error("❌ Error processing Acephone media:", error);
+    console.error("❌ Error stack:", error.stack);
   }
 }
 
@@ -601,6 +625,28 @@ function downsamplePcm16to8(pcm16Buffer) {
 }
 
 /**
+ * Upsample PCM audio from 8kHz to 16kHz (simple interpolation)
+ */
+function upsamplePcm8to16(pcm8Buffer) {
+  // Simple upsampling: duplicate each sample
+  const pcm16Buffer = Buffer.alloc(pcm8Buffer.length * 2);
+  
+  let outputIndex = 0;
+  for (let i = 0; i < pcm8Buffer.length - 1; i += 2) { // 2 bytes per sample
+    const sample = pcm8Buffer.readInt16LE(i);
+    
+    // Write the sample twice (simple duplication for upsampling)
+    if (outputIndex < pcm16Buffer.length - 3) {
+      pcm16Buffer.writeInt16LE(sample, outputIndex);
+      pcm16Buffer.writeInt16LE(sample, outputIndex + 2);
+      outputIndex += 4; // Move by 4 bytes (2 samples)
+    }
+  }
+  
+  return pcm16Buffer;
+}
+
+/**
  * ===============================================================================
  * AUDIO STREAMING FUNCTIONS
  * ===============================================================================
@@ -674,24 +720,27 @@ function setupAudioStreaming(sessionId) {
               
               const ulawBase64 = paddedUlawBuffer.toString("base64");
               
-              // Calculate timestamp relative to stream start
-              const timestamp = connection.streamStartTime ? Date.now() - connection.streamStartTime : 0;
-              
-              // Create media event as per PDF specification (Section 3.1)
+              // Create media event as per PDF Section 3.1 (Events Received from Vendor)
+              // We are the "Vendor", Acephone is the "Client"
               const mediaEvent = {
                 event: "media",
-                streamSid: connection.streamSid, // Use the actual streamSid from Acephone
+                streamSid: connection.acephoneStreamSid || connection.streamSid, // Use Acephone's streamSid
                 media: {
-                  payload: ulawBase64,
-                  chunk: connection.outboundChunkNumber
+                  payload: ulawBase64, // µ-law/8000 audio in base64
+                  chunk: connection.outboundChunkNumber // Chunk number starting from 1
                 }
               };
               
               console.log(`📤 Sending µ-law audio chunk ${connection.outboundChunkNumber} (${paddedUlawBuffer.length} bytes)`);
-              console.log("📋 Media event structure:", JSON.stringify(mediaEvent, null, 2));
+              console.log("📋 Outbound media event (Section 3.1):", JSON.stringify(mediaEvent, null, 2));
               
-              // Send directly to websocket (no sequence number wrapper for outbound media)
-              connection.websocket.send(JSON.stringify(mediaEvent));
+              // Send directly to WebSocket per PDF spec (no sequenceNumber for vendor→client)
+              if (connection.websocket.readyState === WebSocket.OPEN) {
+                connection.websocket.send(JSON.stringify(mediaEvent));
+                console.log("✅ Media event sent to Acephone successfully");
+              } else {
+                console.error("❌ WebSocket not open, cannot send media");
+              }
               
               // Increment chunk number for next audio chunk
               connection.outboundChunkNumber++;

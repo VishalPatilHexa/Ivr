@@ -127,6 +127,16 @@ function handleKnowlarityStream(websocket, urlPath) {
     try {
       messageCount++;
 
+      // Check if call has already ended
+      let connection = activeConnections.get(sessionId);
+      if (connection?.callEnded) {
+        console.log(
+          "🚫 Ignoring message - call already ended for session:",
+          sessionId
+        );
+        return;
+      }
+
       // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
         console.log(`🎆 Processing first message for session: ${sessionId}`);
@@ -148,7 +158,7 @@ function handleKnowlarityStream(websocket, urlPath) {
       }
 
       // Route audio and control messages
-      const connection = activeConnections.get(sessionId);
+      connection = activeConnections.get(sessionId);
       const agentConversation = connection?.agentConversation;
 
       if (incomingMessage instanceof Buffer) {
@@ -292,25 +302,35 @@ function setupAudioStreaming(sessionId) {
         if (agentMessage.type === "call_end") {
           console.log("📞 Ending call for session:", sessionId);
 
+          // Mark session as ended to prevent further processing
+          connection.callEnded = true;
+
           // Send call end signal to Knowlarity
           if (
             !connection.clientType ||
             connection.clientType === "knowlarity"
           ) {
-            connection.websocket.send(
-              JSON.stringify({
-                type: "call_end",
-                message: "Call completed successfully",
-              })
-            );
+            try {
+              connection.websocket.send(
+                JSON.stringify({
+                  type: "call_end",
+                  message: "Call completed successfully",
+                })
+              );
+            } catch (error) {
+              console.log(
+                "📞 WebSocket already closed or error sending call_end"
+              );
+            }
           }
 
-          // Close WebSocket connection after a short delay
-          setTimeout(() => {
-            if (connection.websocket?.readyState === WebSocket.OPEN) {
-              connection.websocket.close(1000, "Call completed");
-            }
-          }, 1000);
+          // Close WebSocket connection immediately
+          if (connection.websocket?.readyState === WebSocket.OPEN) {
+            connection.websocket.close(1000, "Call completed");
+          }
+
+          // Clean up the connection
+          activeConnections.delete(sessionId);
 
           return;
         }

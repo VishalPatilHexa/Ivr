@@ -302,6 +302,10 @@ function handleAcephoneStream(websocket, urlPath) {
       console.log("📋 Full Acephone message:", JSON.stringify(parsedMessage, null, 2));
 
       switch (parsedMessage.event) {
+        case "connected":
+          console.log("📡 Acephone confirmed connection");
+          break;
+          
         case "start":
           await handleAcephoneStart(sessionId, parsedMessage);
           break;
@@ -382,9 +386,16 @@ async function handleAcephoneStart(sessionId, startMessage) {
     console.log("💾 Stored Acephone start metadata:", JSON.stringify(startMessage.start, null, 2));
   }
 
+  // Use metadata from Acephone start event if available
+  let metadataToUse = connection.acephoneMetadata; // fallback to hardcoded
+  if (startMessage.start?.customParameters?.metadata) {
+    metadataToUse = startMessage.start.customParameters.metadata;
+    console.log("🎯 Using Acephone metadata from start event:", JSON.stringify(metadataToUse, null, 2));
+  }
+
   // Initialize ElevenLabs conversation after start event
   try {
-    await initializeAgentConversationAfterMetaData(sessionId, { metadata: connection.acephoneMetadata });
+    await initializeAgentConversationAfterMetaData(sessionId, { metadata: metadataToUse });
     console.log("✅ Acephone agent conversation initialized for streamSid:", connection.streamSid);
   } catch (error) {
     console.error("❌ Failed to initialize Acephone conversation:", error);
@@ -397,14 +408,22 @@ async function handleAcephoneStart(sessionId, startMessage) {
  */
 async function handleAcephoneMedia(sessionId, mediaMessage) {
   const connection = activeConnections.get(sessionId);
-  if (!connection?.callStarted || !connection.agentConversation) {
-    return; // Ignore media until call is started and agent is ready
+  if (!connection?.callStarted) {
+    console.log("⏳ Media received before call started - ignoring");
+    return;
+  }
+
+  if (!connection.agentConversation) {
+    console.log("⏳ Media received before agent ready - ignoring");
+    return;
   }
 
   try {
     // Extract µ-law audio payload (base64 encoded)
     const ulawAudioBase64 = mediaMessage.media?.payload;
     if (!ulawAudioBase64) return;
+
+    console.log(`🎤 Processing Acephone media chunk ${mediaMessage.media?.chunk} (${ulawAudioBase64.length} chars)`);
 
     // Convert µ-law to PCM for ElevenLabs
     const ulawBuffer = Buffer.from(ulawAudioBase64, "base64");
@@ -415,6 +434,7 @@ async function handleAcephoneMedia(sessionId, mediaMessage) {
     
     // Send to ElevenLabs agent
     await sendAudioToAgent(sessionId, pcmBase64);
+    console.log(`✅ Sent ${pcmBuffer.length} bytes PCM to ElevenLabs`);
   } catch (error) {
     console.error("❌ Error processing Acephone media:", error);
   }
@@ -458,30 +478,30 @@ function handleAcephoneMark(sessionId, markMessage) {
 }
 
 /**
- * Convert µ-law audio to PCM (simplified conversion)
+ * Convert µ-law audio to PCM (ITU-T G.711 standard)
  */
 function convertUlawToPcm(ulawBuffer) {
-  // µ-law to linear conversion table (simplified)
-  const ulawToPcm = new Int16Array(256);
-  
-  // Initialize conversion table
-  for (let i = 0; i < 256; i++) {
-    let exp = (i & 0x70) >> 4;
-    let mant = i & 0x0F;
-    let sign = i & 0x80;
-    
-    let linear = ((mant << 3) + 0x84) << exp;
-    if (sign) linear = -linear;
-    
-    ulawToPcm[i] = linear;
-  }
+  // µ-law to linear conversion using ITU-T G.711 standard
+  const BIAS = 0x84;
   
   // Convert µ-law samples to 16-bit PCM
   const pcmBuffer = Buffer.alloc(ulawBuffer.length * 2);
   
   for (let i = 0; i < ulawBuffer.length; i++) {
-    const pcmSample = ulawToPcm[ulawBuffer[i]];
-    pcmBuffer.writeInt16LE(pcmSample, i * 2);
+    let ulawSample = ~ulawBuffer[i];
+    let sign = ulawSample & 0x80;
+    let exponent = (ulawSample >> 4) & 0x07;
+    let mantissa = ulawSample & 0x0F;
+    
+    let sample = (mantissa << 3) + BIAS;
+    sample <<= exponent;
+    
+    if (sign) sample = -sample;
+    
+    // Clamp to 16-bit range
+    sample = Math.max(-32768, Math.min(32767, sample));
+    
+    pcmBuffer.writeInt16LE(sample, i * 2);
   }
   
   return pcmBuffer;
@@ -504,36 +524,31 @@ function convertPcmToUlaw(pcmBuffer) {
 }
 
 /**
- * Convert linear PCM sample to µ-law
+ * Convert linear PCM sample to µ-law (ITU-T G.711 standard)
  */
 function linearToUlaw(sample) {
   const BIAS = 0x84;
   const CLIP = 8159;
   
-  if (sample >= 0) {
-    sample = Math.min(sample, CLIP);
-  } else {
-    sample = Math.max(sample, -CLIP);
-  }
+  // Get sign and make sample positive
+  let sign = (sample < 0) ? 0x80 : 0x00;
+  if (sample < 0) sample = -sample;
   
-  if (sample < 0) {
-    sample = -sample;
-    sample += BIAS;
-    
-    let exp = 7;
-    for (let expMask = 0x4000; (sample & expMask) === 0 && exp > 0; exp--, expMask >>= 1) {}
-    
-    const mantissa = (sample >> (exp + 3)) & 0x0F;
-    return ~(0x80 | (exp << 4) | mantissa);
-  } else {
-    sample += BIAS;
-    
-    let exp = 7;
-    for (let expMask = 0x4000; (sample & expMask) === 0 && exp > 0; exp--, expMask >>= 1) {}
-    
-    const mantissa = (sample >> (exp + 3)) & 0x0F;
-    return ~(exp << 4 | mantissa);
-  }
+  // Clip sample to maximum value
+  sample = Math.min(sample, CLIP);
+  sample += BIAS;
+  
+  // Find exponent
+  let exponent = 7;
+  for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) {}
+  
+  // Extract mantissa
+  let mantissa = (sample >> (exponent + 3)) & 0x0F;
+  
+  // Construct µ-law sample
+  let ulawSample = ~(sign | (exponent << 4) | mantissa);
+  
+  return ulawSample & 0xFF;
 }
 
 /**
@@ -582,8 +597,12 @@ function setupAudioStreaming(sessionId) {
             // ACEPHONE FORMAT: Convert PCM to µ-law and send as media event
             try {
               const pcmBuffer = Buffer.from(agentMessage.audio, "base64");
+              console.log(`🔊 Converting ${pcmBuffer.length} bytes PCM to µ-law for Acephone`);
+              
               const ulawBuffer = convertPcmToUlaw(pcmBuffer);
               const ulawBase64 = ulawBuffer.toString("base64");
+              
+              console.log(`📤 Sending ${ulawBuffer.length} bytes µ-law audio to Acephone`);
 
               sendAcephoneEvent(connection.websocket, currentSessionId, {
                 event: "media",

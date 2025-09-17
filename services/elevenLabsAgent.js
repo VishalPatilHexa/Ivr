@@ -56,7 +56,7 @@ function validateEnvironment() {
 /**
  * Create new conversation session with ElevenLabs
  */
-async function createConversation(sessionId, patientQuery) {
+async function createConversation(agentId, sessionId, patientQuery) {
   try {
     const conversationSession = {
       sessionId,
@@ -70,7 +70,7 @@ async function createConversation(sessionId, patientQuery) {
     activeConversations.set(sessionId, conversationSession);
 
     // Establish WebSocket connection to ElevenLabs
-    const agentWebSocket = await createElevenLabsWebSocket(sessionId);
+    const agentWebSocket = await createElevenLabsWebSocket(agentId, sessionId, patientQuery);
     conversationSession.agentWebSocket = agentWebSocket;
 
     console.log('✅ Conversation created for session:', sessionId);
@@ -90,9 +90,9 @@ async function createConversation(sessionId, patientQuery) {
 /**
  * Create WebSocket connection to ElevenLabs Conversational AI
  */
-async function createElevenLabsWebSocket(sessionId) {
+async function createElevenLabsWebSocket(agentId, sessionId, patientQuery) {
   return new Promise((resolve, reject) => {
-    const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${elevenLabsAgentId}`;
+    const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}`;
     
     console.log('🔗 Connecting to ElevenLabs WebSocket for session:', sessionId);
     
@@ -137,7 +137,7 @@ function initializeConversation(agentWebSocket, sessionId) {
       user_name: 'Patient',
       language: 'hindi',
       user_id: sessionId,
-      treatmentType: conversationSession?.patientQuery || 'general consultation'
+      ...conversationSession?.patientQuery
     },
     // Optional: Add conversation config overrides
     conversation_config_override: {

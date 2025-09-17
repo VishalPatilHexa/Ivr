@@ -29,8 +29,7 @@ const callManagerService = require("../knowlarity/outboundCallManager");
 /**
  * Initialize WebSocket handler - now using direct imports
  */
-function initializeWebSocketHandler() {
-}
+function initializeWebSocketHandler() {}
 
 /**
  * Main WebSocket connection handler - routes connections based on URL path
@@ -41,7 +40,7 @@ function handleConnection(websocket, request) {
 
   // Route to Knowlarity stream handler
   if (urlPath.startsWith("/knowlarity-stream/")) {
-      handleKnowlarityStream(websocket, urlPath);
+    handleKnowlarityStream(websocket, urlPath);
     return;
   }
 
@@ -55,9 +54,6 @@ function handleConnection(websocket, request) {
  * ===============================================================================
  */
 
-
-
-
 /**
  * Amplify audio volume by multiplying sample values
  * Assumes 16-bit PCM audio (little endian)
@@ -66,24 +62,23 @@ function amplifyAudioVolume(audioBuffer, amplificationFactor = 2.0) {
   try {
     // Create a copy to avoid modifying original buffer
     const amplifiedBuffer = Buffer.from(audioBuffer);
-    
+
     // Process 16-bit samples (2 bytes each)
     for (let i = 0; i < amplifiedBuffer.length - 1; i += 2) {
       // Read 16-bit little endian sample
       let sample = amplifiedBuffer.readInt16LE(i);
-      
+
       // Amplify the sample
       sample = Math.round(sample * amplificationFactor);
-      
+
       // Clamp to prevent overflow/distortion
       sample = Math.max(-32768, Math.min(32767, sample));
-      
+
       // Write back the amplified sample
       amplifiedBuffer.writeInt16LE(sample, i);
     }
-    
+
     return amplifiedBuffer;
-    
   } catch (error) {
     console.error("❌ Error amplifying audio:", error);
     return audioBuffer; // Return original on error
@@ -133,54 +128,12 @@ function handleKnowlarityStream(websocket, urlPath) {
       isExternal: true,
       source: "knowlarity",
     };
-    console.log("✅ Temporary session created for external call:", sessionId);
-    console.log("📋 Session details:", JSON.stringify(callSession, null, 2));
   } else {
-    console.log("🔄 Using existing call session:", sessionId);
     console.log(
       "📋 Existing session details:",
       JSON.stringify(callSession, null, 2)
     );
   }
-
-  // STEP 2: Initialize ElevenLabs conversation
-  let agentConversation = null;
-
-  const initializeAgentConversation = async () => {
-    try {
-      console.log(
-        "🤖 Initializing ElevenLabs conversation for session:",
-        sessionId
-      );
-
-      agentConversation = await elevenLabsAgentService.createConversation(
-        sessionId,
-        callSession.patientData?.treatmentType || "Piles"
-      );
-
-      // Store the agent conversation in the connection for cleanup
-      const connection = activeConnections.get(sessionId);
-      if (connection) {
-        connection.agentConversation = agentConversation;
-      }
-
-      // STEP 3: Setup bidirectional audio streaming
-      setupAudioStreaming(sessionId);
-
-      // STEP 4: Notify client that agent is ready
-      if (connection?.websocket?.readyState === WebSocket.OPEN) {
-        connection.websocket.send(
-          JSON.stringify({
-            type: "agent_ready",
-            message: "ElevenLabs agent is ready for conversation",
-          })
-        );
-      }
-    } catch (error) {
-      console.error("❌ Error creating ElevenLabs conversation:", error);
-      websocket.close(1011, "Failed to initialize conversation");
-    }
-  };
 
   // STEP 4: Setup message handling for audio streaming
   let isFirstMessage = true;
@@ -195,17 +148,24 @@ function handleKnowlarityStream(websocket, urlPath) {
         console.log(`🎆 Processing first message for session: ${sessionId}`);
         // Set flag IMMEDIATELY and SYNCHRONOUSLY to prevent race condition
         isFirstMessage = false;
-        
-        // Check if first message is JSON metadata or binary audio
-        if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
-          console.log(`✅ Metadata processed successfully for session: ${sessionId}`);
+
+        let metadata = await tryProcessAsMetadata(incomingMessage, sessionId);
+        if (metadata) {
+          await initializeAgentConversationAfterMetaData(callSession, sessionId, metadata);
           return;
         } else {
           console.log(`📤 First message was audio, not metadata for session: ${sessionId}`);
+          // Initialize with default values if no metadata
+          await initializeAgentConversationAfterMetaData(callSession, sessionId, null);
+          // Continue processing this message as audio - don't return
         }
+
       }
 
       // Route audio and control messages
+      const connection = activeConnections.get(sessionId);
+      const agentConversation = connection?.agentConversation;
+      
       if (incomingMessage instanceof Buffer) {
         // Try to parse as JSON first (for client audio messages)
         try {
@@ -256,10 +216,7 @@ function handleKnowlarityStream(websocket, urlPath) {
   });
 
   // STEP 5: Setup connection lifecycle handlers
-  setupConnectionLifecycle(websocket, sessionId, agentConversation);
-
-  // Initialize the conversation
-  initializeAgentConversation();
+  setupConnectionLifecycle(websocket, sessionId);
 }
 
 /**
@@ -300,7 +257,6 @@ function setupAudioStreaming(sessionId) {
         // OUTGOING AUDIO STREAM: ElevenLabs Agent → Knowlarity → Caller
         // This is the main audio response from AI agent to caller
         if (agentMessage.type === "agent_audio" && agentMessage.audio) {
-
           // Check client type from stored connection data
           const isWebClient = connection.clientType === "web_client";
 
@@ -315,7 +271,6 @@ function setupAudioStreaming(sessionId) {
                 audioContent: agentMessage.audio, // base64 encoded raw PCM
               },
             };
-
 
             try {
               connection.websocket.send(JSON.stringify(knowlarityAudioMessage));
@@ -368,10 +323,16 @@ async function tryProcessAsMetadata(incomingMessage, sessionId) {
 
     // Quick check - if it contains common metadata fields, try as JSON
     if (messageStr.includes("metadata") || messageStr.includes("callid")) {
-      const metadataResult = await processInitialMetadata(incomingMessage, sessionId);
-      console.log(`🔍 Metadata processed for session: ${sessionId}`, metadataResult);
+      const metadataResult = await processInitialMetadata(
+        incomingMessage,
+        sessionId
+      );
+      console.log(
+        `🔍 Metadata processed for session: ${sessionId}`,
+        metadataResult
+      );
 
-      return true;
+      return metadataResult?.metadata;
     }
 
     return false;
@@ -386,20 +347,29 @@ async function tryProcessAsMetadata(incomingMessage, sessionId) {
 async function processInitialMetadata(metadataMessage, sessionId) {
   try {
     console.log(`📋 Processing metadata for session: ${sessionId}`);
-    
+
     // Parse metadata (handle single quotes format)
     const rawMetadata = metadataMessage.toString();
     const metadata = parseKnowlarityMetadata(rawMetadata);
 
-    // Validate required fields
-    validateMetadata(metadata);
+    // Store metadata in connection
+    const connection = activeConnections.get(sessionId);
+    if (connection) {
+      connection.clientType = metadata.callid ? "knowlarity" : "web_client";
+      connection.knowlarityMetadata = {
+        raw: metadataMessage.toString(),
+        parsed: metadata,
+        callid: metadata.callid,
+        virtual_number: metadata.virtual_number,
+        customer_number: metadata.customer_number,
+        metadata: metadata.metadata
+      };
+    }
 
-    // Extract dynamic fields from decoded metadata
-    const dynamicFields = extractDynamicFields(metadata);
-    console.log(`🔄 Extracted dynamic fields:`, JSON.stringify(dynamicFields, null, 2));
+    // Update status
+    handleCallStatusUpdate(sessionId, { status: "connected" });
 
-
-    return { success: true, metadata ,dynamicFields};
+    return { success: true, metadata };
   } catch (error) {
     console.error("❌ Failed to process metadata:", error.message);
     await sendErrorResponse(getConnection(sessionId), error.message);
@@ -451,46 +421,13 @@ function processMetadataObject(metadata) {
   if (metadata.metadata) {
     try {
       const decodedMetadataString = decodeURIComponent(metadata.metadata);
-      metadata.decodedMetadata = JSON.parse(decodedMetadataString);
+      metadata.metadata = JSON.parse(decodedMetadataString);
     } catch (error) {
-      metadata.decodedMetadata = null;
+      metadata.metadata = null;
     }
   }
 
   return metadata;
-}
-
-/**
- * Validate required metadata fields
- */
-function validateMetadata(metadata) {
-  if (!metadata.callid) {
-    throw new Error("Missing required field: callid");
-  }
-  if (!metadata.virtual_number) {
-    throw new Error("Missing required field: virtual_number");
-  }
-  if (!metadata.customer_number) {
-    throw new Error("Missing required field: customer_number");
-  }
-}
-
-/**
- * Extract dynamic fields from decoded metadata
- */
-function extractDynamicFields(metadata) {
-  const dynamicFields = {};
-  
-  if (metadata.decodedMetadata) {
-    // Extract any dynamic fields from the decoded metadata
-    Object.keys(metadata.decodedMetadata).forEach(key => {
-      if (!['callid', 'virtual_number', 'customer_number'].includes(key)) {
-        dynamicFields[key] = metadata.decodedMetadata[key];
-      }
-    });
-  }
-  
-  return dynamicFields;
 }
 
 /**
@@ -508,9 +445,9 @@ async function sendSuccessResponse(connection) {
     const ackMessage = JSON.stringify({
       type: "metadata_received",
       status: "success",
-      message: "Metadata processed successfully"
+      message: "Metadata processed successfully",
     });
-    
+
     connection.websocket.send(ackMessage);
   }
 }
@@ -524,9 +461,9 @@ async function sendErrorResponse(connection, errorMessage) {
       type: "metadata_error",
       status: "error",
       message: "Failed to parse metadata",
-      error: errorMessage
+      error: errorMessage,
     });
-    
+
     connection.websocket.send(errorResponse);
   }
 }
@@ -540,14 +477,11 @@ async function sendErrorResponse(connection, errorMessage) {
  * it to the ElevenLabs agent for processing and response generation.
  */
 async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
-
-  
   // AUDIO PROCESSING: Pure volume amplification only - NO noise processing to prevent artifacts
   // Knowlarity sends raw binary PCM data, ElevenLabs expects base64 encoded audio
   const amplifiedAudioBuffer = amplifyAudioVolume(audioBuffer, 2.5); // 2.5x amplification - clean and artifact-free
 
   const audioBase64Data = amplifiedAudioBuffer.toString("base64");
-  
 
   // AUDIO FORWARDING: Send caller's audio to ElevenLabs agent for processing
   if (agentConversation) {
@@ -605,28 +539,26 @@ function handleControlMessages(controlMessage, sessionId, agentConversation) {
 /**
  * Setup WebSocket connection lifecycle handlers
  */
-function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
+function setupConnectionLifecycle(websocket, sessionId) {
   // Handle connection close
   websocket.on("close", () => {
-    
     // Close ElevenLabs WebSocket connection to end the conversation
     const connection = activeConnections.get(sessionId);
     if (connection?.agentConversation?.agentWebSocket) {
       connection.agentConversation.agentWebSocket.close();
     }
-    
   });
 
   // Handle connection errors
   websocket.on("error", (connectionError) => {
     console.error("❌ WebSocket error:", connectionError);
-    
+
     // Close ElevenLabs WebSocket connection on error
     const connection = activeConnections.get(sessionId);
     if (connection?.agentConversation?.agentWebSocket) {
-        connection.agentConversation.agentWebSocket.close();
+      connection.agentConversation.agentWebSocket.close();
     }
-    
+
     handleCallStatusUpdate(sessionId, {
       status: "failed",
       reason: connectionError.message,
@@ -638,7 +570,6 @@ function setupConnectionLifecycle(websocket, sessionId, agentConversation) {
  * Cleanup session resources
  */
 function cleanupSession(sessionId, agentConversation) {
-
   activeConnections.delete(sessionId);
 
   if (agentConversation) {
@@ -758,7 +689,6 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
     return;
   }
 
-
   try {
     // Check if this is a web client session (sessions starting with 'web_')
     const isWebClientSession = sessionId.startsWith("web_");
@@ -770,12 +700,13 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
   } catch (error) {
     // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
     if (statusUpdate.isExternal || sessionId.startsWith("web_")) {
-
-
       return;
     }
 
-    console.error("❌ Unexpected status update failure for internal session:", sessionId);
+    console.error(
+      "❌ Unexpected status update failure for internal session:",
+      sessionId
+    );
   }
 }
 
@@ -783,7 +714,6 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
 // ELEVENLABS AGENT SERVICE INTEGRATION
 // ===============================================================================
 // These functions create the bridge between WebSocket handler and ElevenLabs agent
-
 
 /**
  * CALLBACK REGISTRATION: Register callback function with ElevenLabs agent
@@ -812,6 +742,77 @@ function endConversation(sessionId) {
   return elevenLabsAgentService.endConversation(sessionId);
 }
 
+async function initializeAgentConversationAfterMetaData(callSession, sessionId, metadata) {
+  try {
+    console.log(
+      "🤖 Initializing ElevenLabs conversation for session:",
+      sessionId
+    );
+
+    // Extract agentId and treatmentType from decoded metadata
+    let agentId, treatmentType;
+    
+    if (metadata && metadata.metadata) {
+      agentId = metadata.metadata.agentId;
+      treatmentType = metadata.metadata.treatmentType;
+    } else {
+      // Use defaults if no metadata provided
+      console.log("⚠️ No metadata provided, using defaults for session:", sessionId);
+      agentId = "default_agent_id"; // You should replace with actual default
+      treatmentType = "Piles";
+    }
+    
+    if (!agentId || agentId === "default_agent_id") {
+      console.warn("⚠️ Using default agentId for session:", sessionId);
+      // Continue with default - don't return
+    }
+
+    // Create ElevenLabs conversation with metadata from Knowlarity
+    const agentConversation = await elevenLabsAgentService.createConversation(
+      agentId,
+      sessionId,
+      {
+        treatmentType: treatmentType || "Piles" // fallback
+      }
+    );
+
+    // Store the agent conversation in the connection for cleanup
+    const connection = activeConnections.get(sessionId);
+    if (connection) {
+      connection.agentConversation = agentConversation;
+    }
+
+    // Setup bidirectional audio streaming
+    setupAudioStreaming(sessionId);
+
+    // Send acknowledgment to Knowlarity
+    await sendSuccessResponse(connection);
+
+    // Notify client that agent is ready
+    if (connection?.websocket?.readyState === WebSocket.OPEN) {
+      connection.websocket.send(
+        JSON.stringify({
+          type: "agent_ready",
+          message: "ElevenLabs agent is ready for conversation",
+        })
+      );
+    }
+
+    console.log("✅ Agent conversation initialized successfully for session:", sessionId);
+    
+  } catch (error) {
+    console.error("❌ Error creating ElevenLabs conversation:", error);
+    
+    // Send error response to Knowlarity
+    const connection = activeConnections.get(sessionId);
+    await sendErrorResponse(connection, error.message);
+    
+    // Close connection on initialization failure
+    if (connection?.websocket?.readyState === WebSocket.OPEN) {
+      connection.websocket.close(1011, "Failed to initialize conversation");
+    }
+  }
+}
 module.exports = {
   handleConnection,
   transferCall,
@@ -820,5 +821,5 @@ module.exports = {
   cleanup,
   shutdown,
   activeConnections,
-  cleanupSession
+  cleanupSession,
 };

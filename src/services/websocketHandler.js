@@ -29,23 +29,49 @@ const elevenLabsAgentService = require("../../services/elevenLabsAgent");
  * Main WebSocket connection handler - routes connections based on URL path
  */
 function handleConnection(websocket, request) {
-  const url = new URL(request.url, `http://${request.headers.host}`);
-  const urlPath = url.pathname;
+  console.log("🌐 NEW WEBSOCKET CONNECTION RECEIVED");
+  console.log("🔗 Request URL:", request.url);
+  console.log("🏠 Request Host:", request.headers.host);
+  console.log("📊 Request Headers:", JSON.stringify(request.headers, null, 2));
+  
+  try {
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    const urlPath = url.pathname;
+    
+    console.log("📍 Parsed URL path:", urlPath);
+    console.log("🌐 WebSocket readyState:", websocket.readyState);
+    console.log("🕐 Timestamp:", new Date().toISOString());
 
-  // Route to Knowlarity stream handler
-  if (urlPath.startsWith("/knowlarity-stream/")) {
-    handleKnowlarityStream(websocket, urlPath);
-    return;
+    // Route to Knowlarity stream handler
+    if (urlPath.startsWith("/knowlarity-stream/")) {
+      console.log("➡️ ROUTING TO KNOWLARITY HANDLER");
+      handleKnowlarityStream(websocket, urlPath);
+      return;
+    }
+
+    // Route to Acephone stream handler
+    if (urlPath.startsWith("/acephone")) {
+      console.log("➡️ ROUTING TO ACEPHONE HANDLER");
+      console.log("🎯 About to call handleAcephoneStream...");
+      try {
+        handleAcephoneStream(websocket, urlPath);
+        console.log("✅ handleAcephoneStream called successfully");
+      } catch (acephoneError) {
+        console.error("❌ Error in handleAcephoneStream:", acephoneError);
+        console.error("📊 Stack trace:", acephoneError.stack);
+      }
+      return;
+    }
+
+    // Reject unknown connection types
+    console.log("❌ UNKNOWN CONNECTION TYPE, CLOSING WEBSOCKET");
+    console.log("❌ URL path was:", urlPath);
+    websocket.close(1008, "Unknown connection type");
+  } catch (routingError) {
+    console.error("❌ ERROR IN CONNECTION ROUTING:", routingError);
+    console.error("📊 Stack trace:", routingError.stack);
+    websocket.close(1011, "Internal server error");
   }
-
-  // Route to Acephone stream handler
-  if (urlPath.startsWith("/acephone")) {
-    handleAcephoneStream(websocket, urlPath);
-    return;
-  }
-
-  // Reject unknown connection types
-  websocket.close(1008, "Unknown connection type");
 }
 
 /**
@@ -245,12 +271,27 @@ function handleKnowlarityStream(websocket, urlPath) {
  * Handles Acephone WebSocket protocol with proper event sequence and audio format
  */
 function handleAcephoneStream(websocket, urlPath) {
-  // Generate unique streamSid for Acephone connection
-  const streamSid = uuidv4();
-  const sessionId = streamSid; // Use streamSid as sessionId for internal tracking
+  console.log("🚀 ACEPHONE STREAM HANDLER STARTED");
+  console.log("🌐 WebSocket provided:", !!websocket);
+  console.log("🔗 URL Path provided:", urlPath);
   
-  console.log("📞 New Acephone call stream connection for streamSid:", streamSid);
-  console.log("🔍 URL Path:", urlPath);
+  try {
+    // Generate unique streamSid for Acephone connection
+    const streamSid = uuidv4();
+    const sessionId = streamSid; // Use streamSid as sessionId for internal tracking
+    
+    console.log("📞 NEW ACEPHONE CALL STREAM CONNECTION FOR STREAMSID:", streamSid);
+    console.log("🔍 URL Path:", urlPath);
+    console.log("🌐 WebSocket readyState:", websocket.readyState);
+    console.log("🕐 Connection timestamp:", new Date().toISOString());
+    
+    // Validate required parameters
+    if (!websocket) {
+      throw new Error("WebSocket is null or undefined");
+    }
+    if (!urlPath) {
+      throw new Error("URL path is null or undefined");
+    }
 
   // Store connection with Acephone-specific properties (no static metadata)
   activeConnections.set(sessionId, {
@@ -345,6 +386,16 @@ function handleAcephoneStream(websocket, urlPath) {
   });
 
   console.log("🔧 Acephone stream handler setup completed for streamSid:", streamSid);
+  
+  } catch (handlerError) {
+    console.error("❌ CRITICAL ERROR IN ACEPHONE HANDLER:", handlerError);
+    console.error("📊 Stack trace:", handlerError.stack);
+    
+    // Close the websocket with error code
+    if (websocket && websocket.readyState === websocket.OPEN) {
+      websocket.close(1011, "Internal server error");
+    }
+  }
 }
 
 /**

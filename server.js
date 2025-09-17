@@ -37,27 +37,12 @@ app.use(routes);
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-console.log("🔧 WebSocket Server Configuration:");
-console.log("  📡 Port:", process.env.PORT || 3000);
-console.log("  🌐 Binding to server:", !!server);
-console.log("  🔗 WebSocket Server created:", !!wss);
-console.log("  📊 Server listening state:", server.listening);
-
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
-// WebSocket handler now uses direct imports - no initialization needed
-console.log("✅ WebSocket handler ready with direct service imports");
-
-console.log("🔧 Setting up WebSocket connection handler...");
 
 // WebSocket connection logging  
 wss.on("connection", (ws, req) => {
-  console.log("🚨🚨🚨 WEBSOCKET CONNECTION RECEIVED! 🚨🚨🚨");
-  console.log("📍 URL:", req.url);
-  console.log("🕐 Time:", new Date().toISOString());
-  console.log("🌐 Origin:", req.headers.origin);
-  console.log("📱 User-Agent:", req.headers['user-agent']);
 
   // Log ALL incoming messages on this connection
   ws.on("message", (message) => {

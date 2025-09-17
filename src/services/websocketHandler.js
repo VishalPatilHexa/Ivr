@@ -263,7 +263,9 @@ function handleAcephoneStream(websocket, urlPath) {
     sequenceNumber: 0,
     callStarted: false,
     agentHasSpoken: false,
-    metadataReceived: false
+    metadataReceived: false,
+    outboundChunkNumber: 1, // Track chunk numbers for outbound media
+    streamStartTime: null // Track stream start time for timestamps
   });
 
   console.log("💾 Stored Acephone connection for streamSid:", streamSid);
@@ -370,6 +372,7 @@ async function handleAcephoneStart(sessionId, startMessage) {
 
   connection.callStarted = true;
   connection.mediaFormat = startMessage.start?.mediaFormat;
+  connection.streamStartTime = Date.now(); // Record stream start time for timestamps
   
   // Extract and validate metadata from Acephone start event
   if (!startMessage.start?.customParameters?.metadata) {
@@ -640,13 +643,12 @@ function setupAudioStreaming(sessionId) {
           const isAcephone = connection.clientType === "acephone";
 
           if (isAcephone) {
-            // ACEPHONE FORMAT: Convert PCM to µ-law and send as media event
+            // ACEPHONE FORMAT: Convert PCM to µ-law as per PDF specification
             try {
               const pcmBuffer = Buffer.from(agentMessage.audio, "base64");
               console.log(`🔊 Converting ${pcmBuffer.length} bytes PCM (16kHz) to µ-law (8kHz) for Acephone`);
               
-              // ElevenLabs sends 16kHz PCM, but Acephone expects 8kHz µ-law
-              // We need to downsample from 16kHz to 8kHz first
+              // ElevenLabs sends 16kHz PCM, downsample to 8kHz for Acephone
               const downsampledPcm = downsamplePcm16to8(pcmBuffer);
               console.log(`🔄 Downsampled from ${pcmBuffer.length} to ${downsampledPcm.length} bytes`);
               
@@ -657,10 +659,11 @@ function setupAudioStreaming(sessionId) {
                 alignedPcm = Buffer.concat([downsampledPcm, Buffer.alloc(1, 0)]);
               }
               
+              // Convert PCM to µ-law
               const ulawBuffer = convertPcmToUlaw(alignedPcm);
               console.log(`🎵 Converted ${alignedPcm.length} bytes PCM to ${ulawBuffer.length} bytes µ-law`);
               
-              // Acephone expects multiples of 160 bytes - pad if necessary
+              // PDF Requirement: Payload must be multiples of 160 bytes
               let paddedUlawBuffer = ulawBuffer;
               const remainder = ulawBuffer.length % 160;
               if (remainder !== 0) {
@@ -671,7 +674,27 @@ function setupAudioStreaming(sessionId) {
               
               const ulawBase64 = paddedUlawBuffer.toString("base64");
               
-              console.log(`📤 Sending ${paddedUlawBuffer.length} bytes µ-law audio to Acephone (base64: ${ulawBase64.length} chars)`);
+              // Calculate timestamp relative to stream start
+              const timestamp = connection.streamStartTime ? Date.now() - connection.streamStartTime : 0;
+              
+              // Create media event as per PDF specification (Section 3.1)
+              const mediaEvent = {
+                event: "media",
+                streamSid: connection.streamSid, // Use the actual streamSid from Acephone
+                media: {
+                  payload: ulawBase64,
+                  chunk: connection.outboundChunkNumber
+                }
+              };
+              
+              console.log(`📤 Sending µ-law audio chunk ${connection.outboundChunkNumber} (${paddedUlawBuffer.length} bytes)`);
+              console.log("📋 Media event structure:", JSON.stringify(mediaEvent, null, 2));
+              
+              // Send directly to websocket (no sequence number wrapper for outbound media)
+              connection.websocket.send(JSON.stringify(mediaEvent));
+              
+              // Increment chunk number for next audio chunk
+              connection.outboundChunkNumber++;
 
               // Mark that agent has spoken (for first audio chunk)
               if (!connection.agentHasSpoken) {
@@ -679,16 +702,6 @@ function setupAudioStreaming(sessionId) {
                 console.log("🎤 Agent has now spoken - ready to process user audio");
               }
 
-              const mediaEvent = {
-                event: "media",
-                media: {
-                  timestamp: Date.now(),
-                  payload: ulawBase64
-                }
-              };
-              
-              console.log("📋 Sending Acephone media event:", JSON.stringify(mediaEvent, null, 2));
-              sendAcephoneEvent(connection.websocket, currentSessionId, mediaEvent);
             } catch (sendError) {
               console.error(
                 "❌ Failed to send Acephone audio:",

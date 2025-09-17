@@ -192,7 +192,7 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
-        handleInitialMetadata(incomingMessage, sessionId);
+        // handleInitialMetadata(incomingMessage, sessionId);
         isFirstMessage = false;
         return;
       }

@@ -7,11 +7,7 @@ require("dotenv").config();
 
 const {
   handleConnection,
-  transferCall,
-  terminateStream,
-  killAudio,
   cleanup,
-  shutdown,
 } = require("./src/services/websocketHandler");
 
 // Import routes
@@ -90,7 +86,6 @@ server.listen(PORT, () => {
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("SIGTERM received, shutting down gracefully");
-  shutdown();
   server.close(() => {
     console.log("Process terminated");
   });
@@ -98,15 +93,7 @@ process.on("SIGTERM", () => {
 
 process.on("SIGINT", () => {
   console.log("SIGINT received, shutting down gracefully");
-  shutdown();
   server.close(() => {
     console.log("Process terminated");
   });
 });
-
-// Export functions for external control (if needed)
-module.exports = {
-  transferCall,
-  terminateStream,
-  killAudio,
-};

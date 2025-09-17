@@ -24,12 +24,7 @@ const activeConnections = new Map();
 
 // Import service modules directly
 const elevenLabsAgentService = require("../../services/elevenLabsAgent");
-const callManagerService = require("../knowlarity/outboundCallManager");
 
-/**
- * Initialize WebSocket handler - now using direct imports
- */
-function initializeWebSocketHandler() {}
 
 /**
  * Main WebSocket connection handler - routes connections based on URL path
@@ -118,22 +113,13 @@ function handleKnowlarityStream(websocket, urlPath) {
   );
   console.log("📊 Total active connections:", activeConnections.size);
 
-  let callSession = getCallSession(sessionId);
-  if (!callSession) {
-    // Create temporary session for external calls (Knowlarity/Gupshup)
-    callSession = {
-      sessionId: sessionId,
-      status: "external_connection",
-      createdAt: new Date(),
-      isExternal: true,
-      source: "knowlarity",
-    };
-  } else {
-    console.log(
-      "📋 Existing session details:",
-      JSON.stringify(callSession, null, 2)
-    );
-  }
+  // Create temporary session for external calls
+  const callSession = {
+    sessionId: sessionId,
+    status: "external_connection",
+    createdAt: new Date(),
+    isExternal: true,
+  };
 
   // STEP 4: Setup message handling for audio streaming
   let isFirstMessage = true;
@@ -151,12 +137,12 @@ function handleKnowlarityStream(websocket, urlPath) {
 
         let metadata = await tryProcessAsMetadata(incomingMessage, sessionId);
         if (metadata) {
-          await initializeAgentConversationAfterMetaData(callSession, sessionId, metadata);
+          await initializeAgentConversationAfterMetaData(sessionId, metadata);
           return;
         } else {
           console.log(`📤 First message was audio, not metadata for session: ${sessionId}`);
           // Initialize with default values if no metadata
-          await initializeAgentConversationAfterMetaData(callSession, sessionId, null);
+          await initializeAgentConversationAfterMetaData(sessionId, null);
           // Continue processing this message as audio - don't return
         }
 
@@ -591,50 +577,8 @@ function cleanupSession(sessionId, agentConversation) {
  * ===============================================================================
  */
 
-/**
- * Transfer call to another number
- */
-function transferCall(sessionId, targetPhoneNumber) {
-  const connection = activeConnections.get(sessionId);
-  if (connection?.websocket?.readyState === WebSocket.OPEN) {
-    connection.websocket.send(
-      JSON.stringify({
-        type: "transfer",
-        data: { textContent: targetPhoneNumber },
-      })
-    );
-  } else {
-    console.error(
-      `❌ Cannot transfer call ${sessionId} - connection not found`
-    );
-  }
-}
 
-/**
- * Terminate call stream
- */
-function terminateStream(sessionId) {
-  const connection = activeConnections.get(sessionId);
-  if (connection?.websocket?.readyState === WebSocket.OPEN) {
-    connection.websocket.send(JSON.stringify({ type: "disconnect" }));
-  } else {
-    console.error(
-      `❌ Cannot terminate stream ${sessionId} - connection not found`
-    );
-  }
-}
 
-/**
- * Stop audio playback
- */
-function killAudio(sessionId) {
-  const connection = activeConnections.get(sessionId);
-  if (connection?.websocket?.readyState === WebSocket.OPEN) {
-    connection.websocket.send(JSON.stringify({ type: "killAudio" }));
-  } else {
-    console.error(`❌ Cannot kill audio ${sessionId} - connection not found`);
-  }
-}
 
 /**
  * ===============================================================================
@@ -642,28 +586,7 @@ function killAudio(sessionId) {
  * ===============================================================================
  */
 
-/**
- * Cleanup dead connections
- */
-function cleanup() {
-  activeConnections.forEach((connection, sessionId) => {
-    if (connection.websocket?.readyState === WebSocket.CLOSED) {
-      cleanupSession(sessionId, connection.agentConversation);
-    }
-  });
-}
 
-/**
- * Shutdown all connections
- */
-function shutdown() {
-  activeConnections.forEach((connection, sessionId) => {
-    if (connection.websocket?.readyState === WebSocket.OPEN) {
-      connection.websocket.close();
-    }
-    endConversation(sessionId);
-  });
-}
 
 /**
  * ===============================================================================
@@ -671,10 +594,6 @@ function shutdown() {
  * ===============================================================================
  */
 
-// Get call session from outbound call manager
-function getCallSession(sessionId) {
-  return callManagerService.getCallSession(sessionId);
-}
 
 // Update call status
 function handleCallStatusUpdate(sessionId, statusUpdate) {
@@ -696,7 +615,8 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
     if (isWebClientSession) {
     }
 
-    callManagerService.handleCallStatusUpdate(sessionId, statusUpdate);
+    // Status updates for external calls are handled gracefully
+    console.log("📊 Status update logged:", { sessionId, status: statusUpdate.status });
   } catch (error) {
     // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
     if (statusUpdate.isExternal || sessionId.startsWith("web_")) {
@@ -742,7 +662,7 @@ function endConversation(sessionId) {
   return elevenLabsAgentService.endConversation(sessionId);
 }
 
-async function initializeAgentConversationAfterMetaData(callSession, sessionId, metadata) {
+async function initializeAgentConversationAfterMetaData(sessionId, metadata) {
   try {
     console.log(
       "🤖 Initializing ElevenLabs conversation for session:",
@@ -813,13 +733,21 @@ async function initializeAgentConversationAfterMetaData(callSession, sessionId, 
     }
   }
 }
+
+/**
+ * Cleanup dead connections
+ */
+function cleanup() {
+  activeConnections.forEach((connection, sessionId) => {
+    if (connection.websocket?.readyState === WebSocket.CLOSED) {
+      cleanupSession(sessionId, connection.agentConversation);
+    }
+  });
+}
+
 module.exports = {
   handleConnection,
-  transferCall,
-  terminateStream,
-  killAudio,
-  cleanup,
-  shutdown,
   activeConnections,
   cleanupSession,
+  cleanup,
 };

@@ -192,9 +192,17 @@ function handleKnowlarityStream(websocket, urlPath) {
 
       // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
-        handleInitialMetadata(incomingMessage, sessionId);
+        console.log(`🎆 Processing first message for session: ${sessionId}`);
+        // Set flag IMMEDIATELY and SYNCHRONOUSLY to prevent race condition
         isFirstMessage = false;
-        return;
+        
+        // Check if first message is JSON metadata or binary audio
+        if (await tryProcessAsMetadata(incomingMessage, sessionId)) {
+          console.log(`✅ Metadata processed successfully for session: ${sessionId}`);
+          return;
+        } else {
+          console.log(`📤 First message was audio, not metadata for session: ${sessionId}`);
+        }
       }
 
       // Route audio and control messages
@@ -352,65 +360,174 @@ function setupAudioStreaming(sessionId) {
 }
 
 /**
- * Handle initial metadata message from Knowlarity
- *
- * FIRST MESSAGE PROTOCOL: The first message from Knowlarity is always JSON metadata
- * containing call information, not audio data. This establishes the call context.
+ * Try to process incoming message as metadata
  */
-function handleInitialMetadata(metadataMessage, sessionId) {
+async function tryProcessAsMetadata(incomingMessage, sessionId) {
   try {
-    const connectionMetadata = JSON.parse(metadataMessage.toString());
-    console.log("📊 Metadata:", JSON.stringify(connectionMetadata, null, 2));
+    const messageStr = incomingMessage.toString();
+
+    // Quick check - if it contains common metadata fields, try as JSON
+    if (messageStr.includes("metadata") || messageStr.includes("callid")) {
+      const metadataResult = await processInitialMetadata(incomingMessage, sessionId);
+      console.log(`🔍 Metadata processed for session: ${sessionId}`, metadataResult);
+
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Process initial metadata message from Knowlarity
+ */
+async function processInitialMetadata(metadataMessage, sessionId) {
+  try {
+    console.log(`📋 Processing metadata for session: ${sessionId}`);
     
-    return
+    // Parse metadata (handle single quotes format)
+    const rawMetadata = metadataMessage.toString();
+    const metadata = parseKnowlarityMetadata(rawMetadata);
+
+    // Validate required fields
+    validateMetadata(metadata);
+
+    // Extract dynamic fields from decoded metadata
+    const dynamicFields = extractDynamicFields(metadata);
+    console.log(`🔄 Extracted dynamic fields:`, JSON.stringify(dynamicFields, null, 2));
+
+
+    return { success: true, metadata ,dynamicFields};
+  } catch (error) {
+    console.error("❌ Failed to process metadata:", error.message);
+    await sendErrorResponse(getConnection(sessionId), error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Parse Knowlarity metadata format
+ */
+function parseKnowlarityMetadata(rawMetadata) {
+  try {
+    // Clean up the raw metadata - remove any leading/trailing whitespace and BOM
+    let cleanMetadata = rawMetadata.trim();
+
+    // Remove BOM (Byte Order Mark) if present
+    if (cleanMetadata.charCodeAt(0) === 0xfeff) {
+      cleanMetadata = cleanMetadata.slice(1);
+    }
+
+    // Try parsing as JSON first (in case it's already proper JSON)
+    try {
+      const directParse = JSON.parse(cleanMetadata);
+
+      // Check if the result is a string (double-encoded JSON)
+      if (typeof directParse === "string") {
+        const secondParse = JSON.parse(directParse.replace(/'/g, '"'));
+        return processMetadataObject(secondParse);
+      }
+
+      return processMetadataObject(directParse);
+    } catch (directError) {
+      // Handle the single quote format from Knowlarity
+      const jsonString = cleanMetadata.replace(/'/g, '"');
+      const metadata = JSON.parse(jsonString);
+      return processMetadataObject(metadata);
+    }
+  } catch (error) {
+    console.error("❌ Failed to parse metadata:", error.message);
+    throw new Error(`Failed to parse metadata: ${error.message}`);
+  }
+}
+
+/**
+ * Process metadata object and decode nested fields
+ */
+function processMetadataObject(metadata) {
+  // Decode URL-encoded metadata if present
+  if (metadata.metadata) {
+    try {
+      const decodedMetadataString = decodeURIComponent(metadata.metadata);
+      metadata.decodedMetadata = JSON.parse(decodedMetadataString);
+    } catch (error) {
+      metadata.decodedMetadata = null;
+    }
+  }
+
+  return metadata;
+}
+
+/**
+ * Validate required metadata fields
+ */
+function validateMetadata(metadata) {
+  if (!metadata.callid) {
+    throw new Error("Missing required field: callid");
+  }
+  if (!metadata.virtual_number) {
+    throw new Error("Missing required field: virtual_number");
+  }
+  if (!metadata.customer_number) {
+    throw new Error("Missing required field: customer_number");
+  }
+}
+
+/**
+ * Extract dynamic fields from decoded metadata
+ */
+function extractDynamicFields(metadata) {
+  const dynamicFields = {};
+  
+  if (metadata.decodedMetadata) {
+    // Extract any dynamic fields from the decoded metadata
+    Object.keys(metadata.decodedMetadata).forEach(key => {
+      if (!['callid', 'virtual_number', 'customer_number'].includes(key)) {
+        dynamicFields[key] = metadata.decodedMetadata[key];
+      }
+    });
+  }
+  
+  return dynamicFields;
+}
+
+/**
+ * Get connection helper
+ */
+function getConnection(sessionId) {
+  return activeConnections.get(sessionId);
+}
+
+/**
+ * Send success response to Knowlarity
+ */
+async function sendSuccessResponse(connection) {
+  if (connection?.websocket?.readyState === WebSocket.OPEN) {
+    const ackMessage = JSON.stringify({
+      type: "metadata_received",
+      status: "success",
+      message: "Metadata processed successfully"
+    });
     
-    // Store metadata in connection
-    const connection = activeConnections.get(sessionId);
-    if (connection) {
-      // Set client type
-      connection.clientType = connectionMetadata.callid ? "knowlarity" : "web_client";
-      
-      // Store metadata for webhook processing
-      connection.knowlarityMetadata = {
-        raw: metadataMessage.toString(),
-        parsed: connectionMetadata,
-        callid: connectionMetadata.callid,
-        virtual_number: connectionMetadata.virtual_number,
-        customer_number: connectionMetadata.customer_number,
-        metadata: connectionMetadata.metadata
-      };
-    }
+    connection.websocket.send(ackMessage);
+  }
+}
 
-    // Update status
-    // handleCallStatusUpdate(sessionId, { status: "connected" });
-
-    // Send acknowledgment to Knowlarity
-    if (connection?.websocket?.readyState === WebSocket.OPEN) {
-      const ackMessage = JSON.stringify({
-        type: "metadata_received",
-        status: "success",
-        message: "Metadata processed successfully"
-      });
-      
-      connection.websocket.send(ackMessage);
-    }
-
-  } catch (jsonError) {
-    console.error("❌ Failed to parse metadata:", jsonError.message);
-
-    // Send error response to Knowlarity
-    const connection = activeConnections.get(sessionId);
-    if (connection?.websocket?.readyState === WebSocket.OPEN) {
-      const errorMessage = JSON.stringify({
-        type: "metadata_error",
-        status: "error",
-        message: "Failed to parse metadata"
-      });
-      
-      connection.websocket.send(errorMessage);
-    }
-
-    handleCallStatusUpdate(sessionId, { status: "connected" });
+/**
+ * Send error response to Knowlarity
+ */
+async function sendErrorResponse(connection, errorMessage) {
+  if (connection?.websocket?.readyState === WebSocket.OPEN) {
+    const errorResponse = JSON.stringify({
+      type: "metadata_error",
+      status: "error",
+      message: "Failed to parse metadata",
+      error: errorMessage
+    });
+    
+    connection.websocket.send(errorResponse);
   }
 }
 

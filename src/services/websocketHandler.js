@@ -537,10 +537,13 @@ function convertPcmToUlaw(pcmBuffer) {
   // PCM to µ-law conversion
   const ulawBuffer = Buffer.alloc(pcmBuffer.length / 2);
   
-  for (let i = 0; i < pcmBuffer.length; i += 2) {
+  for (let i = 0; i < pcmBuffer.length - 1; i += 2) { // Ensure we don't read beyond buffer
     const pcmSample = pcmBuffer.readInt16LE(i);
     const ulawSample = linearToUlaw(pcmSample);
-    ulawBuffer[i / 2] = ulawSample;
+    const outputIndex = i / 2;
+    if (outputIndex < ulawBuffer.length) { // Ensure we don't write beyond buffer
+      ulawBuffer[outputIndex] = ulawSample;
+    }
   }
   
   return ulawBuffer;
@@ -647,7 +650,15 @@ function setupAudioStreaming(sessionId) {
               const downsampledPcm = downsamplePcm16to8(pcmBuffer);
               console.log(`🔄 Downsampled from ${pcmBuffer.length} to ${downsampledPcm.length} bytes`);
               
-              const ulawBuffer = convertPcmToUlaw(downsampledPcm);
+              // Ensure even number of bytes for 16-bit samples
+              let alignedPcm = downsampledPcm;
+              if (downsampledPcm.length % 2 !== 0) {
+                console.log(`⚠️ Odd buffer size detected, padding by 1 byte`);
+                alignedPcm = Buffer.concat([downsampledPcm, Buffer.alloc(1, 0)]);
+              }
+              
+              const ulawBuffer = convertPcmToUlaw(alignedPcm);
+              console.log(`🎵 Converted ${alignedPcm.length} bytes PCM to ${ulawBuffer.length} bytes µ-law`);
               
               // Acephone expects multiples of 160 bytes - pad if necessary
               let paddedUlawBuffer = ulawBuffer;

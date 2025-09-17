@@ -1,5 +1,4 @@
 const WebSocket = require("ws");
-var base64 = require("base-64");
 
 /*
  * ===============================================================================
@@ -287,6 +286,33 @@ function setupAudioStreaming(sessionId) {
 
         // AUDIO END DETECTION: Log when agent finishes speaking (for turn-taking)
         if (agentMessage.type === "agent_audio_end") {
+        }
+
+        // CALL END: Close Knowlarity WebSocket when ElevenLabs conversation ends
+        if (agentMessage.type === "call_end") {
+          console.log("📞 Ending call for session:", sessionId);
+
+          // Send call end signal to Knowlarity
+          if (
+            !connection.clientType ||
+            connection.clientType === "knowlarity"
+          ) {
+            connection.websocket.send(
+              JSON.stringify({
+                type: "call_end",
+                message: "Call completed successfully",
+              })
+            );
+          }
+
+          // Close WebSocket connection after a short delay
+          setTimeout(() => {
+            if (connection.websocket?.readyState === WebSocket.OPEN) {
+              connection.websocket.close(1000, "Call completed");
+            }
+          }, 1000);
+
+          return;
         }
       } else {
         // CONNECTION LOST: WebSocket connection is closed or not available

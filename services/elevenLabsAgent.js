@@ -220,11 +220,19 @@ async function handleElevenLabsMessage(sessionId, messageData) {
         break;
 
       case "ping":
-        handlePing(sessionId, parsedMessage, conversationSession);
+        handlePing(parsedMessage, conversationSession);
         break;
 
       case "conversation_initiation_metadata":
         handleConversationReady(sessionId, parsedMessage, conversationSession);
+        break;
+
+      case "interruption":
+        handleInterruption(sessionId, parsedMessage);
+        break;
+
+      case "agent_response_correction":
+        handleAgentResponseCorrection(sessionId, parsedMessage);
         break;
 
       default:
@@ -328,16 +336,21 @@ function handleAgentAudioEnd(sessionId) {
  */
 function handleConversationEnd(sessionId) {
   console.log("🔚 Conversation ended for session:", sessionId);
+
+  // Clean up the conversation
+  endConversation(sessionId);
+
+  // Signal the client (Knowlarity) to close the call
   forwardToClient(sessionId, {
-    type: "conversation_ended",
-    message: "Conversation completed successfully",
+    type: "call_end",
+    message: "Call completed successfully",
   });
 }
 
 /**
  * Handle ping/pong for connection keepalive
  */
-function handlePing(sessionId, pingMessage, conversationSession) {
+function handlePing(pingMessage, conversationSession) {
   console.log("📡 Ping received from ElevenLabs");
 
   if (conversationSession?.agentWebSocket) {
@@ -380,6 +393,41 @@ function handleConversationReady(sessionId, readyMessage, conversationSession) {
     type: "agent_ready",
     message: "Agent is ready to start conversation",
   });
+}
+
+/**
+ * Handle user interruption of agent speech
+ */
+function handleInterruption(sessionId) {
+  console.log("🛑 User interruption detected for session:", sessionId);
+
+  // Forward interruption signal to client if needed
+  forwardToClient(sessionId, {
+    type: "agent_interrupted",
+    message: "Agent speech was interrupted by user",
+  });
+}
+
+/**
+ * Handle agent response correction
+ */
+function handleAgentResponseCorrection(sessionId, correctionMessage) {
+  console.log("🔄 Agent response correction for session:", sessionId);
+
+  // The agent is correcting/updating its previous response
+  // This happens when the user interrupts and the agent adjusts its response
+  if (correctionMessage.agent_response_correction_event?.corrected_response) {
+    console.log(
+      "📝 Corrected response:",
+      correctionMessage.agent_response_correction_event.corrected_response
+    );
+
+    forwardToClient(sessionId, {
+      type: "agent_response_correction",
+      text: correctionMessage.agent_response_correction_event
+        .corrected_response,
+    });
+  }
 }
 
 /**

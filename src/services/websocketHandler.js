@@ -1,4 +1,5 @@
 const WebSocket = require("ws");
+const { v4: uuidv4 } = require("uuid");
 
 /*
  * ===============================================================================
@@ -34,6 +35,12 @@ function handleConnection(websocket, request) {
   // Route to Knowlarity stream handler
   if (urlPath.startsWith("/knowlarity-stream/")) {
     handleKnowlarityStream(websocket, urlPath);
+    return;
+  }
+
+  // Route to Acephone stream handler
+  if (urlPath.startsWith("/acephone")) {
+    handleAcephoneStream(websocket, urlPath);
     return;
   }
 
@@ -233,6 +240,304 @@ function handleKnowlarityStream(websocket, urlPath) {
 
 /**
  * ===============================================================================
+ * ACEPHONE STREAM HANDLER
+ * ===============================================================================
+ * Handles Acephone WebSocket protocol with proper event sequence and audio format
+ */
+function handleAcephoneStream(websocket, urlPath) {
+  // Generate unique streamSid for Acephone connection
+  const streamSid = uuidv4();
+  const sessionId = streamSid; // Use streamSid as sessionId for internal tracking
+  
+  console.log("📞 New Acephone call stream connection for streamSid:", streamSid);
+  console.log("🔍 URL Path:", urlPath);
+
+  // Create hardcoded metadata for Acephone
+  const acephoneMetadata = {
+    agentId: "agent_2801k10mggvefy5vjfrybj2grs5j",
+    treatmentType: "kidney stone",
+    language: "hi",
+    user_name: "Dr. Smith",
+    campaign_id: "HEALTH_CAMP_2024",
+    department: "cardiology",
+    priority: "high",
+    appointment_id: "APT_789"
+  };
+
+  // Store connection with Acephone-specific properties
+  activeConnections.set(sessionId, {
+    websocket,
+    clientType: "acephone",
+    connectedAt: new Date(),
+    agentConversation: null,
+    acephoneMetadata: acephoneMetadata,
+    streamSid: streamSid,
+    sequenceNumber: 0,
+    callStarted: false
+  });
+
+  console.log("💾 Stored Acephone connection for streamSid:", streamSid);
+
+  // Send 'connected' event to Acephone
+  sendAcephoneEvent(websocket, sessionId, {
+    event: "connected",
+    protocol: "Call",
+    version: "1.0.0"
+  });
+
+  // Setup message handling for Acephone WebSocket protocol
+  websocket.on("message", async (incomingMessage) => {
+    try {
+      let connection = activeConnections.get(sessionId);
+      if (connection?.callEnded) {
+        console.log("🚫 Ignoring message - call already ended for streamSid:", streamSid);
+        return;
+      }
+
+      // Parse incoming Acephone message
+      const messageStr = incomingMessage.toString();
+      const parsedMessage = JSON.parse(messageStr);
+      
+      console.log("📨 Acephone event received:", parsedMessage.event);
+      console.log("📋 Full Acephone message:", JSON.stringify(parsedMessage, null, 2));
+
+      switch (parsedMessage.event) {
+        case "start":
+          await handleAcephoneStart(sessionId, parsedMessage);
+          break;
+          
+        case "media":
+          await handleAcephoneMedia(sessionId, parsedMessage);
+          break;
+          
+        case "stop":
+          await handleAcephoneStop(sessionId);
+          break;
+          
+        case "dtmf":
+          handleAcephoneDtmf(sessionId, parsedMessage);
+          break;
+          
+        case "mark":
+          handleAcephoneMark(sessionId, parsedMessage);
+          break;
+          
+        default:
+          console.log("❓ Unknown Acephone event:", parsedMessage.event);
+      }
+    } catch (error) {
+      console.error("❌ Error processing Acephone message for streamSid:", streamSid, error.message);
+    }
+  });
+
+  websocket.on("error", (event) => {
+    console.error("❌ Acephone WebSocket error for streamSid:", streamSid, event);
+  });
+
+  websocket.on("close", () => {
+    console.log("🔌 Acephone WebSocket closed for streamSid:", streamSid);
+    handleAcephoneStop(sessionId);
+  });
+
+  console.log("🔧 Acephone stream handler setup completed for streamSid:", streamSid);
+}
+
+/**
+ * Send event to Acephone with proper structure
+ */
+function sendAcephoneEvent(websocket, sessionId, eventData) {
+  const connection = activeConnections.get(sessionId);
+  if (!connection) return;
+
+  const message = {
+    event: eventData.event,
+    sequenceNumber: ++connection.sequenceNumber,
+    streamSid: connection.streamSid,
+    ...eventData
+  };
+
+  if (websocket.readyState === WebSocket.OPEN) {
+    websocket.send(JSON.stringify(message));
+    console.log(`📤 Sent Acephone event: ${eventData.event}`);
+  }
+}
+
+/**
+ * Handle Acephone 'start' event
+ */
+async function handleAcephoneStart(sessionId, startMessage) {
+  const connection = activeConnections.get(sessionId);
+  if (!connection) return;
+
+  console.log("🎬 Acephone call started for streamSid:", connection.streamSid);
+  console.log("🔊 Audio format:", startMessage.start?.mediaFormat);
+  console.log("📋 Start event metadata:", JSON.stringify(startMessage.start, null, 2));
+
+  connection.callStarted = true;
+  connection.mediaFormat = startMessage.start?.mediaFormat;
+  
+  // Store any metadata from the start event
+  if (startMessage.start) {
+    connection.acephoneStartMetadata = startMessage.start;
+    console.log("💾 Stored Acephone start metadata:", JSON.stringify(startMessage.start, null, 2));
+  }
+
+  // Initialize ElevenLabs conversation after start event
+  try {
+    await initializeAgentConversationAfterMetaData(sessionId, { metadata: connection.acephoneMetadata });
+    console.log("✅ Acephone agent conversation initialized for streamSid:", connection.streamSid);
+  } catch (error) {
+    console.error("❌ Failed to initialize Acephone conversation:", error);
+    connection.websocket.close(1011, "Failed to initialize conversation");
+  }
+}
+
+/**
+ * Handle Acephone 'media' event with µ-law audio
+ */
+async function handleAcephoneMedia(sessionId, mediaMessage) {
+  const connection = activeConnections.get(sessionId);
+  if (!connection?.callStarted || !connection.agentConversation) {
+    return; // Ignore media until call is started and agent is ready
+  }
+
+  try {
+    // Extract µ-law audio payload (base64 encoded)
+    const ulawAudioBase64 = mediaMessage.media?.payload;
+    if (!ulawAudioBase64) return;
+
+    // Convert µ-law to PCM for ElevenLabs
+    const ulawBuffer = Buffer.from(ulawAudioBase64, "base64");
+    const pcmBuffer = convertUlawToPcm(ulawBuffer);
+    
+    // Convert PCM to base64 for ElevenLabs
+    const pcmBase64 = pcmBuffer.toString("base64");
+    
+    // Send to ElevenLabs agent
+    await sendAudioToAgent(sessionId, pcmBase64);
+  } catch (error) {
+    console.error("❌ Error processing Acephone media:", error);
+  }
+}
+
+/**
+ * Handle Acephone 'stop' event
+ */
+async function handleAcephoneStop(sessionId) {
+  const connection = activeConnections.get(sessionId);
+  if (!connection) return;
+
+  console.log("🛑 Acephone call stopped for streamSid:", connection.streamSid);
+  
+  connection.callEnded = true;
+  
+  // End ElevenLabs conversation
+  if (connection.agentConversation) {
+    await endConversation(sessionId);
+  }
+  
+  // Clean up connection
+  activeConnections.delete(sessionId);
+}
+
+/**
+ * Handle Acephone 'dtmf' event
+ */
+function handleAcephoneDtmf(sessionId, dtmfMessage) {
+  console.log("📞 DTMF received:", dtmfMessage.dtmf?.digit);
+  console.log("📋 DTMF event metadata:", JSON.stringify(dtmfMessage.dtmf, null, 2));
+  // Forward DTMF to agent if needed
+}
+
+/**
+ * Handle Acephone 'mark' event
+ */
+function handleAcephoneMark(sessionId, markMessage) {
+  console.log("🏷️ Mark received:", markMessage.mark?.name);
+  console.log("📋 Mark event metadata:", JSON.stringify(markMessage.mark, null, 2));
+}
+
+/**
+ * Convert µ-law audio to PCM (simplified conversion)
+ */
+function convertUlawToPcm(ulawBuffer) {
+  // µ-law to linear conversion table (simplified)
+  const ulawToPcm = new Int16Array(256);
+  
+  // Initialize conversion table
+  for (let i = 0; i < 256; i++) {
+    let exp = (i & 0x70) >> 4;
+    let mant = i & 0x0F;
+    let sign = i & 0x80;
+    
+    let linear = ((mant << 3) + 0x84) << exp;
+    if (sign) linear = -linear;
+    
+    ulawToPcm[i] = linear;
+  }
+  
+  // Convert µ-law samples to 16-bit PCM
+  const pcmBuffer = Buffer.alloc(ulawBuffer.length * 2);
+  
+  for (let i = 0; i < ulawBuffer.length; i++) {
+    const pcmSample = ulawToPcm[ulawBuffer[i]];
+    pcmBuffer.writeInt16LE(pcmSample, i * 2);
+  }
+  
+  return pcmBuffer;
+}
+
+/**
+ * Convert PCM audio to µ-law
+ */
+function convertPcmToUlaw(pcmBuffer) {
+  // PCM to µ-law conversion
+  const ulawBuffer = Buffer.alloc(pcmBuffer.length / 2);
+  
+  for (let i = 0; i < pcmBuffer.length; i += 2) {
+    const pcmSample = pcmBuffer.readInt16LE(i);
+    const ulawSample = linearToUlaw(pcmSample);
+    ulawBuffer[i / 2] = ulawSample;
+  }
+  
+  return ulawBuffer;
+}
+
+/**
+ * Convert linear PCM sample to µ-law
+ */
+function linearToUlaw(sample) {
+  const BIAS = 0x84;
+  const CLIP = 8159;
+  
+  if (sample >= 0) {
+    sample = Math.min(sample, CLIP);
+  } else {
+    sample = Math.max(sample, -CLIP);
+  }
+  
+  if (sample < 0) {
+    sample = -sample;
+    sample += BIAS;
+    
+    let exp = 7;
+    for (let expMask = 0x4000; (sample & expMask) === 0 && exp > 0; exp--, expMask >>= 1) {}
+    
+    const mantissa = (sample >> (exp + 3)) & 0x0F;
+    return ~(0x80 | (exp << 4) | mantissa);
+  } else {
+    sample += BIAS;
+    
+    let exp = 7;
+    for (let expMask = 0x4000; (sample & expMask) === 0 && exp > 0; exp--, expMask >>= 1) {}
+    
+    const mantissa = (sample >> (exp + 3)) & 0x0F;
+    return ~(exp << 4 | mantissa);
+  }
+}
+
+/**
+ * ===============================================================================
  * AUDIO STREAMING FUNCTIONS
  * ===============================================================================
  */
@@ -266,13 +571,34 @@ function setupAudioStreaming(sessionId) {
 
       // CONNECTION VALIDATION: Ensure WebSocket is still open before sending
       if (connection?.websocket?.readyState === WebSocket.OPEN) {
-        // OUTGOING AUDIO STREAM: ElevenLabs Agent → Knowlarity → Caller
+        // OUTGOING AUDIO STREAM: ElevenLabs Agent → Knowlarity/Acephone → Caller
         // This is the main audio response from AI agent to caller
         if (agentMessage.type === "agent_audio" && agentMessage.audio) {
           // Check client type from stored connection data
           const isWebClient = connection.clientType === "web_client";
+          const isAcephone = connection.clientType === "acephone";
 
-          if (!isWebClient) {
+          if (isAcephone) {
+            // ACEPHONE FORMAT: Convert PCM to µ-law and send as media event
+            try {
+              const pcmBuffer = Buffer.from(agentMessage.audio, "base64");
+              const ulawBuffer = convertPcmToUlaw(pcmBuffer);
+              const ulawBase64 = ulawBuffer.toString("base64");
+
+              sendAcephoneEvent(connection.websocket, currentSessionId, {
+                event: "media",
+                media: {
+                  timestamp: Date.now(),
+                  payload: ulawBase64
+                }
+              });
+            } catch (sendError) {
+              console.error(
+                "❌ Failed to send Acephone audio:",
+                sendError.message
+              );
+            }
+          } else if (!isWebClient) {
             // KNOWLARITY FORMAT: Send as playAudio JSON message
             // Note: Knowlarity expects raw PCM audio with specific sample rate
             const knowlarityAudioMessage = {
@@ -315,15 +641,24 @@ function setupAudioStreaming(sessionId) {
         if (agentMessage.type === "agent_audio_end") {
         }
 
-        // CALL END: Close Knowlarity WebSocket when ElevenLabs conversation ends
+        // CALL END: Close Knowlarity/Acephone WebSocket when ElevenLabs conversation ends
         if (agentMessage.type === "call_end") {
           console.log("📞 Ending call for session:", sessionId);
 
           // Mark session as ended to prevent further processing
           connection.callEnded = true;
 
-          // Send call end signal to Knowlarity
-          if (
+          // Send call end signal based on client type
+          if (connection.clientType === "acephone") {
+            // Send 'clear' event to Acephone to end the call
+            try {
+              sendAcephoneEvent(connection.websocket, sessionId, {
+                event: "clear"
+              });
+            } catch (error) {
+              console.log("📞 Error sending Acephone clear event:", error.message);
+            }
+          } else if (
             !connection.clientType ||
             connection.clientType === "knowlarity"
           ) {

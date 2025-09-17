@@ -34,23 +34,6 @@ const activeConversations = new Map();
 let messageForwardingHandler = null;
 
 /**
- * Validate required environment variables on startup
- */
-function validateEnvironment() {
-  if (!elevenLabsApiKey) {
-    throw new Error("ELEVENLABS_API_KEY is required");
-  }
-  if (!elevenLabsAgentId) {
-    throw new Error("ELEVENLABS_AGENT_ID is required");
-  }
-
-  console.log(
-    "✅ ElevenLabs Agent initialized with Agent ID:",
-    elevenLabsAgentId
-  );
-}
-
-/**
  * ===============================================================================
  * CONVERSATION MANAGEMENT
  * ===============================================================================
@@ -598,9 +581,6 @@ async function getConversationStatus(sessionId) {
     createdAt: conversationSession.createdAt,
   };
 }
-
-// Initialize environment on module load
-validateEnvironment();
 
 module.exports = {
   createConversation,

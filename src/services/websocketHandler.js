@@ -575,6 +575,21 @@ function linearToUlaw(sample) {
 }
 
 /**
+ * Downsample PCM audio from 16kHz to 8kHz (simple decimation)
+ */
+function downsamplePcm16to8(pcm16Buffer) {
+  // Simple downsampling: take every other sample
+  const pcm8Buffer = Buffer.alloc(pcm16Buffer.length / 2);
+  
+  for (let i = 0; i < pcm16Buffer.length; i += 4) { // 4 bytes = 2 samples at 16-bit
+    // Take every other sample (decimation by 2)
+    pcm8Buffer.writeInt16LE(pcm16Buffer.readInt16LE(i), i / 2);
+  }
+  
+  return pcm8Buffer;
+}
+
+/**
  * ===============================================================================
  * AUDIO STREAMING FUNCTIONS
  * ===============================================================================
@@ -620,12 +635,27 @@ function setupAudioStreaming(sessionId) {
             // ACEPHONE FORMAT: Convert PCM to µ-law and send as media event
             try {
               const pcmBuffer = Buffer.from(agentMessage.audio, "base64");
-              console.log(`🔊 Converting ${pcmBuffer.length} bytes PCM to µ-law for Acephone`);
+              console.log(`🔊 Converting ${pcmBuffer.length} bytes PCM (16kHz) to µ-law (8kHz) for Acephone`);
               
-              const ulawBuffer = convertPcmToUlaw(pcmBuffer);
-              const ulawBase64 = ulawBuffer.toString("base64");
+              // ElevenLabs sends 16kHz PCM, but Acephone expects 8kHz µ-law
+              // We need to downsample from 16kHz to 8kHz first
+              const downsampledPcm = downsamplePcm16to8(pcmBuffer);
+              console.log(`🔄 Downsampled from ${pcmBuffer.length} to ${downsampledPcm.length} bytes`);
               
-              console.log(`📤 Sending ${ulawBuffer.length} bytes µ-law audio to Acephone`);
+              const ulawBuffer = convertPcmToUlaw(downsampledPcm);
+              
+              // Acephone expects multiples of 160 bytes - pad if necessary
+              let paddedUlawBuffer = ulawBuffer;
+              const remainder = ulawBuffer.length % 160;
+              if (remainder !== 0) {
+                const paddingNeeded = 160 - remainder;
+                console.log(`⚠️ Padding µ-law buffer by ${paddingNeeded} bytes (${ulawBuffer.length} -> ${ulawBuffer.length + paddingNeeded})`);
+                paddedUlawBuffer = Buffer.concat([ulawBuffer, Buffer.alloc(paddingNeeded, 0xFF)]);
+              }
+              
+              const ulawBase64 = paddedUlawBuffer.toString("base64");
+              
+              console.log(`📤 Sending ${paddedUlawBuffer.length} bytes µ-law audio to Acephone (base64: ${ulawBase64.length} chars)`);
 
               // Mark that agent has spoken (for first audio chunk)
               if (!connection.agentHasSpoken) {
@@ -633,13 +663,16 @@ function setupAudioStreaming(sessionId) {
                 console.log("🎤 Agent has now spoken - ready to process user audio");
               }
 
-              sendAcephoneEvent(connection.websocket, currentSessionId, {
+              const mediaEvent = {
                 event: "media",
                 media: {
                   timestamp: Date.now(),
                   payload: ulawBase64
                 }
-              });
+              };
+              
+              console.log("📋 Sending Acephone media event:", JSON.stringify(mediaEvent, null, 2));
+              sendAcephoneEvent(connection.websocket, currentSessionId, mediaEvent);
             } catch (sendError) {
               console.error(
                 "❌ Failed to send Acephone audio:",

@@ -403,10 +403,6 @@ async function sendAudioToAgent(sessionId, audioData) {
       user_audio_chunk: audioData, // Base64 encoded audio from caller
     };
 
-    console.log(
-      `🎵 Sending audio to ElevenLabs - Session: ${sessionId}, Data size: ${audioData.length} chars`
-    );
-
     // SEND TO AGENT: Forward caller's audio to ElevenLabs for processing
     // This will trigger AI processing and eventually generate response audio
     await sendToElevenLabs(sessionId, audioMessage);

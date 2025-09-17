@@ -96,7 +96,7 @@ async function handlePostCallWebhook(req, res) {
           elevenLabsCompleteData.analysis?.transcript_summary || "",
         AllDynamicVariables: allDynamicVariables,
         AllCollectedData: allCollectedData,
-        DataExtractedByAI: allCollectedData
+        DataExtractedByAI: allCollectedData,
       };
 
       console.log("🔗 ===== COMBINED DATA FOR GOOGLE SHEETS =====");
@@ -134,7 +134,7 @@ async function handlePostCallWebhook(req, res) {
         PhoneCallMetadata: "",
         AllDynamicVariables: allDynamicVariables,
         AllCollectedData: allCollectedData,
-        DataExtractedByAI: allCollectedData
+        DataExtractedByAI: allCollectedData,
       };
 
       console.log("📊 ===== ELEVENLABS DATA ONLY =====");

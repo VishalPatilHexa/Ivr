@@ -98,5 +98,5 @@ module.exports = {
   getPhoneNumbers: getPhoneNumbersController,
   configurePhone,
   getAgentInfo: getAgentInfoController,
-  checkAccess
+  checkAccess,
 };

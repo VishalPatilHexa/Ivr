@@ -36,19 +36,15 @@ const wss = new WebSocket.Server({ server });
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
-
 // WebSocket connection handling
 wss.on("connection", (ws, req) => {
   handleConnection(ws, req);
 });
 
-
 // WebSocket server error handling
 wss.on("error", (error) => {
   console.error("❌ WebSocket Server Error:", error);
 });
-
-
 
 // Cleanup function for expired sessions
 setInterval(() => {

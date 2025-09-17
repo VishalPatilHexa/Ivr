@@ -25,7 +25,6 @@ const activeConnections = new Map();
 // Import service modules directly
 const elevenLabsAgentService = require("../../services/elevenLabsAgent");
 
-
 /**
  * Main WebSocket connection handler - routes connections based on URL path
  */
@@ -140,18 +139,19 @@ function handleKnowlarityStream(websocket, urlPath) {
           await initializeAgentConversationAfterMetaData(sessionId, metadata);
           return;
         } else {
-          console.log(`📤 First message was audio, not metadata for session: ${sessionId}`);
+          console.log(
+            `📤 First message was audio, not metadata for session: ${sessionId}`
+          );
           // Initialize with default values if no metadata
           await initializeAgentConversationAfterMetaData(sessionId, null);
           // Continue processing this message as audio - don't return
         }
-
       }
 
       // Route audio and control messages
       const connection = activeConnections.get(sessionId);
       const agentConversation = connection?.agentConversation;
-      
+
       if (incomingMessage instanceof Buffer) {
         // Try to parse as JSON first (for client audio messages)
         try {
@@ -348,7 +348,7 @@ async function processInitialMetadata(metadataMessage, sessionId) {
         callid: metadata.callid,
         virtual_number: metadata.virtual_number,
         customer_number: metadata.customer_number,
-        metadata: metadata.metadata
+        metadata: metadata.metadata,
       };
     }
 
@@ -577,23 +577,17 @@ function cleanupSession(sessionId, agentConversation) {
  * ===============================================================================
  */
 
-
-
-
 /**
  * ===============================================================================
  * SYSTEM MANAGEMENT
  * ===============================================================================
  */
 
-
-
 /**
  * ===============================================================================
  * SERVICE INTEGRATION FUNCTIONS
  * ===============================================================================
  */
-
 
 // Update call status
 function handleCallStatusUpdate(sessionId, statusUpdate) {
@@ -616,7 +610,10 @@ function handleCallStatusUpdate(sessionId, statusUpdate) {
     }
 
     // Status updates for external calls are handled gracefully
-    console.log("📊 Status update logged:", { sessionId, status: statusUpdate.status });
+    console.log("📊 Status update logged:", {
+      sessionId,
+      status: statusUpdate.status,
+    });
   } catch (error) {
     // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
     if (statusUpdate.isExternal || sessionId.startsWith("web_")) {
@@ -671,17 +668,20 @@ async function initializeAgentConversationAfterMetaData(sessionId, metadata) {
 
     // Extract agentId and treatmentType from decoded metadata
     let agentId, treatmentType;
-    
+
     if (metadata && metadata.metadata) {
       agentId = metadata.metadata.agentId;
       treatmentType = metadata.metadata.treatmentType;
     } else {
       // Use defaults if no metadata provided
-      console.log("⚠️ No metadata provided, using defaults for session:", sessionId);
+      console.log(
+        "⚠️ No metadata provided, using defaults for session:",
+        sessionId
+      );
       agentId = "default_agent_id"; // You should replace with actual default
       treatmentType = "Piles";
     }
-    
+
     if (!agentId || agentId === "default_agent_id") {
       console.warn("⚠️ Using default agentId for session:", sessionId);
       // Continue with default - don't return
@@ -692,7 +692,7 @@ async function initializeAgentConversationAfterMetaData(sessionId, metadata) {
       agentId,
       sessionId,
       {
-        treatmentType: treatmentType || "Piles" // fallback
+        treatmentType: treatmentType || "Piles", // fallback
       }
     );
 
@@ -718,15 +718,17 @@ async function initializeAgentConversationAfterMetaData(sessionId, metadata) {
       );
     }
 
-    console.log("✅ Agent conversation initialized successfully for session:", sessionId);
-    
+    console.log(
+      "✅ Agent conversation initialized successfully for session:",
+      sessionId
+    );
   } catch (error) {
     console.error("❌ Error creating ElevenLabs conversation:", error);
-    
+
     // Send error response to Knowlarity
     const connection = activeConnections.get(sessionId);
     await sendErrorResponse(connection, error.message);
-    
+
     // Close connection on initialization failure
     if (connection?.websocket?.readyState === WebSocket.OPEN) {
       connection.websocket.close(1011, "Failed to initialize conversation");

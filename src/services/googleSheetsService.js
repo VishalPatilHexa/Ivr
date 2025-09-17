@@ -2,16 +2,16 @@
  * ===============================================================================
  * GOOGLE SHEETS SERVICE
  * ===============================================================================
- * 
+ *
  * Service for writing ElevenLabs webhook data to Google Sheets
  */
 
 const axios = require("axios");
-require("dotenv").config(); 
+require("dotenv").config();
 
 async function addDataToSheet(googleSheetEntry) {
   try {
-    const url = process.env.SHEET_URL; 
+    const url = process.env.SHEET_URL;
     const data = {
       function: "addRowToSheet",
       parameters: [googleSheetEntry],

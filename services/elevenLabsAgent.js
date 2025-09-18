@@ -157,25 +157,25 @@ function initializeConversation(agentWebSocket, sessionId) {
       ...conversationSession?.patientQuery,
     },
     // Optional: Add conversation config overrides
-    conversation_config_override: {
-      agent: {
-        language: "hi", // Set agent language to Hindi
-        think_before_speaking: false, // Reduce response latency
-      },
-      tts: {
-        chunk_length_schedule: [120, 160, 250, 290], // Faster audio chunking
-      },
-      asr: {
-        quality: "low", // Faster speech recognition
-        user_input_audio_format: "pcm_16000",
-      },
-      turn_detection: {
-        type: "server_vad",
-        threshold: 0.3, // Lower threshold for faster turn detection
-        prefix_padding_ms: 300, // Reduced padding
-        silence_duration_ms: 800, // Shorter silence detection
-      },
-    },
+    // conversation_config_override: {
+    //   agent: {
+    //     language: "hi", // Set agent language to Hindi
+    //     think_before_speaking: false, // Reduce response latency
+    //   },
+    //   tts: {
+    //     chunk_length_schedule: [120, 160, 250, 290], // Faster audio chunking
+    //   },
+    //   asr: {
+    //     quality: "low", // Faster speech recognition
+    //     user_input_audio_format: "pcm_16000",
+    //   },
+    //   turn_detection: {
+    //     type: "server_vad",
+    //     threshold: 0.3, // Lower threshold for faster turn detection
+    //     prefix_padding_ms: 300, // Reduced padding
+    //     silence_duration_ms: 800, // Shorter silence detection
+    //   },
+    // },
   };
 
   console.log(

@@ -171,7 +171,7 @@ function initializeConversation(agentWebSocket, sessionId) {
       },
       turn_detection: {
         type: "server_vad",
-        threshold: 0.5, // Lower threshold for faster turn detection
+        threshold: 0.3, // Lower threshold for faster turn detection
         prefix_padding_ms: 300, // Reduced padding
         silence_duration_ms: 800, // Shorter silence detection
       },

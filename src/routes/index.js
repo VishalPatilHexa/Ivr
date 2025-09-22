@@ -1,13 +1,9 @@
 const express = require("express");
-const healthRoutes = require("./healthRoutes");
-const elevenLabsRoutes = require("./elevenLabsRoutes");
-const elevenLabsWebhookRoutes = require("./elevenLabsWebhookRoutes");
+const v1Routes = require("./v1");
 
 const router = express.Router();
 
-// Mount all routes
-router.use("/", healthRoutes);
-router.use("/", elevenLabsRoutes);
-router.use("/", elevenLabsWebhookRoutes);
+// Mount all API versions
+router.use("/api/v1", v1Routes);
 
 module.exports = router;

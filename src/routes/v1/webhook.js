@@ -10,15 +10,15 @@ const express = require("express");
 const router = express.Router();
 const {
   handlePostCallWebhook,
-} = require("../controllers/elevenLabsWebhookController");
+} = require("../../controllers/webhook");
 
 /**
- * POST /api/webhook/elevenlabs/post-call
+ * POST /elevenlabs/post-call
  * Handle ElevenLabs post-call webhook
  * Use raw body parser for text webhooks that aren't valid JSON
  */
 router.post(
-  "/api/webhook/elevenlabs/post-call",
+  "/elevenlabs/post-call",
   express.raw({ type: "*/*" }),
   (req, res, next) => {
     // Handle non-JSON webhook data
@@ -51,10 +51,10 @@ router.post(
 );
 
 /**
- * GET /api/webhook/elevenlabs/health
+ * GET /elevenlabs/health
  * Health check for webhook endpoint
  */
-router.get("/api/webhook/elevenlabs/health", (req, res) => {
+router.get("/elevenlabs/health", (req, res) => {
   res.status(200).json({
     success: true,
     message: "ElevenLabs webhook endpoint is healthy",

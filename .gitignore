@@ -141,8 +141,15 @@ Thumbs.db
 *.swo
 *~
 
-# Uploads directory
-uploads/
+# Storage directories
+storage/uploads/*
+storage/processed/*
+storage/thumbnails/*
+storage/logs/*
+!storage/uploads/.gitkeep
+!storage/processed/.gitkeep
+!storage/thumbnails/.gitkeep
+!storage/logs/.gitkeep
 
 # Temporary files
 tmp/

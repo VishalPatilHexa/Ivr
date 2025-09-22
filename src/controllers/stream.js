@@ -4,7 +4,7 @@ const {
   configurePhoneNumber,
   getAgentInfo,
   checkConversationalAIAccess,
-} = require("../../services/elevenLabsTwilioService");
+} = require("../services/stream");
 
 // ElevenLabs Controller - handles ElevenLabs Twilio integration
 

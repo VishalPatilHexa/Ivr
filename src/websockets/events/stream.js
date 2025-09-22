@@ -23,7 +23,7 @@ const { v4: uuidv4 } = require("uuid");
 const activeConnections = new Map();
 
 // Import service modules directly
-const elevenLabsAgentService = require("../../services/elevenLabsAgent");
+const elevenLabsAgentService = require("../../streaming/adapters/elevenlabs");
 
 /**
  * Main WebSocket connection handler - routes connections based on URL path

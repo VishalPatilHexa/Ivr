@@ -1,40 +1,17 @@
-const express = require("express");
 const WebSocket = require("ws");
 const http = require("http");
-const cors = require("cors");
-
 require("dotenv").config();
 
+const app = require("./src/app");
+const config = require("./src/config");
+const Logger = require("./src/utils/logger");
 const {
   handleConnection,
   cleanup,
-} = require("./src/services/websocketHandler");
- 
-// Import routes
-const routes = require("./src/routes");
-
-const app = express();
-
-// CORS configuration
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST"],
-  })
-);
-
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Use routes
-app.use(routes);
+} = require("./src/websockets/events/stream");
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
-app.use(express.static("public"));
-app.use("/uploads", express.static("uploads"));
 
 // WebSocket connection handling
 wss.on("connection", (ws, req) => {
@@ -43,26 +20,37 @@ wss.on("connection", (ws, req) => {
 
 // WebSocket server error handling
 wss.on("error", (error) => {
-  console.error("❌ WebSocket Server Error:", error);
+  Logger.error("WebSocket Server Error:", error);
 });
 
 // Cleanup function for expired sessions
 setInterval(() => {
   cleanup();
-}, 5 * 60 * 1000); // Check every 5 minutes
+}, config.streaming.cleanupInterval);
 
-const PORT = process.env.PORT || 3000;
+const PORT = config.port;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  Logger.success(`Server running on port ${PORT}`);
+  Logger.info(`Environment: ${config.nodeEnv}`);
+  Logger.info(`API Base URL: http://localhost:${PORT}/api/v1`);
 });
 
 // Graceful shutdown
-process.on("SIGTERM", () => {
-  cleanup();
-  server.close();
-});
+const gracefulShutdown = (signal) => {
+  Logger.info(`Received ${signal}. Starting graceful shutdown...`);
+  
+  server.close(() => {
+    Logger.info('HTTP server closed');
+    cleanup();
+    process.exit(0);
+  });
 
-process.on("SIGINT", () => {
-  cleanup();
-  server.close();
-});
+  // Force close server after 10 seconds
+  setTimeout(() => {
+    Logger.error('Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

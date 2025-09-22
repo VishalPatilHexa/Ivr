@@ -10,8 +10,8 @@
 const {
   activeConnections,
   cleanupSession,
-} = require("../services/websocketHandler");
-const { addDataToSheet } = require("../services/googleSheetsService");
+} = require("../websockets/events/stream");
+const { addDataToSheet } = require("../services/analytics");
 
 /**
  * Handle ElevenLabs post-call webhook

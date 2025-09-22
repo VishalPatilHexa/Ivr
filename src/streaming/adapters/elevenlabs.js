@@ -1,11 +1,14 @@
-const WebSocket = require("ws");
-
 /*
  * ===============================================================================
- * ELEVENLABS CONVERSATIONAL AI AGENT
+ * ELEVENLABS CONVERSATIONAL AI ADAPTER
  * ===============================================================================
  *
- * PURPOSE: Manages real-time voice conversations with ElevenLabs AI agents
+ * PURPOSE: Main interface for ElevenLabs AI agent integration
+ * 
+ * This adapter coordinates between different modules:
+ * - Conversation management
+ * - Audio processing  
+ * - Client communication bridge
  *
  * WORKFLOW:
  * 1. Create conversation session with ElevenLabs API
@@ -13,29 +16,16 @@ const WebSocket = require("ws");
  * 3. Handle bidirectional audio/text communication
  * 4. Process agent responses and forward to calling system
  *
- * AUDIO FLOW:
- * - INPUT: Receives base64 audio chunks from caller
- * - OUTPUT: Streams agent audio responses back to caller
- * - FORMATS: Handles PCM/base64 audio conversion
- *
  * ===============================================================================
  */
 
-// Environment configuration
-const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
-const elevenLabsAgentId = process.env.ELEVENLABS_AGENT_ID;
-
-// Active conversations storage
-const activeConversations = new Map();
-
-// CRITICAL CALLBACK STORAGE: This stores the callback function from websocketHandler.js
-// When setupAudioStreaming() calls setClientMessageHandler(), the callback gets stored here
-// This callback is THE BRIDGE that sends agent responses back to the caller
-let messageForwardingHandler = null;
+const conversationManager = require('../managers/conversation');
+const audioProcessor = require('../processors/audio');
+const clientBridge = require('../bridges/client');
 
 /**
  * ===============================================================================
- * CONVERSATION MANAGEMENT
+ * MAIN API FUNCTIONS
  * ===============================================================================
  */
 
@@ -43,495 +33,49 @@ let messageForwardingHandler = null;
  * Create new conversation session with ElevenLabs
  */
 async function createConversation(agentId, sessionId, patientQuery) {
-  try {
-    const conversationSession = {
-      sessionId,
-      patientQuery,
-      patientData: { query: patientQuery },
-      isActive: true,
-      createdAt: new Date(),
-      agentWebSocket: null,
-    };
-
-    activeConversations.set(sessionId, conversationSession);
-
-    // Establish WebSocket connection to ElevenLabs
-    const agentWebSocket = await createElevenLabsWebSocket(
-      agentId,
-      sessionId,
-      patientQuery
-    );
-    conversationSession.agentWebSocket = agentWebSocket;
-
-    return conversationSession;
-  } catch (error) {
-    console.error("❌ Error creating conversation:", error);
-    throw error;
-  }
+  return await conversationManager.createConversation(agentId, sessionId, patientQuery);
 }
-
-/**
- * ===============================================================================
- * WEBSOCKET CONNECTION MANAGEMENT
- * ===============================================================================
- */
-
-/**
- * Create WebSocket connection to ElevenLabs Conversational AI
- */
-async function createElevenLabsWebSocket(agentId, sessionId, patientQuery) {
-  return new Promise((resolve, reject) => {
-    const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}`;
-
-
-    const agentWebSocket = new WebSocket(websocketUrl, {
-      headers: { "xi-api-key": elevenLabsApiKey },
-    });
-
-    agentWebSocket.on("open", () => {
-
-      // Initialize conversation with user context
-      initializeConversation(agentWebSocket, sessionId);
-      resolve(agentWebSocket);
-    });
-
-    agentWebSocket.on("message", (messageData) => {
-      handleElevenLabsMessage(sessionId, messageData);
-    });
-
-    agentWebSocket.on("error", (connectionError) => {
-      console.error("❌ ElevenLabs WebSocket error:", connectionError);
-      reject(connectionError);
-    });
-
-    agentWebSocket.on("close", (code, reason) => {
-
-      // Trigger conversation end to properly close Knowlarity connection
-      handleConversationEnd(sessionId);
-    });
-  });
-}
-
-/**
- * Initialize conversation with user context and settings
- */
-function initializeConversation(agentWebSocket, sessionId) {
-  const conversationSession = activeConversations.get(sessionId);
-
-  const initializationMessage = {
-    type: "conversation_initiation_client_data",
-    dynamic_variables: {
-      user_name: "Patient",
-      language: "hindi",
-      user_id: sessionId,
-      ...conversationSession?.patientQuery,
-    },
-    // Optional: Add conversation config overrides
-    conversation_config_override: {
-      agent: {
-        language: "hi", // Set agent language to Hindi
-      },
-    },
-  };
-
-  agentWebSocket.send(JSON.stringify(initializationMessage));
-}
-
-/**
- * ===============================================================================
- * MESSAGE PROCESSING
- * ===============================================================================
- */
-
-/**
- * Process all incoming messages from ElevenLabs
- */
-async function handleElevenLabsMessage(sessionId, messageData) {
-  try {
-    const parsedMessage = JSON.parse(messageData);
-    const conversationSession = activeConversations.get(sessionId);
-
-    if (!conversationSession) {
-      return;
-    }
-
-
-    switch (parsedMessage.type) {
-      case "user_transcript":
-        handleUserTranscript(sessionId, parsedMessage);
-        break;
-
-      case "agent_response":
-        handleAgentTextResponse(sessionId, parsedMessage);
-        break;
-
-      case "agent_response_audio_delta":
-        //calling this function for each audio chunk
-        handleAgentAudioChunk(sessionId, parsedMessage);
-        break;
-
-      case "audio":
-        handleDirectAudio(sessionId, parsedMessage);
-        break;
-
-      case "agent_response_audio_end":
-        handleAgentAudioEnd(sessionId);
-        break;
-
-      case "conversation_end":
-        handleConversationEnd(sessionId);
-        break;
-
-      case "ping":
-        handlePing(parsedMessage, conversationSession);
-        break;
-
-      case "conversation_initiation_metadata":
-        handleConversationReady(sessionId, parsedMessage, conversationSession);
-        break;
-
-      case "interruption":
-        handleInterruption(sessionId, parsedMessage);
-        break;
-
-      case "agent_response_correction":
-        handleAgentResponseCorrection(sessionId, parsedMessage);
-        break;
-
-      default:
-    }
-  } catch (error) {
-    console.error("❌ Error handling ElevenLabs message:", error);
-  }
-}
-
-/**
- * Handle user speech transcript
- *
- * SPEECH-TO-TEXT: Processes transcription of caller's speech from ElevenLabs
- * This shows what the caller said (useful for monitoring/logging)
- */
-function handleUserTranscript(sessionId, transcriptMessage) {
-  // EXTRACT TRANSCRIPT: Get the transcribed text of what the caller said
-  const userTranscript =
-    transcriptMessage.user_transcript_event?.user_transcript ||
-    transcriptMessage.user_transcript;
-
-  // TRANSCRIPT FORWARDING: Send transcript to websocketHandler for monitoring
-  // This is mainly for logging - the actual audio processing happens separately
-  forwardToClient(sessionId, {
-    type: "user_transcript",
-    text: userTranscript,
-  });
-}
-
-/**
- * Handle agent text response
- *
- * TEXT PROCESSING: Handles text responses from ElevenLabs agent
- * This provides the transcript of what the agent is saying
- */
-function handleAgentTextResponse(sessionId, responseMessage) {
-  // EXTRACT TEXT: Get agent's text response from various possible message formats
-  const agentResponseText =
-    responseMessage.agent_response_event?.agent_response ||
-    responseMessage.agent_response?.text ||
-    responseMessage.text;
-
-
-  if (agentResponseText) {
-    // TEXT FORWARDING: Send text to websocketHandler (mainly for logging/monitoring)
-    // The callback will log this text but the audio is what actually plays to caller
-    forwardToClient(sessionId, {
-      type: "agent_response",
-      text: agentResponseText,
-    });
-  }
-}
-
-/**
- * Handle streaming audio chunks from agent
- *
- * AUDIO STREAMING: Processes audio response chunks from ElevenLabs agent
- * This is called for each audio chunk as the agent speaks (streaming response)
- */
-function handleAgentAudioChunk(sessionId, audioMessage) {
-  if (audioMessage.agent_response_audio_delta_event?.delta_audio_base_64) {
-
-    // AUDIO FORWARDING: Send audio chunk to caller via the registered callback
-    // This triggers the callback in setupAudioStreaming() which sends audio to Knowlarity
-    forwardToClient(sessionId, {
-      type: "agent_audio",
-      audio: audioMessage.agent_response_audio_delta_event.delta_audio_base_64,
-    });
-  }
-}
-
-/**
- * Handle direct audio messages
- */
-function handleDirectAudio(sessionId, directAudioMessage) {
-  if (directAudioMessage.audio_event?.audio_base_64) {
-    forwardToClient(sessionId, {
-      type: "agent_audio",
-      audio: directAudioMessage.audio_event.audio_base_64,
-    });
-  }
-}
-
-/**
- * Handle agent finished speaking
- */
-function handleAgentAudioEnd(sessionId) {
-  forwardToClient(sessionId, {
-    type: "agent_audio_end",
-  });
-}
-
-/**
- * Handle conversation end
- */
-function handleConversationEnd(sessionId) {
-
-  // Clean up the conversation
-  endConversation(sessionId);
-
-  // Signal the client (Knowlarity) to close the call
-  forwardToClient(sessionId, {
-    type: "call_end",
-    message: "Call completed successfully",
-  });
-}
-
-/**
- * Handle ping/pong for connection keepalive
- */
-function handlePing(pingMessage, conversationSession) {
-
-  if (conversationSession?.agentWebSocket) {
-    const pongResponse = {
-      pong_event: {
-        event_id: pingMessage.ping_event?.event_id,
-      },
-    };
-    conversationSession.agentWebSocket.send(JSON.stringify(pongResponse));
-  }
-}
-
-/**
- * Handle conversation ready state
- */
-function handleConversationReady(sessionId, readyMessage, conversationSession) {
-
-  // Store conversation metadata
-  if (conversationSession) {
-    conversationSession.conversationId =
-      readyMessage.conversation_initiation_metadata_event?.conversation_id;
-    conversationSession.audioFormat =
-      readyMessage.conversation_initiation_metadata_event?.agent_output_audio_format;
-  }
-
-  // Trigger initial agent response for phone calls
-  setTimeout(() => {
-    if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
-      // For phone calls, we need the agent to speak first
-      // Send a minimal audio chunk to trigger agent response
-      const silentAudio = Buffer.alloc(320, 0).toString('base64'); // 20ms of silence at 16kHz
-      conversationSession.agentWebSocket.send(
-        JSON.stringify({
-          user_audio_chunk: silentAudio,
-        })
-      );
-    }
-  }, 1000);
-
-  forwardToClient(sessionId, {
-    type: "agent_ready",
-    message: "Agent is ready to start conversation",
-  });
-}
-
-/**
- * Handle user interruption of agent speech
- */
-function handleInterruption(sessionId) {
-
-  // Forward interruption signal to client if needed
-  forwardToClient(sessionId, {
-    type: "agent_interrupted",
-    message: "Agent speech was interrupted by user",
-  });
-}
-
-/**
- * Handle agent response correction
- */
-function handleAgentResponseCorrection(sessionId, correctionMessage) {
-
-  // The agent is correcting/updating its previous response
-  // This happens when the user interrupts and the agent adjusts its response
-  if (correctionMessage.agent_response_correction_event?.corrected_response) {
-
-    forwardToClient(sessionId, {
-      type: "agent_response_correction",
-      text: correctionMessage.agent_response_correction_event
-        .corrected_response,
-    });
-  }
-}
-
-/**
- * ===============================================================================
- * AUDIO COMMUNICATION
- * ===============================================================================
- */
 
 /**
  * Send audio chunk to ElevenLabs agent
- *
- * INCOMING AUDIO PROCESSING: Sends caller's audio to ElevenLabs for AI processing
- *
- * AUDIO FLOW: Caller → Knowlarity → WebSocket → THIS FUNCTION → ElevenLabs Agent
- * The agent processes this audio and generates responses that get sent back via callbacks
  */
 async function sendAudioToAgent(sessionId, audioData) {
-  try {
-    // AUDIO MESSAGE FORMATTING: Package audio for ElevenLabs API
-    const audioMessage = {
-      user_audio_chunk: audioData, // Base64 encoded audio from caller
-    };
-
-    // SEND TO AGENT: Forward caller's audio to ElevenLabs for processing
-    // This will trigger AI processing and eventually generate response audio
-    await sendToElevenLabs(sessionId, audioMessage);
-  } catch (error) {
-    console.error("❌ Error sending audio to agent:", error);
-  }
+  return await audioProcessor.sendAudioToAgent(sessionId, audioData);
 }
 
 /**
  * Send text message to ElevenLabs agent
  */
 async function sendTextToAgent(sessionId, textContent) {
-  try {
-    const textMessage = {
-      user_text: textContent,
-    };
-
-    await sendToElevenLabs(sessionId, textMessage);
-  } catch (error) {
-    console.error("❌ Error sending text to agent:", error);
-  }
-}
-
-/**
- * Send message to ElevenLabs WebSocket
- *
- * AGENT COMMUNICATION: Low-level function to send messages to ElevenLabs API
- * Used for sending audio chunks, text, and control messages to the AI agent
- */
-async function sendToElevenLabs(sessionId, messageToSend) {
-  // GET CONVERSATION: Retrieve the stored conversation session
-  const conversationSession = activeConversations.get(sessionId);
-
-  // WEBSOCKET VALIDATION: Ensure connection to ElevenLabs is still active
-  if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
-    // SEND MESSAGE: Forward message to ElevenLabs agent via WebSocket
-    conversationSession.agentWebSocket.send(JSON.stringify(messageToSend));
-  } else {
-    // CONNECTION LOST: ElevenLabs WebSocket is not available
-  }
-}
-
-/**
- * ===============================================================================
- * CLIENT COMMUNICATION
- * ===============================================================================
- */
-
-/**
- * Forward messages to the calling system
- *
- * CRITICAL BRIDGE FUNCTION: This is THE CONNECTION POINT between ElevenLabs and WebSocket
- *
- * HOW THE BRIDGE WORKS:
- * 1. ElevenLabs agent processes audio/text and calls this function
- * 2. This function executes the callback stored in 'messageForwardingHandler'
- * 3. The callback (from setupAudioStreaming) sends the message to Knowlarity WebSocket
- * 4. Knowlarity forwards it to the caller
- *
- * FLOW: ElevenLabs → THIS FUNCTION → CALLBACK → WebSocket → Knowlarity → Caller
- */
-function forwardToClient(sessionId, messageToForward) {
-  
-  // CALLBACK EXECUTION: Execute the callback registered by websocketHandler
-  if (messageForwardingHandler) {
-    // THIS IS THE BRIDGE: Calls the callback from setupAudioStreaming()
-    // The callback will send the message to the caller via Knowlarity WebSocket
-    messageForwardingHandler(sessionId, messageToForward);
-  } else {
-    // NO CALLBACK: WebSocket handler hasn't registered a callback yet
-  }
+  return await audioProcessor.sendTextToAgent(sessionId, textContent);
 }
 
 /**
  * Set handler for messages to be forwarded to calling system
- *
- * CALLBACK REGISTRATION POINT: This is where the WebSocket handler registers its callback
- *
- * REGISTRATION FLOW:
- * 1. websocketHandler.js calls setupAudioStreaming()
- * 2. setupAudioStreaming() calls THIS FUNCTION with a callback
- * 3. The callback gets STORED in 'messageForwardingHandler'
- * 4. Later, when ElevenLabs has responses, forwardToClient() EXECUTES this callback
- *
- * This creates the communication bridge: ElevenLabs → WebSocket → Caller
  */
 function setClientMessageHandler(messageHandler) {
-  // CALLBACK STORAGE: Store the callback from websocketHandler for later execution
-  messageForwardingHandler = messageHandler;
+  return clientBridge.setClientMessageHandler(messageHandler);
 }
-
-/**
- * ===============================================================================
- * CONVERSATION LIFECYCLE
- * ===============================================================================
- */
 
 /**
  * End conversation and cleanup resources
  */
 async function endConversation(sessionId) {
-  const conversationSession = activeConversations.get(sessionId);
-  if (conversationSession) {
-    if (conversationSession.agentWebSocket) {
-      conversationSession.agentWebSocket.close();
-    }
-    conversationSession.isActive = false;
-    activeConversations.delete(sessionId);
-  }
+  return await conversationManager.endConversation(sessionId);
 }
 
 /**
  * Get conversation details
  */
 function getConversation(sessionId) {
-  return activeConversations.get(sessionId);
+  return conversationManager.getConversation(sessionId);
 }
 
 /**
  * Get conversation status
  */
 async function getConversationStatus(sessionId) {
-  const conversationSession = activeConversations.get(sessionId);
-  if (!conversationSession) return null;
-
-  return {
-    sessionId,
-    isActive: conversationSession.isActive,
-    patientData: conversationSession.patientData,
-    createdAt: conversationSession.createdAt,
-  };
+  return await conversationManager.getConversationStatus(sessionId);
 }
 
 module.exports = {

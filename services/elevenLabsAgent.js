@@ -63,7 +63,6 @@ async function createConversation(agentId, sessionId, patientQuery) {
     );
     conversationSession.agentWebSocket = agentWebSocket;
 
-    console.log("✅ Conversation created for session:", sessionId);
     return conversationSession;
   } catch (error) {
     console.error("❌ Error creating conversation:", error);
@@ -84,17 +83,12 @@ async function createElevenLabsWebSocket(agentId, sessionId, patientQuery) {
   return new Promise((resolve, reject) => {
     const websocketUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}`;
 
-    console.log(
-      "🔗 Connecting to ElevenLabs WebSocket for session:",
-      sessionId
-    );
 
     const agentWebSocket = new WebSocket(websocketUrl, {
       headers: { "xi-api-key": elevenLabsApiKey },
     });
 
     agentWebSocket.on("open", () => {
-      console.log("✅ ElevenLabs WebSocket connected for session:", sessionId);
 
       // Initialize conversation with user context
       initializeConversation(agentWebSocket, sessionId);
@@ -111,13 +105,6 @@ async function createElevenLabsWebSocket(agentId, sessionId, patientQuery) {
     });
 
     agentWebSocket.on("close", (code, reason) => {
-      console.log("🔌 ElevenLabs WebSocket closed for session:", sessionId);
-      console.log(
-        "🔍 Close code:",
-        code,
-        "Reason:",
-        reason ? reason.toString() : "No reason provided"
-      );
 
       // Trigger conversation end to properly close Knowlarity connection
       handleConversationEnd(sessionId);
@@ -147,13 +134,6 @@ function initializeConversation(agentWebSocket, sessionId) {
     },
   };
 
-  console.log(
-    "📤 Initializing conversation with correct client data structure"
-  );
-  console.log(
-    "🔍 Initialization message:",
-    JSON.stringify(initializationMessage, null, 2)
-  );
   agentWebSocket.send(JSON.stringify(initializationMessage));
 }
 
@@ -172,12 +152,9 @@ async function handleElevenLabsMessage(sessionId, messageData) {
     const conversationSession = activeConversations.get(sessionId);
 
     if (!conversationSession) {
-      console.log("⚠️ No conversation found for session:", sessionId);
       return;
     }
 
-    console.log("📋 Processing ElevenLabs message:", parsedMessage.type);
-    console.log("🔍 Message details:", JSON.stringify(parsedMessage, null, 2));
 
     switch (parsedMessage.type) {
       case "user_transcript":
@@ -222,7 +199,6 @@ async function handleElevenLabsMessage(sessionId, messageData) {
         break;
 
       default:
-        console.log("❓ Unknown message type:", parsedMessage.type);
     }
   } catch (error) {
     console.error("❌ Error handling ElevenLabs message:", error);
@@ -240,7 +216,6 @@ function handleUserTranscript(sessionId, transcriptMessage) {
   const userTranscript =
     transcriptMessage.user_transcript_event?.user_transcript ||
     transcriptMessage.user_transcript;
-  console.log("👤 User transcript:", userTranscript);
 
   // TRANSCRIPT FORWARDING: Send transcript to websocketHandler for monitoring
   // This is mainly for logging - the actual audio processing happens separately
@@ -263,7 +238,6 @@ function handleAgentTextResponse(sessionId, responseMessage) {
     responseMessage.agent_response?.text ||
     responseMessage.text;
 
-  console.log("🤖 Agent response:", agentResponseText);
 
   if (agentResponseText) {
     // TEXT FORWARDING: Send text to websocketHandler (mainly for logging/monitoring)
@@ -283,7 +257,6 @@ function handleAgentTextResponse(sessionId, responseMessage) {
  */
 function handleAgentAudioChunk(sessionId, audioMessage) {
   if (audioMessage.agent_response_audio_delta_event?.delta_audio_base_64) {
-    console.log("🔊 Agent audio chunk received");
 
     // AUDIO FORWARDING: Send audio chunk to caller via the registered callback
     // This triggers the callback in setupAudioStreaming() which sends audio to Knowlarity
@@ -299,7 +272,6 @@ function handleAgentAudioChunk(sessionId, audioMessage) {
  */
 function handleDirectAudio(sessionId, directAudioMessage) {
   if (directAudioMessage.audio_event?.audio_base_64) {
-    console.log("🔊 Direct audio received");
     forwardToClient(sessionId, {
       type: "agent_audio",
       audio: directAudioMessage.audio_event.audio_base_64,
@@ -311,7 +283,6 @@ function handleDirectAudio(sessionId, directAudioMessage) {
  * Handle agent finished speaking
  */
 function handleAgentAudioEnd(sessionId) {
-  console.log("✅ Agent finished speaking");
   forwardToClient(sessionId, {
     type: "agent_audio_end",
   });
@@ -321,7 +292,6 @@ function handleAgentAudioEnd(sessionId) {
  * Handle conversation end
  */
 function handleConversationEnd(sessionId) {
-  console.log("🔚 Conversation ended for session:", sessionId);
 
   // Clean up the conversation
   endConversation(sessionId);
@@ -337,7 +307,6 @@ function handleConversationEnd(sessionId) {
  * Handle ping/pong for connection keepalive
  */
 function handlePing(pingMessage, conversationSession) {
-  console.log("📡 Ping received from ElevenLabs");
 
   if (conversationSession?.agentWebSocket) {
     const pongResponse = {
@@ -353,7 +322,6 @@ function handlePing(pingMessage, conversationSession) {
  * Handle conversation ready state
  */
 function handleConversationReady(sessionId, readyMessage, conversationSession) {
-  console.log("🎯 Conversation ready for session:", sessionId);
 
   // Store conversation metadata
   if (conversationSession) {
@@ -374,7 +342,6 @@ function handleConversationReady(sessionId, readyMessage, conversationSession) {
           user_audio_chunk: silentAudio,
         })
       );
-      console.log("📤 Sent silent audio to trigger agent greeting");
     }
   }, 1000);
 
@@ -388,7 +355,6 @@ function handleConversationReady(sessionId, readyMessage, conversationSession) {
  * Handle user interruption of agent speech
  */
 function handleInterruption(sessionId) {
-  console.log("🛑 User interruption detected for session:", sessionId);
 
   // Forward interruption signal to client if needed
   forwardToClient(sessionId, {
@@ -401,15 +367,10 @@ function handleInterruption(sessionId) {
  * Handle agent response correction
  */
 function handleAgentResponseCorrection(sessionId, correctionMessage) {
-  console.log("🔄 Agent response correction for session:", sessionId);
 
   // The agent is correcting/updating its previous response
   // This happens when the user interrupts and the agent adjusts its response
   if (correctionMessage.agent_response_correction_event?.corrected_response) {
-    console.log(
-      "📝 Corrected response:",
-      correctionMessage.agent_response_correction_event.corrected_response
-    );
 
     forwardToClient(sessionId, {
       type: "agent_response_correction",
@@ -479,7 +440,6 @@ async function sendToElevenLabs(sessionId, messageToSend) {
     conversationSession.agentWebSocket.send(JSON.stringify(messageToSend));
   } else {
     // CONNECTION LOST: ElevenLabs WebSocket is not available
-    console.log("⚠️ Cannot send to ElevenLabs - WebSocket not ready");
   }
 }
 
@@ -503,20 +463,14 @@ async function sendToElevenLabs(sessionId, messageToSend) {
  * FLOW: ElevenLabs → THIS FUNCTION → CALLBACK → WebSocket → Knowlarity → Caller
  */
 function forwardToClient(sessionId, messageToForward) {
-  console.log(`🔗 Forwarding message to client for session ${sessionId}:`, messageToForward.type);
   
   // CALLBACK EXECUTION: Execute the callback registered by websocketHandler
   if (messageForwardingHandler) {
     // THIS IS THE BRIDGE: Calls the callback from setupAudioStreaming()
     // The callback will send the message to the caller via Knowlarity WebSocket
-    console.log("✅ Executing message forwarding handler");
     messageForwardingHandler(sessionId, messageToForward);
   } else {
     // NO CALLBACK: WebSocket handler hasn't registered a callback yet
-    console.log(
-      "⚠️ No message handler registered - message dropped:",
-      messageToForward.type
-    );
   }
 }
 
@@ -536,7 +490,6 @@ function forwardToClient(sessionId, messageToForward) {
 function setClientMessageHandler(messageHandler) {
   // CALLBACK STORAGE: Store the callback from websocketHandler for later execution
   messageForwardingHandler = messageHandler;
-  console.log("✅ Message forwarding handler registered - bridge established");
 }
 
 /**
@@ -556,7 +509,6 @@ async function endConversation(sessionId) {
     }
     conversationSession.isActive = false;
     activeConversations.delete(sessionId);
-    console.log("🧹 Conversation ended and cleaned up:", sessionId);
   }
 }
 

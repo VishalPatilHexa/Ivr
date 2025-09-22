@@ -119,12 +119,6 @@ function amplifyAudioVolume(audioBuffer, amplificationFactor = 2.0) {
  */
 function handleKnowlarityStream(websocket, urlPath) {
   const sessionId = urlPath.split("/")[2];
-  console.log(
-    "📞 New Knowlarity call stream connection for session:",
-    sessionId
-  );
-  console.log("🔍 URL Path:", urlPath);
-  console.log("🌐 WebSocket Ready State:", websocket.readyState);
 
   // STEP 1: Store connection and setup call session
   // Detect client type from session ID or will be updated from metadata
@@ -136,13 +130,6 @@ function handleKnowlarityStream(websocket, urlPath) {
     connectedAt: new Date(),
     agentConversation: null, // Will be set when ElevenLabs agent is initialized
   });
-  console.log(
-    "💾 Stored connection for session:",
-    sessionId,
-    "type:",
-    clientType
-  );
-  console.log("📊 Total active connections:", activeConnections.size);
 
   // Create temporary session for external calls
   const callSession = {
@@ -163,16 +150,11 @@ function handleKnowlarityStream(websocket, urlPath) {
       // Check if call has already ended
       let connection = activeConnections.get(sessionId);
       if (connection?.callEnded) {
-        console.log(
-          "🚫 Ignoring message - call already ended for session:",
-          sessionId
-        );
         return;
       }
 
       // Handle initial metadata from Knowlarity
       if (isFirstMessage) {
-        console.log(`🎆 Processing first message for session: ${sessionId}`);
         // Set flag IMMEDIATELY and SYNCHRONOUSLY to prevent race condition
         isFirstMessage = false;
 
@@ -181,9 +163,6 @@ function handleKnowlarityStream(websocket, urlPath) {
           await initializeAgentConversationAfterMetaData(sessionId, metadata);
           return;
         } else {
-          console.log(
-            `📤 First message was audio, not metadata for session: ${sessionId}`
-          );
           // Initialize with default values if no metadata
           await initializeAgentConversationAfterMetaData(sessionId, null);
           // Continue processing this message as audio - don't return
@@ -223,24 +202,12 @@ function handleKnowlarityStream(websocket, urlPath) {
         handleControlMessages(incomingMessage, sessionId, agentConversation);
       }
     } catch (error) {
-      console.error("❌ Error processing message for session:", sessionId);
-      console.error("💥 Error details:", error.message);
-      console.error(
-        "🔍 Message type:",
-        incomingMessage instanceof Buffer ? "Binary" : "Text"
-      );
-      console.error(
-        "🔍 Message preview:",
-        incomingMessage instanceof Buffer
-          ? `Buffer(${incomingMessage.length})`
-          : incomingMessage.toString().substring(0, 100)
-      );
+      console.error("❌ Error processing message for session:", sessionId, error.message);
     }
   });
 
   websocket.on("error", (event) => {
-    console.error("❌ WebSocket error for session:", event);
-    console.error("💥 Error details:", event.message);
+    console.error("❌ WebSocket error for session:", sessionId, event.message);
   });
 
   // STEP 5: Setup connection lifecycle handlers
@@ -976,10 +943,6 @@ function setupAudioStreaming(sessionId) {
         }
       } else {
         // CONNECTION LOST: WebSocket connection is closed or not available
-        console.log(
-          "⚠️ Cannot send to caller - WebSocket connection lost for session:",
-          sessionId
-        );
       }
     }
     // ELSE: Message is for a different session - ignore (normal with multiple calls)
@@ -999,10 +962,6 @@ async function tryProcessAsMetadata(incomingMessage, sessionId) {
         incomingMessage,
         sessionId
       );
-      console.log(
-        `🔍 Metadata processed for session: ${sessionId}`,
-        metadataResult
-      );
 
       return metadataResult?.metadata;
     }
@@ -1018,8 +977,6 @@ async function tryProcessAsMetadata(incomingMessage, sessionId) {
  */
 async function processInitialMetadata(metadataMessage, sessionId) {
   try {
-    console.log(`📋 Processing metadata for session: ${sessionId}`);
-
     // Parse metadata (handle single quotes format)
     const rawMetadata = metadataMessage.toString();
     const metadata = parseKnowlarityMetadata(rawMetadata);
@@ -1038,7 +995,6 @@ async function processInitialMetadata(metadataMessage, sessionId) {
       };
     }
 
-    // Update status
     handleCallStatusUpdate(sessionId, { status: "connected" });
 
     return { success: true, metadata };
@@ -1278,38 +1234,17 @@ function cleanupSession(sessionId, agentConversation) {
 // Update call status
 function handleCallStatusUpdate(sessionId, statusUpdate) {
   // Validate input parameters
-  if (!sessionId) {
-    console.log("⚠️ Invalid sessionId provided for status update:", sessionId);
-    return;
-  }
-
-  if (!statusUpdate || !statusUpdate.status) {
-    console.log("⚠️ Invalid statusUpdate provided for session:", sessionId);
+  if (!sessionId || !statusUpdate || !statusUpdate.status) {
     return;
   }
 
   try {
-    // Check if this is a web client session (sessions starting with 'web_')
-    const isWebClientSession = sessionId.startsWith("web_");
-
-    if (isWebClientSession) {
-    }
-
     // Status updates for external calls are handled gracefully
-    console.log("📊 Status update logged:", {
-      sessionId,
-      status: statusUpdate.status,
-    });
   } catch (error) {
     // For external sessions (Knowlarity/Gupshup) or web client sessions, this is expected behavior
     if (statusUpdate.isExternal || sessionId.startsWith("web_")) {
       return;
     }
-
-    console.error(
-      "❌ Unexpected status update failure for internal session:",
-      sessionId
-    );
   }
 }
 

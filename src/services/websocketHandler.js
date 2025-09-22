@@ -30,21 +30,13 @@ const elevenLabsAgentService = require("../../services/elevenLabsAgent");
  */
 function handleConnection(websocket, request) {
   console.log("🌐 NEW WEBSOCKET CONNECTION RECEIVED");
-  console.log("🔗 Request URL:", request.url);
-  console.log("🏠 Request Host:", request.headers.host);
-  console.log("📊 Request Headers:", JSON.stringify(request.headers, null, 2));
 
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
     const urlPath = url.pathname;
 
-    console.log("📍 Parsed URL path:", urlPath);
-    console.log("🌐 WebSocket readyState:", websocket.readyState);
-    console.log("🕐 Timestamp:", new Date().toISOString());
-
     // Route to Knowlarity stream handler
     if (urlPath.startsWith("/knowlarity-stream/")) {
-      console.log("➡️ ROUTING TO KNOWLARITY HANDLER");
       handleKnowlarityStream(websocket, urlPath);
       return;
     }

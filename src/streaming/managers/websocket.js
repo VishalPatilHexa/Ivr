@@ -2,12 +2,12 @@
  * ===============================================================================
  * WEBSOCKET CONNECTION MANAGEMENT
  * ===============================================================================
- * 
+ *
  * Handles WebSocket connections to ElevenLabs Conversational AI
  */
 
 const WebSocket = require("ws");
-const messageProcessor = require('../processors/message');
+const messageProcessor = require("../processors/message");
 
 // Environment configuration
 const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
@@ -49,8 +49,10 @@ async function createElevenLabsWebSocket(agentId, sessionId, patientQuery) {
  * Initialize conversation with user context and settings
  */
 function initializeConversation(agentWebSocket, sessionId) {
-  const conversationManager = require('./conversation');
-  const conversationSession = conversationManager.activeConversations.get(sessionId);
+  // Import inside function to avoid circular dependency
+  const conversationManager = require("./conversation");
+  const conversationSession =
+    conversationManager.activeConversations.get(sessionId);
 
   const initializationMessage = {
     type: "conversation_initiation_client_data",
@@ -75,8 +77,10 @@ function initializeConversation(agentWebSocket, sessionId) {
  * Send message to ElevenLabs WebSocket
  */
 async function sendToElevenLabs(sessionId, messageToSend) {
-  const conversationManager = require('./conversation');
-  const conversationSession = conversationManager.activeConversations.get(sessionId);
+  // Import inside function to avoid circular dependency  
+  const conversationManager = require("./conversation");
+  const conversationSession =
+    conversationManager.activeConversations.get(sessionId);
 
   // WEBSOCKET VALIDATION: Ensure connection to ElevenLabs is still active
   if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
@@ -88,5 +92,5 @@ async function sendToElevenLabs(sessionId, messageToSend) {
 module.exports = {
   createElevenLabsWebSocket,
   initializeConversation,
-  sendToElevenLabs
+  sendToElevenLabs,
 };

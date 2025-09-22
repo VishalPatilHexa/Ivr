@@ -2,11 +2,11 @@
  * ===============================================================================
  * CONVERSATION MANAGEMENT
  * ===============================================================================
- * 
+ *
  * Manages ElevenLabs conversation sessions and lifecycle
  */
 
-const websocketManager = require('./websocket');
+// websocketManager imported inside function to avoid circular dependency
 
 // Active conversations storage
 const activeConversations = new Map();
@@ -28,6 +28,7 @@ async function createConversation(agentId, sessionId, patientQuery) {
     activeConversations.set(sessionId, conversationSession);
 
     // Establish WebSocket connection to ElevenLabs
+    const websocketManager = require("./websocket");
     const agentWebSocket = await websocketManager.createElevenLabsWebSocket(
       agentId,
       sessionId,
@@ -83,5 +84,5 @@ module.exports = {
   endConversation,
   getConversation,
   getConversationStatus,
-  activeConversations
+  activeConversations,
 };

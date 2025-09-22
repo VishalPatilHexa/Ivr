@@ -4,10 +4,10 @@
  * ===============================================================================
  *
  * PURPOSE: Main interface for ElevenLabs AI agent integration
- * 
+ *
  * This adapter coordinates between different modules:
  * - Conversation management
- * - Audio processing  
+ * - Audio processing
  * - Client communication bridge
  *
  * WORKFLOW:
@@ -19,9 +19,9 @@
  * ===============================================================================
  */
 
-const conversationManager = require('../managers/conversation');
-const audioProcessor = require('../processors/audio');
-const clientBridge = require('../bridges/client');
+const conversationManager = require("../managers/conversation");
+const audioProcessor = require("../processors/audio");
+const clientBridge = require("../bridges/client");
 
 /**
  * ===============================================================================
@@ -33,7 +33,11 @@ const clientBridge = require('../bridges/client');
  * Create new conversation session with ElevenLabs
  */
 async function createConversation(agentId, sessionId, patientQuery) {
-  return await conversationManager.createConversation(agentId, sessionId, patientQuery);
+  return await conversationManager.createConversation(
+    agentId,
+    sessionId,
+    patientQuery
+  );
 }
 
 /**

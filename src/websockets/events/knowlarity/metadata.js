@@ -110,7 +110,9 @@ function processMetadataObject(metadata) {
 
   Logger.info("✅ Metadata processed", {
     callid: metadata.callid,
-    hasNestedMetadata: !!metadata.metadata
+    hasNestedMetadata: !!metadata.metadata,
+    fullMetadata: metadata,
+    nestedMetadata: metadata.metadata
   });
 
   return metadata;

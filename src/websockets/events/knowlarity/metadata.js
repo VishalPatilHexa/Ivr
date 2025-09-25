@@ -108,21 +108,12 @@ function processMetadataObject(metadata) {
     }
   }
 
-  // Extract key information
-  const processedMetadata = {
-    callid: metadata.callid,
-    virtual_number: metadata.virtual_number,
-    customer_number: metadata.customer_number,
-    metadata: metadata.metadata,
-    raw: metadata,
-  };
-
   Logger.info("✅ Metadata processed", {
-    callid: processedMetadata.callid,
-    hasNestedMetadata: !!processedMetadata.metadata
+    callid: metadata.callid,
+    hasNestedMetadata: !!metadata.metadata
   });
 
-  return processedMetadata;
+  return metadata;
 }
 
 /**

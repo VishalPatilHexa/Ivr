@@ -28,14 +28,13 @@ async function handleConnection(websocket, urlPath, activeConnections) {
 
   try {
     // Store connection info
-    const clientType = sessionId.startsWith("web_") ? "web_client" : "knowlarity";
+    const clientType = "knowlarity";
     
     activeConnections.set(sessionId, {
       websocket,
       clientType,
       connectedAt: new Date(),
       agentConversation: null,
-      sessionId: sessionId,
     });
 
     // Create session in Redis

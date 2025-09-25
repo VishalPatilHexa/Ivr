@@ -241,9 +241,9 @@ async function initializeAgent(sessionId, metadata, activeConnections) {
       fullMetadataStructure: metadata
     });
 
-    if (metadata && metadata.metadata) {
-      agentId = metadata.metadata.agentId;
-      treatmentType = metadata.metadata.treatmentType;
+    if (metadata && metadata.metadata && metadata.metadata.metadata) {
+      agentId = metadata.metadata.metadata.agentId;
+      treatmentType = metadata.metadata.metadata.treatmentType;
       
       Logger.info("🎯 Extracted values", { 
         sessionId,

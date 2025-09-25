@@ -24,6 +24,11 @@ const activeConnections = new Map();
 
 // Import service modules directly
 const elevenLabsAgentService = require("../../streaming/adapters/elevenlabs");
+const { SessionManager } = require("../../core/managers");
+
+// Initialize SessionManager
+const sessionManager = new SessionManager();
+sessionManager.initialize();
 
 /**
  * Main WebSocket connection handler - routes connections based on URL path
@@ -109,7 +114,7 @@ function amplifyAudioVolume(audioBuffer, amplificationFactor = 2.0) {
  * ===============================================================================
  * Handles the complete audio streaming workflow between Knowlarity and ElevenLabs
  */
-function handleKnowlarityStream(websocket, urlPath) {
+async function handleKnowlarityStream(websocket, urlPath) {
   const sessionId = urlPath.split("/")[2];
 
   // STEP 1: Store connection and setup call session
@@ -123,13 +128,26 @@ function handleKnowlarityStream(websocket, urlPath) {
     agentConversation: null, // Will be set when ElevenLabs agent is initialized
   });
 
-  // Create temporary session for external calls
-  const callSession = {
-    sessionId: sessionId,
-    status: "external_connection",
-    createdAt: new Date(),
-    isExternal: true,
-  };
+  // STEP 1A: Create session in Redis using SessionManager
+  try {
+    const session = await sessionManager.createSession({
+      sessionId: sessionId,
+      clientInfo: {
+        type: clientType,
+        userAgent: "knowlarity-websocket",
+        ipAddress: "knowlarity-gateway"
+      },
+      metadata: {
+        callType: "inbound",
+        source: "knowlarity",
+        isExternal: true
+      }
+    });
+    
+    console.log("✅ Session created in Redis:", sessionId);
+  } catch (error) {
+    console.error("❌ Failed to create session:", error);
+  }
 
   // STEP 4: Setup message handling for audio streaming
   let isFirstMessage = true;
@@ -152,6 +170,17 @@ function handleKnowlarityStream(websocket, urlPath) {
 
         let metadata = await tryProcessAsMetadata(incomingMessage, sessionId);
         if (metadata) {
+          // Update session with metadata
+          try {
+            await sessionManager.updateSession(sessionId, {
+              metadata: metadata,
+              status: "active_with_metadata"
+            });
+            console.log("✅ Session updated with metadata:", sessionId);
+          } catch (error) {
+            console.error("❌ Failed to update session:", error);
+          }
+          
           await initializeAgentConversationAfterMetaData(sessionId, metadata);
           return;
         } else {
@@ -1165,16 +1194,19 @@ function handleControlMessages(controlMessage, sessionId, agentConversation) {
  */
 function setupConnectionLifecycle(websocket, sessionId) {
   // Handle connection close
-  websocket.on("close", () => {
+  websocket.on("close", async () => {
     // Close ElevenLabs WebSocket connection to end the conversation
     const connection = activeConnections.get(sessionId);
     if (connection?.agentConversation?.agentWebSocket) {
       connection.agentConversation.agentWebSocket.close();
     }
+    
+    // Clean up session
+    await cleanupSession(sessionId, connection?.agentConversation);
   });
 
   // Handle connection errors
-  websocket.on("error", (connectionError) => {
+  websocket.on("error", async (connectionError) => {
     console.error("❌ WebSocket error:", connectionError);
 
     // Close ElevenLabs WebSocket connection on error
@@ -1182,6 +1214,9 @@ function setupConnectionLifecycle(websocket, sessionId) {
     if (connection?.agentConversation?.agentWebSocket) {
       connection.agentConversation.agentWebSocket.close();
     }
+
+    // Clean up session
+    await cleanupSession(sessionId, connection?.agentConversation);
 
     handleCallStatusUpdate(sessionId, {
       status: "failed",
@@ -1193,12 +1228,19 @@ function setupConnectionLifecycle(websocket, sessionId) {
 /**
  * Cleanup session resources
  */
-function cleanupSession(sessionId, agentConversation) {
+async function cleanupSession(sessionId, agentConversation) {
   activeConnections.delete(sessionId);
 
   if (agentConversation) {
     endConversation(sessionId);
-  } else {
+  }
+
+  // Clean up session from Redis
+  try {
+    await sessionManager.deleteSession(sessionId);
+    console.log("✅ Session cleaned up from Redis:", sessionId);
+  } catch (error) {
+    console.error("❌ Failed to cleanup session:", error);
   }
 
   // Update status with external flag

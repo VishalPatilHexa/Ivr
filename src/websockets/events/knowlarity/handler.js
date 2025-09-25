@@ -115,6 +115,7 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
         } else {
           // No metadata found, initialize with defaults
           await initializeAgent(sessionId, null, activeConnections);
+          // Continue processing this message as audio - don't return
         }
       }
 
@@ -229,13 +230,22 @@ async function initializeAgent(sessionId, metadata, activeConnections) {
   try {
     Logger.info("🤖 Initializing ElevenLabs agent", { sessionId });
 
-    // Extract agent configuration
-    let agentId = "default_agent_id";
-    let treatmentType = "General";
+    // Extract agentId and treatmentType from decoded metadata
+    let agentId, treatmentType;
 
-    if (metadata?.metadata) {
-      agentId = metadata.metadata.agentId || agentId;
-      treatmentType = metadata.metadata.treatmentType || treatmentType;
+    if (metadata && metadata.metadata) {
+      agentId = metadata.metadata.agentId;
+      treatmentType = metadata.metadata.treatmentType;
+    } else {
+      // Use defaults if no metadata provided
+      Logger.info("⚠️ No metadata provided, using defaults", { sessionId });
+      agentId = "default_agent_id"; 
+      treatmentType = "Piles";
+    }
+
+    if (!agentId || agentId === "default_agent_id") {
+      Logger.warn("⚠️ Using default agentId", { sessionId });
+      // Continue with default - don't return
     }
 
     // Create ElevenLabs conversation
@@ -255,6 +265,9 @@ async function initializeAgent(sessionId, metadata, activeConnections) {
     // Setup bidirectional audio streaming
     streamingUtils.setupAudioStreaming(sessionId, activeConnections);
 
+    // Send acknowledgment to Knowlarity
+    await sendSuccessResponse(connection);
+
     // Notify client that agent is ready
     if (connection?.websocket?.readyState === WebSocket.OPEN) {
       connection.websocket.send(JSON.stringify({
@@ -273,6 +286,21 @@ async function initializeAgent(sessionId, metadata, activeConnections) {
     if (connection?.websocket?.readyState === WebSocket.OPEN) {
       connection.websocket.close(1011, "Failed to initialize conversation");
     }
+  }
+}
+
+/**
+ * Send success response to Knowlarity
+ */
+async function sendSuccessResponse(connection) {
+  if (connection?.websocket?.readyState === WebSocket.OPEN) {
+    const ackMessage = JSON.stringify({
+      type: "metadata_received",
+      status: "success",
+      message: "Metadata processed successfully",
+    });
+
+    connection.websocket.send(ackMessage);
   }
 }
 

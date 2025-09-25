@@ -9,7 +9,7 @@ const Logger = require("./utils/logger");
 const app = express();
 
 // Trust proxy for proper IP detection
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 
 // CORS configuration
 app.use(corsConfig);
@@ -18,8 +18,8 @@ app.use(corsConfig);
 app.use(requestLogger);
 
 // Body parsing middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Static files
 app.use(express.static("public"));
@@ -29,22 +29,22 @@ app.use("/uploads", express.static("storage/uploads"));
 app.use(routes);
 
 // Health check endpoint at root
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: 'IVR Streaming Service is running',
-    version: require('../package.json').version,
-    timestamp: new Date().toISOString()
+    message: "IVR Streaming Service is running",
+    version: require("../package.json").version,
+    timestamp: new Date().toISOString(),
   });
 });
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
     error: {
-      message: `Route ${req.method} ${req.originalUrl} not found`
-    }
+      message: `Route ${req.method} ${req.originalUrl} not found`,
+    },
   });
 });
 

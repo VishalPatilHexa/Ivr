@@ -19,7 +19,7 @@
  * ===============================================================================
  */
 
-const conversationManager = require("../managers/conversation");
+const { conversationManager } = require("../../core/managers");
 const audioProcessor = require("../processors/audio");
 const clientBridge = require("../bridges/client");
 

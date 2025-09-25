@@ -8,9 +8,7 @@
 
 const express = require("express");
 const router = express.Router();
-const {
-  handlePostCallWebhook,
-} = require("../../controllers/webhook");
+const { handlePostCallWebhook } = require("../../controllers/webhook");
 
 /**
  * POST /elevenlabs/post-call

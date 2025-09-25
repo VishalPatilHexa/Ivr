@@ -194,7 +194,11 @@ function handleKnowlarityStream(websocket, urlPath) {
         handleControlMessages(incomingMessage, sessionId, agentConversation);
       }
     } catch (error) {
-      console.error("❌ Error processing message for session:", sessionId, error.message);
+      console.error(
+        "❌ Error processing message for session:",
+        sessionId,
+        error.message
+      );
     }
   });
 

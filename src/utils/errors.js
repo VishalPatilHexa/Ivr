@@ -4,7 +4,7 @@ class AppError extends Error {
     this.statusCode = statusCode;
     this.isOperational = isOperational;
     this.name = this.constructor.name;
-    
+
     Error.captureStackTrace(this, this.constructor);
   }
 }
@@ -16,25 +16,25 @@ class ValidationError extends AppError {
 }
 
 class NotFoundError extends AppError {
-  constructor(message = 'Resource not found') {
+  constructor(message = "Resource not found") {
     super(message, 404);
   }
 }
 
 class UnauthorizedError extends AppError {
-  constructor(message = 'Unauthorized') {
+  constructor(message = "Unauthorized") {
     super(message, 401);
   }
 }
 
 class ConflictError extends AppError {
-  constructor(message = 'Resource conflict') {
+  constructor(message = "Resource conflict") {
     super(message, 409);
   }
 }
 
 class StreamingError extends AppError {
-  constructor(message = 'Streaming error occurred') {
+  constructor(message = "Streaming error occurred") {
     super(message, 500);
   }
 }
@@ -45,5 +45,5 @@ module.exports = {
   NotFoundError,
   UnauthorizedError,
   ConflictError,
-  StreamingError
+  StreamingError,
 };

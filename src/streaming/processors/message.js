@@ -15,7 +15,7 @@ const clientBridge = require('../bridges/client');
 async function handleElevenLabsMessage(sessionId, messageData) {
   try {
     const parsedMessage = JSON.parse(messageData);
-    const conversationManager = require('../managers/conversation');
+    const { conversationManager } = require('../../core/managers');
     const conversationSession = conversationManager.activeConversations.get(sessionId);
 
     if (!conversationSession) {

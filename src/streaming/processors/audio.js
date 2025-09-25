@@ -6,7 +6,7 @@
  * Handles audio streaming to/from ElevenLabs agent
  */
 
-const websocketManager = require('../managers/websocket');
+const { websocketManager } = require('../../core/managers');
 
 /**
  * Send audio chunk to ElevenLabs agent

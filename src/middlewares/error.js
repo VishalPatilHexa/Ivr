@@ -1,5 +1,5 @@
-const Logger = require('../utils/logger');
-const { AppError } = require('../utils/errors');
+const Logger = require("../utils/logger");
+const { AppError } = require("../utils/errors");
 
 const errorHandler = (err, req, res, next) => {
   let error = { ...err };
@@ -10,7 +10,7 @@ const errorHandler = (err, req, res, next) => {
 
   // Default error response
   let statusCode = 500;
-  let message = 'Internal Server Error';
+  let message = "Internal Server Error";
 
   // Handle operational errors
   if (err instanceof AppError) {
@@ -19,14 +19,14 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // Handle specific error types
-  if (err.name === 'ValidationError') {
+  if (err.name === "ValidationError") {
     statusCode = 400;
-    message = 'Validation Error';
+    message = "Validation Error";
   }
 
-  if (err.name === 'CastError') {
+  if (err.name === "CastError") {
     statusCode = 400;
-    message = 'Invalid resource ID';
+    message = "Invalid resource ID";
   }
 
   // Send error response
@@ -34,8 +34,8 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     error: {
       message,
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-    }
+      ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+    },
   });
 };
 

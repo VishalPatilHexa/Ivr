@@ -1,4 +1,4 @@
-const config = require('../config');
+const config = require("../config");
 
 class Logger {
   static info(message, meta = {}) {
@@ -6,7 +6,11 @@ class Logger {
   }
 
   static error(message, error = null, meta = {}) {
-    console.error(`❌ [ERROR] ${new Date().toISOString()} - ${message}`, error, meta);
+    console.error(
+      `❌ [ERROR] ${new Date().toISOString()} - ${message}`,
+      error,
+      meta
+    );
   }
 
   static warn(message, meta = {}) {
@@ -14,7 +18,7 @@ class Logger {
   }
 
   static debug(message, meta = {}) {
-    if (config.nodeEnv === 'development') {
+    if (config.nodeEnv === "development") {
       console.log(`🐛 [DEBUG] ${new Date().toISOString()} - ${message}`, meta);
     }
   }

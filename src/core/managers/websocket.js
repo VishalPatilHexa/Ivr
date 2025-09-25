@@ -7,10 +7,12 @@
  */
 
 const WebSocket = require("ws");
-const messageProcessor = require("../processors/message");
+const messageProcessor = require("../../streaming/processors/message");
+const Logger = require("../../utils/logger");
+const { WEBSOCKET, APPLICATION } = require("../../constants");
 
 // Environment configuration
-const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+const elevenLabsApiKey = APPLICATION.API_KEYS.ELEVENLABS;
 
 /**
  * Create WebSocket connection to ElevenLabs Conversational AI
@@ -34,7 +36,7 @@ async function createElevenLabsWebSocket(agentId, sessionId, patientQuery) {
     });
 
     agentWebSocket.on("error", (connectionError) => {
-      console.error("❌ ElevenLabs WebSocket error:", connectionError);
+      Logger.error("ElevenLabs WebSocket error", connectionError);
       reject(connectionError);
     });
 
@@ -77,13 +79,16 @@ function initializeConversation(agentWebSocket, sessionId) {
  * Send message to ElevenLabs WebSocket
  */
 async function sendToElevenLabs(sessionId, messageToSend) {
-  // Import inside function to avoid circular dependency  
+  // Import inside function to avoid circular dependency
   const conversationManager = require("./conversation");
   const conversationSession =
     conversationManager.activeConversations.get(sessionId);
 
   // WEBSOCKET VALIDATION: Ensure connection to ElevenLabs is still active
-  if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
+  if (
+    conversationSession?.agentWebSocket?.readyState ===
+    WEBSOCKET.WEBSOCKET_STATES.OPEN
+  ) {
     // SEND MESSAGE: Forward message to ElevenLabs agent via WebSocket
     conversationSession.agentWebSocket.send(JSON.stringify(messageToSend));
   }

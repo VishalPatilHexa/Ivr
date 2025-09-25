@@ -6,6 +6,9 @@
  * Manages ElevenLabs conversation sessions and lifecycle
  */
 
+const Logger = require("../../utils/logger");
+const { SESSION_MANAGER } = require("../../constants");
+
 // websocketManager imported inside function to avoid circular dependency
 
 // Active conversations storage
@@ -20,7 +23,7 @@ async function createConversation(agentId, sessionId, patientQuery) {
       sessionId,
       patientQuery,
       patientData: { query: patientQuery },
-      isActive: true,
+      status: SESSION_MANAGER.CONVERSATION_STATUS.ACTIVE,
       createdAt: new Date(),
       agentWebSocket: null,
     };
@@ -38,7 +41,7 @@ async function createConversation(agentId, sessionId, patientQuery) {
 
     return conversationSession;
   } catch (error) {
-    console.error("❌ Error creating conversation:", error);
+    Logger.error("Error creating conversation", error);
     throw error;
   }
 }
@@ -52,7 +55,7 @@ async function endConversation(sessionId) {
     if (conversationSession.agentWebSocket) {
       conversationSession.agentWebSocket.close();
     }
-    conversationSession.isActive = false;
+    conversationSession.status = SESSION_MANAGER.CONVERSATION_STATUS.TERMINATED;
     activeConversations.delete(sessionId);
   }
 }
@@ -73,7 +76,7 @@ async function getConversationStatus(sessionId) {
 
   return {
     sessionId,
-    isActive: conversationSession.isActive,
+    status: conversationSession.status,
     patientData: conversationSession.patientData,
     createdAt: conversationSession.createdAt,
   };

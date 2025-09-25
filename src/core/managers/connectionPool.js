@@ -9,7 +9,8 @@
 
 const EventEmitter = require("events");
 const Logger = require("../../utils/logger");
-const { CONNECTION_POOL, WEBSOCKET, ERRORS } = require("../../constants");
+const { CONNECTION_POOL, WEBSOCKET, ERRORS, REDIS_POOL } = require("../../constants");
+const redisPool = require("../redis/redisPool");
 
 class ConnectionPool extends EventEmitter {
   constructor(options = {}) {
@@ -26,6 +27,10 @@ class ConnectionPool extends EventEmitter {
     // Connection storage
     this.connections = new Map();
     this.connectionsByClient = new Map(); // client -> Set of connection IDs
+    
+    // Redis pool for distributed state tracking
+    this.redisPool = redisPool;
+    
     this.stats = {
       totalConnections: 0,
       activeConnections: 0,

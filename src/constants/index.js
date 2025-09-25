@@ -105,6 +105,46 @@ const SESSION_MANAGER = {
 };
 
 // =============================================================================
+// REDIS CONNECTION POOL CONSTANTS
+// =============================================================================
+const REDIS_POOL = {
+  // Pool configuration
+  MIN_CONNECTIONS: 2,
+  MAX_CONNECTIONS: 20,
+  ACQUIRE_TIMEOUT: 30000, // 30 seconds
+  IDLE_TIMEOUT: 300000, // 5 minutes
+  EVICTION_RUN_INTERVAL: 60000, // 1 minute
+  
+  // Connection configuration
+  CONNECTION_CONFIG: {
+    host: "127.0.0.1",
+    port: 6379,
+    db: 1,
+    connectTimeout: 10000,
+    commandTimeout: 5000,
+    retryDelayOnFailover: 100,
+    maxRetriesPerRequest: 3,
+    lazyConnect: true,
+    keepAlive: 30000,
+  },
+  
+  // Pool databases for different purposes
+  DATABASES: {
+    SESSIONS: 1,
+    CONNECTIONS: 2,
+    CACHE: 3,
+    LOCKS: 4,
+  },
+  
+  // Health check configuration
+  HEALTH_CHECK: {
+    INTERVAL: 30000, // 30 seconds
+    TIMEOUT: 5000, // 5 seconds
+    RETRY_COUNT: 3,
+  },
+};
+
+// =============================================================================
 // WEBSOCKET CONSTANTS
 // =============================================================================
 const WEBSOCKET = {
@@ -417,6 +457,7 @@ const DATABASE = {
 module.exports = {
   CONNECTION_POOL,
   SESSION_MANAGER,
+  REDIS_POOL,
   WEBSOCKET,
   STREAMING,
   ERRORS,

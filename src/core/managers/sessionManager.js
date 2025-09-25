@@ -7,32 +7,20 @@
  * Handles session state, conversation data, and cross-instance communication
  */
 
-const redis = require("redis");
 const { v4: uuidv4 } = require("uuid");
 const Logger = require("../../utils/logger");
-const { SESSION_MANAGER, APPLICATION } = require("../../constants");
+const { SESSION_MANAGER, APPLICATION, REDIS_POOL } = require("../../constants");
+const redisPool = require("../redis/redisPool");
 
 class SessionManager {
   constructor(options = {}) {
-    this.redisConfig = {
-      host: options.redisHost || SESSION_MANAGER.REDIS_CONFIG.HOST,
-      port: options.redisPort || SESSION_MANAGER.REDIS_CONFIG.PORT,
-      password: options.redisPassword || SESSION_MANAGER.REDIS_CONFIG.PASSWORD,
-      retryAttempts:
-        options.retryAttempts || SESSION_MANAGER.REDIS_CONFIG.RETRY_ATTEMPTS,
-      retryDelay:
-        options.retryDelay || SESSION_MANAGER.REDIS_CONFIG.RETRY_DELAY,
-    };
-
     this.sessionTTL = options.sessionTTL || SESSION_MANAGER.SESSION_TTL;
-    this.conversationTTL =
-      options.conversationTTL || SESSION_MANAGER.CONVERSATION_TTL;
+    this.conversationTTL = options.conversationTTL || SESSION_MANAGER.CONVERSATION_TTL;
     this.lockTTL = options.lockTTL || SESSION_MANAGER.LOCK_TTL;
 
-    this.client = null;
-    this.pubClient = null;
-    this.subClient = null;
-    this.isConnected = false;
+    // Use Redis connection pool instead of individual connections
+    this.redisPool = redisPool;
+    this.isConnected = true; // Pool handles connections
 
     // Session prefixes for Redis keys
     this.prefixes = SESSION_MANAGER.REDIS_PREFIXES;
@@ -44,62 +32,21 @@ class SessionManager {
       conversationsActive: 0,
       errors: 0,
     };
+
+    Logger.info("SessionManager initialized with Redis connection pool");
   }
 
   /**
-   * Initialize Redis connections
+   * Initialize SessionManager (using Redis pool)
    */
   async initialize() {
     try {
-      // Main Redis client
-      this.client = redis.createClient({
-        socket: {
-          host: this.redisConfig.host,
-          port: this.redisConfig.port,
-        },
-        password: this.redisConfig.password,
-        retry_strategy: (options) => {
-          if (options.error && options.error.code === "ECONNREFUSED") {
-            Logger.error("Redis connection refused");
-            return new Error("Redis connection refused");
-          }
-          if (options.total_retry_time > 1000 * 60 * 60) {
-            Logger.error("Redis retry time exhausted");
-            return new Error("Retry time exhausted");
-          }
-          if (options.attempt > this.redisConfig.retryAttempts) {
-            Logger.error("Redis max retry attempts reached");
-            return undefined;
-          }
-          return Math.min(options.attempt * 100, 3000);
-        },
-      });
-
-      // Publisher client for cross-instance communication
-      this.pubClient = this.client.duplicate();
-
-      // Subscriber client for events
-      this.subClient = this.client.duplicate();
-
-      // Connect all clients
-      await Promise.all([
-        this.client.connect(),
-        this.pubClient.connect(),
-        this.subClient.connect(),
-      ]);
-
-      this.isConnected = true;
-
-      // Setup event listeners
-      this.setupEventListeners();
-
-      Logger.success("SessionManager initialized with Redis", {
-        host: this.redisConfig.host,
-        port: this.redisConfig.port,
-      });
-
+      Logger.info("SessionManager ready with Redis connection pool");
+      
       // Start health monitoring
       this.startHealthMonitoring();
+      
+      return true;
     } catch (error) {
       Logger.error("Failed to initialize SessionManager", error);
       throw error;
@@ -124,7 +71,9 @@ class SessionManager {
       };
 
       const key = this.prefixes.session + sessionId;
-      await this.client.setEx(key, this.sessionTTL, JSON.stringify(session));
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(key, Math.floor(this.sessionTTL / 1000), JSON.stringify(session));
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       this.stats.sessionsCreated++;
 
@@ -135,7 +84,8 @@ class SessionManager {
       });
 
       // Publish session created event
-      await this.publishEvent("session:created", { sessionId, session });
+      // TODO: Implement event publishing with Redis pool if needed
+      // await this.publishEvent("session:created", { sessionId, session });
 
       return session;
     } catch (error) {
@@ -151,7 +101,9 @@ class SessionManager {
   async getSession(sessionId) {
     try {
       const key = this.prefixes.session + sessionId;
-      const sessionData = await this.client.get(key);
+      const sessionData = await this.redisPool.execute(async (redis) => {
+        return await redis.get(key);
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       if (!sessionData) {
         return null;
@@ -161,7 +113,9 @@ class SessionManager {
       session.lastActivity = Date.now();
 
       // Update last activity
-      await this.client.setEx(key, this.sessionTTL, JSON.stringify(session));
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(key, Math.floor(this.sessionTTL / 1000), JSON.stringify(session));
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       this.stats.sessionsRetrieved++;
 
@@ -190,16 +144,14 @@ class SessionManager {
       };
 
       const key = this.prefixes.session + sessionId;
-      await this.client.setEx(
-        key,
-        this.sessionTTL,
-        JSON.stringify(updatedSession)
-      );
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(key, Math.floor(this.sessionTTL / 1000), JSON.stringify(updatedSession));
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       Logger.debug("Session updated", { sessionId, updates });
 
       // Publish session updated event
-      await this.publishEvent("session:updated", { sessionId, updates });
+      // await this.publishEvent("session:updated", { sessionId, updates });
 
       return updatedSession;
     } catch (error) {
@@ -225,14 +177,16 @@ class SessionManager {
       }
 
       const key = this.prefixes.session + sessionId;
-      await this.client.del(key);
+      await this.redisPool.execute(async (redis) => {
+        await redis.del(key);
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       this.stats.sessionsDeleted++;
 
       Logger.info("Session deleted", { sessionId });
 
       // Publish session deleted event
-      await this.publishEvent("session:deleted", { sessionId });
+      // await this.publishEvent("session:deleted", { sessionId });
 
       return true;
     } catch (error) {
@@ -260,11 +214,9 @@ class SessionManager {
       };
 
       const key = this.prefixes.conversation + conversationId;
-      await this.client.setEx(
-        key,
-        this.conversationTTL,
-        JSON.stringify(conversation)
-      );
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(key, Math.floor(this.conversationTTL / 1000), JSON.stringify(conversation));
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       this.stats.conversationsActive++;
 
@@ -288,7 +240,9 @@ class SessionManager {
   async getConversation(conversationId) {
     try {
       const key = this.prefixes.conversation + conversationId;
-      const conversationData = await this.client.get(key);
+      const conversationData = await this.redisPool.execute(async (redis) => {
+        return await redis.get(key);
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       if (!conversationData) {
         return null;
@@ -298,11 +252,9 @@ class SessionManager {
       conversation.lastActivity = Date.now();
 
       // Update last activity
-      await this.client.setEx(
-        key,
-        this.conversationTTL,
-        JSON.stringify(conversation)
-      );
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(key, Math.floor(this.conversationTTL / 1000), JSON.stringify(conversation));
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       return conversation;
     } catch (error) {
@@ -337,11 +289,9 @@ class SessionManager {
       }
 
       const key = this.prefixes.conversation + conversationId;
-      await this.client.setEx(
-        key,
-        this.conversationTTL,
-        JSON.stringify(conversation)
-      );
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(key, Math.floor(this.conversationTTL / 1000), JSON.stringify(conversation));
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       return messageWithTimestamp;
     } catch (error) {
@@ -359,7 +309,9 @@ class SessionManager {
   async deleteConversation(conversationId) {
     try {
       const key = this.prefixes.conversation + conversationId;
-      const deleted = await this.client.del(key);
+      const deleted = await this.redisPool.execute(async (redis) => {
+        return await redis.del(key);
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       if (deleted) {
         this.stats.conversationsActive = Math.max(
@@ -384,10 +336,9 @@ class SessionManager {
     try {
       const lockKey = this.prefixes.lock + resource;
       const lockValue = uuidv4();
-      const acquired = await this.client.set(lockKey, lockValue, {
-        PX: ttl * 1000,
-        NX: true,
-      });
+      const acquired = await this.redisPool.execute(async (redis) => {
+        return await redis.set(lockKey, lockValue, 'PX', ttl * 1000, 'NX');
+      }, REDIS_POOL.DATABASES.LOCKS);
 
       if (acquired) {
         Logger.debug("Lock acquired", { resource, lockValue, ttl });
@@ -415,10 +366,9 @@ class SessionManager {
         end
       `;
 
-      const result = await this.client.eval(script, {
-        keys: [lockKey],
-        arguments: [lockValue],
-      });
+      const result = await this.redisPool.execute(async (redis) => {
+        return await redis.eval(script, 1, lockKey, lockValue);
+      }, REDIS_POOL.DATABASES.LOCKS);
 
       Logger.debug("Lock release attempt", {
         resource,
@@ -535,7 +485,9 @@ class SessionManager {
         uptime: process.uptime(),
       };
 
-      await this.client.setEx(healthKey, 60, JSON.stringify(health));
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(healthKey, 60, JSON.stringify(health));
+      }, REDIS_POOL.DATABASES.SESSIONS);
     } catch (error) {
       Logger.error("Failed to update health status", error);
     }
@@ -549,16 +501,13 @@ class SessionManager {
       const statsKey = this.prefixes.stats + "global";
       const nodeId = process.env.NODE_ID || require("os").hostname();
 
-      await this.client.hSet(
-        statsKey,
-        nodeId,
-        JSON.stringify({
+      await this.redisPool.execute(async (redis) => {
+        await redis.hset(statsKey, nodeId, JSON.stringify({
           ...this.stats,
           timestamp: Date.now(),
-        })
-      );
-
-      await this.client.expire(statsKey, 300); // 5 minutes TTL
+        }));
+        await redis.expire(statsKey, 300); // 5 minutes TTL
+      }, REDIS_POOL.DATABASES.SESSIONS);
     } catch (error) {
       Logger.error("Failed to update stats", error);
     }
@@ -570,7 +519,9 @@ class SessionManager {
   async getGlobalStats() {
     try {
       const statsKey = this.prefixes.stats + "global";
-      const allStats = await this.client.hGetAll(statsKey);
+      const allStats = await this.redisPool.execute(async (redis) => {
+        return await redis.hgetall(statsKey);
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       const globalStats = {
         nodes: {},
@@ -607,9 +558,12 @@ class SessionManager {
     try {
       // Test Redis connectivity
       const testKey = "ivr:health:test";
-      await this.client.set(testKey, "test", { EX: 10 });
-      const testValue = await this.client.get(testKey);
-      await this.client.del(testKey);
+      await this.redisPool.execute(async (redis) => {
+        await redis.setex(testKey, 10, 'test');
+        const testValue = await redis.get(testKey);
+        await redis.del(testKey);
+        return testValue;
+      }, REDIS_POOL.DATABASES.SESSIONS);
 
       if (testValue !== "test") {
         throw new Error("Redis connectivity test failed");
@@ -637,9 +591,8 @@ class SessionManager {
     try {
       Logger.info("Shutting down SessionManager...");
 
-      if (this.client) await this.client.quit();
-      if (this.pubClient) await this.pubClient.quit();
-      if (this.subClient) await this.subClient.quit();
+      // Redis pool handles connection cleanup automatically
+      // Pub/sub clients no longer needed with Redis pool
 
       this.isConnected = false;
       Logger.info("SessionManager shutdown completed");

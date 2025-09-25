@@ -2,12 +2,13 @@
  * ===============================================================================
  * MESSAGE PROCESSING
  * ===============================================================================
- * 
+ *
  * Processes all incoming messages from ElevenLabs
  */
 
 const WebSocket = require("ws");
-const clientBridge = require('../bridges/client');
+const clientBridge = require("../bridges/client");
+const conversationManager = require("../../core/managers/conversation");
 
 /**
  * Process all incoming messages from ElevenLabs
@@ -15,8 +16,8 @@ const clientBridge = require('../bridges/client');
 async function handleElevenLabsMessage(sessionId, messageData) {
   try {
     const parsedMessage = JSON.parse(messageData);
-    const { conversationManager } = require('../../core/managers');
-    const conversationSession = conversationManager.activeConversations.get(sessionId);
+    const conversationSession =
+      conversationManager.activeConversations.get(sessionId);
 
     if (!conversationSession) {
       return;
@@ -140,8 +141,6 @@ function handleAgentAudioEnd(sessionId) {
  * Handle conversation end
  */
 function handleConversationEnd(sessionId) {
-  const conversationManager = require('../managers/conversation');
-  
   // Clean up the conversation
   conversationManager.endConversation(sessionId);
 
@@ -183,7 +182,7 @@ function handleConversationReady(sessionId, readyMessage, conversationSession) {
     if (conversationSession?.agentWebSocket?.readyState === WebSocket.OPEN) {
       // For phone calls, we need the agent to speak first
       // Send a minimal audio chunk to trigger agent response
-      const silentAudio = Buffer.alloc(320, 0).toString('base64'); // 20ms of silence at 16kHz
+      const silentAudio = Buffer.alloc(320, 0).toString("base64"); // 20ms of silence at 16kHz
       conversationSession.agentWebSocket.send(
         JSON.stringify({
           user_audio_chunk: silentAudio,
@@ -215,12 +214,13 @@ function handleAgentResponseCorrection(sessionId, correctionMessage) {
   if (correctionMessage.agent_response_correction_event?.corrected_response) {
     clientBridge.forwardToClient(sessionId, {
       type: "agent_response_correction",
-      text: correctionMessage.agent_response_correction_event.corrected_response,
+      text: correctionMessage.agent_response_correction_event
+        .corrected_response,
     });
   }
 }
 
 module.exports = {
   handleElevenLabsMessage,
-  handleConversationEnd
+  handleConversationEnd,
 };

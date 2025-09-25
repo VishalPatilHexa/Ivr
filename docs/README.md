@@ -482,6 +482,156 @@ const replicaConfig = {
 5. Write unit tests for new features
 6. Update this documentation for architectural changes
 
-## 📄 License
 
-Copyright © 2024. All rights reserved.
+************************************************************************************************
+ 📞 Complete Call Flow: Knowlarity → Your IVR System
+************************************************************************************************
+
+
+  🔄 Redis Database Usage:
+
+  Redis Database Separation:
+
+  - DB 1 (SESSIONS): User sessions, conversation data, session metadata
+  - DB 2 (CONNECTIONS): WebSocket connection tracking, connection pool state
+  - DB 3 (CACHE): Temporary data, performance optimization
+  - DB 4 (LOCKS): Distributed locks for concurrent operations
+
+  📋 Step-by-Step Call Flow:
+
+  1. 📞 Call Initiated
+
+  Caller dials → Knowlarity receives → WebSocket connects to /knowlarity-stream/{sessionId}
+
+  2. 🌐 WebSocket Connection (stream.js:31-67)
+
+  handleConnection(websocket, request) →
+  handleKnowlarityStream(websocket, urlPath) →
+  sessionId = urlPath.split("/")[2] // Extract session ID from URL
+
+  3. 💾 Session Storage (Redis DB 1)
+
+  // Store connection info
+  activeConnections.set(sessionId, {
+    websocket,
+    clientType: "knowlarity",
+    connectedAt: new Date(),
+    agentConversation: null
+  });
+
+  4. 📨 First Message: Metadata Processing
+
+  // First message contains call metadata
+  isFirstMessage = true;
+  metadata = parseKnowlarityMetadata(incomingMessage);
+  // Contains: callid, virtual_number, customer_number, agentId, treatmentType
+
+  5. 🤖 ElevenLabs Agent Initialization
+
+  initializeAgentConversationAfterMetaData(sessionId, metadata) →
+  elevenLabsAgentService.createConversation(agentId, sessionId, {treatmentType}) →
+  // Creates WebSocket to ElevenLabs API
+
+  6. 🔄 Session Management (Redis DB 1)
+
+  SessionManager.createSession({
+    sessionId: sessionId,
+    clientInfo: {type: "knowlarity"},
+    metadata: {agentId, treatmentType}
+  });
+
+  // Stored in Redis DB 1 with TTL
+  redisPool.execute(async (redis) => {
+    await redis.setex(
+      `ivr:session:${sessionId}`,
+      3600, // 1 hour TTL
+      JSON.stringify(session)
+    );
+  }, REDIS_POOL.DATABASES.SESSIONS); // DB 1
+
+  7. 🎵 Audio Streaming Setup
+
+  setupAudioStreaming(sessionId) →
+  setClientMessageHandler((sessionId, agentMessage) => {
+    // Registers callback for ElevenLabs responses
+  });
+
+  8. 🎤 Real-time Audio Flow
+
+  Incoming Audio (Caller → AI):
+
+  Caller speaks → Knowlarity → Binary PCM →
+  handleIncomingAudio() → amplifyAudioVolume(2.5x) →
+  Base64 encode → sendAudioToAgent() → ElevenLabs
+
+  Outgoing Audio (AI → Caller):
+
+  ElevenLabs processes → agent_audio event → 
+  setClientMessageHandler callback → 
+  JSON.stringify({type: "playAudio", data: {audioContent}}) → 
+  Knowlarity → Caller hears response
+
+  9. 💬 Conversation Tracking (Redis DB 1)
+
+  conversationManager.createConversation(agentId, sessionId, patientQuery);
+  // Stored in Redis with conversation messages, status, sentiment
+
+  10. 📊 Connection Pool Monitoring (Redis DB 2)
+
+  // WebSocket connection state tracked in Redis DB 2
+  redisPool.execute(async (redis) => {
+    await redis.hset(`ivr:connection:${sessionId}`, {
+      status: 'connected',
+      lastActivity: Date.now(),
+      clientType: 'knowlarity'
+    });
+  }, REDIS_POOL.DATABASES.CONNECTIONS); // DB 2
+
+  11. 🔒 Distributed Locking (Redis DB 4)
+
+  // For concurrent operations, session locks stored in DB 4
+  await sessionManager.acquireLock(sessionId, 30000); // 30 second TTL
+  redisPool.execute(async (redis) => {
+    return await redis.set(lockKey, lockValue, 'PX', 30000, 'NX');
+  }, REDIS_POOL.DATABASES.LOCKS); // DB 4
+
+  12. 📞 Call End Process
+
+  // When call ends
+  handleConversationEnd(sessionId) →
+  conversationManager.endConversation(sessionId) →
+  // Cleanup from Redis DB 1
+  redisPool.execute(async (redis) => {
+    await redis.del(`ivr:session:${sessionId}`);
+  }, REDIS_POOL.DATABASES.SESSIONS);
+
+  // Close WebSocket connections
+  websocket.close(1000, "Call completed");
+  activeConnections.delete(sessionId);
+
+  🎯 Key Redis Operations During Calls:
+
+  High-Frequency Operations (DB 1):
+
+  - Session state updates every few seconds
+  - Conversation message logging
+  - Session activity heartbeats
+
+  Medium-Frequency Operations (DB 2):
+
+  - Connection health checks every 30 seconds
+  - WebSocket state tracking
+
+  Low-Frequency Operations (DB 3 & 4):
+
+  - Caching agent responses for performance
+  - Distributed locks for critical operations
+
+  📈 Performance Benefits:
+
+  - Connection Pooling: Up to 20 concurrent Redis operations
+  - Database Separation: Prevents cross-contamination of data types
+  - Automatic Cleanup: TTL on sessions (1 hour), connections (5 minutes)
+  - Health Monitoring: 30-second intervals ensure connection reliability
+
+  Your Redis connection pool efficiently manages all call states across 4 specialized databases during live voice conversations! 🎉

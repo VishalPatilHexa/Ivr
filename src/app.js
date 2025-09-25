@@ -6,6 +6,9 @@ const requestLogger = require("./middlewares/logging");
 const routes = require("./routes");
 const Logger = require("./utils/logger");
 
+// Import graceful shutdown handler
+const gracefulShutdown = require("./core/gracefulShutdown");
+
 const app = express();
 
 // Trust proxy for proper IP detection
@@ -27,6 +30,10 @@ app.use("/uploads", express.static("storage/uploads"));
 
 // API routes
 app.use(routes);
+
+// Admin routes for graceful restart
+const adminGracefulRoutes = require("./routes/admin/graceful");
+app.use("/admin", adminGracefulRoutes);
 
 // Health check endpoint at root
 app.get("/", (req, res) => {
@@ -50,5 +57,8 @@ app.use("*", (req, res) => {
 
 // Global error handler (must be last)
 app.use(errorHandler);
+
+// Register graceful shutdown handlers
+gracefulShutdown.register();
 
 module.exports = app;

@@ -190,15 +190,21 @@ function validateMetadata(metadata) {
     errors.push("Missing customer_number");
   }
 
-  const agentConfig = extractAgentConfig(metadata);
-  if (!agentConfig.agentId) {
+  // Simple check for nested agentId
+  const hasAgentId = safeExtract(
+    metadata,
+    'metadata.metadata.agentId',
+    'metadata.agentId',
+    'agentId'
+  );
+  
+  if (!hasAgentId) {
     errors.push("Missing agentId in nested metadata");
   }
 
   return {
     isValid: errors.length === 0,
-    errors: errors,
-    agentConfig: agentConfig
+    errors: errors
   };
 }
 
@@ -209,5 +215,4 @@ module.exports = {
   processMetadataObject,
   validateMetadata,
   safeExtract,
-  extractAgentConfig,
 };

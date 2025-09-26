@@ -96,27 +96,85 @@ function parseKnowlarityMetadata(rawMetadata) {
 function processMetadataObject(metadata) {
   Logger.debug("📋 Processing metadata object", metadata);
 
-  // Decode URL-encoded metadata if present
-  if (metadata.metadata) {
+  // Safely decode URL-encoded nested metadata
+  if (metadata && typeof metadata === 'object' && metadata.metadata) {
     try {
-      const decodedMetadataString = decodeURIComponent(metadata.metadata);
-      metadata.metadata = JSON.parse(decodedMetadataString);
-      Logger.debug("✅ Decoded nested metadata", metadata.metadata);
+      // Handle different nested metadata formats
+      if (typeof metadata.metadata === 'string') {
+        // URL-encoded string format
+        const decodedMetadataString = decodeURIComponent(metadata.metadata);
+        metadata.metadata = JSON.parse(decodedMetadataString);
+        Logger.debug("✅ Decoded URL-encoded nested metadata");
+      } else if (typeof metadata.metadata === 'object') {
+        // Already parsed object - keep as is
+        Logger.debug("✅ Nested metadata already parsed as object");
+      }
     } catch (error) {
-      Logger.warn("⚠️ Failed to decode nested metadata", error);
-      metadata.metadata = null;
+      Logger.warn("⚠️ Failed to decode nested metadata", { 
+        error: error.message,
+        metadataType: typeof metadata.metadata,
+        metadataValue: metadata.metadata
+      });
+      
+      // Fallback: try to parse as JSON string without URL decoding
+      try {
+        if (typeof metadata.metadata === 'string') {
+          metadata.metadata = JSON.parse(metadata.metadata);
+          Logger.debug("✅ Parsed nested metadata without URL decoding");
+        }
+      } catch (fallbackError) {
+        Logger.error("❌ Complete failure to parse nested metadata", {
+          originalError: error.message,
+          fallbackError: fallbackError.message
+        });
+        metadata.metadata = null;
+      }
     }
   }
 
+  // Validate final structure
+  const hasValidMetadata = !!(metadata && metadata.metadata && typeof metadata.metadata === 'object');
+  const hasAgentId = hasValidMetadata && !!metadata.metadata.agentId;
+
   Logger.info("✅ Metadata processed", {
-    callid: metadata.callid,
-    hasNestedMetadata: !!metadata.metadata,
-    fullMetadata: metadata,
-    nestedMetadata: metadata.metadata
+    callid: metadata?.callid || 'unknown',
+    hasNestedMetadata: hasValidMetadata,
+    hasAgentId: hasAgentId,
+    agentId: hasAgentId ? metadata.metadata.agentId : 'not_found'
   });
 
   return metadata;
 }
+
+/**
+ * Safely extract nested value from metadata with multiple fallback paths
+ */
+function safeExtract(metadata, ...paths) {
+  for (const path of paths) {
+    try {
+      let current = metadata;
+      const parts = path.split('.');
+      
+      for (const part of parts) {
+        if (current && typeof current === 'object' && current[part] !== undefined) {
+          current = current[part];
+        } else {
+          current = undefined;
+          break;
+        }
+      }
+      
+      if (current !== undefined) {
+        return current;
+      }
+    } catch (error) {
+      Logger.debug("Failed to extract path", { path, error: error.message });
+    }
+  }
+  
+  return undefined;
+}
+
 
 /**
  * Validate metadata has required fields
@@ -132,13 +190,15 @@ function validateMetadata(metadata) {
     errors.push("Missing customer_number");
   }
 
-  if (metadata.metadata && !metadata.metadata.agentId) {
+  const agentConfig = extractAgentConfig(metadata);
+  if (!agentConfig.agentId) {
     errors.push("Missing agentId in nested metadata");
   }
 
   return {
     isValid: errors.length === 0,
-    errors: errors
+    errors: errors,
+    agentConfig: agentConfig
   };
 }
 
@@ -148,4 +208,6 @@ module.exports = {
   parseKnowlarityMetadata,
   processMetadataObject,
   validateMetadata,
+  safeExtract,
+  extractAgentConfig,
 };

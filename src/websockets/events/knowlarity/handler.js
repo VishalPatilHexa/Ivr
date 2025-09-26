@@ -229,45 +229,28 @@ async function initializeAgent(sessionId, metadata, activeConnections) {
   try {
     Logger.info("🤖 Initializing ElevenLabs agent", { sessionId });
 
-    // Extract agentId and treatmentType from decoded metadata
-    let agentId, treatmentType;
+    // Extract only agentId for ElevenLabs connection, pass full metadata for processing there
+    const agentId = metadataProcessor.safeExtract(
+      metadata,
+      'metadata.metadata.agentId',
+      'metadata.agentId', 
+      'agentId',
+      'agent_id'
+    ) || "default_agent_id";
 
-    Logger.info("🔍 Debug metadata structure", { 
-      sessionId,
-      hasMetadata: !!metadata,
-      metadataKeys: metadata ? Object.keys(metadata) : [],
-      hasNestedMetadata: !!(metadata && metadata.metadata),
-      nestedMetadata: metadata?.metadata,
-      fullMetadataStructure: metadata
-    });
-
-    if (metadata && metadata.metadata && metadata.metadata.metadata) {
-      agentId = metadata.metadata.metadata.agentId;
-      treatmentType = metadata.metadata.metadata.treatmentType;
-      
-      Logger.info("🎯 Extracted values", { 
-        sessionId,
-        agentId,
-        treatmentType
-      });
-    } else {
-      // Use defaults if no metadata provided
-      Logger.info("⚠️ No metadata provided, using defaults", { sessionId });
-      agentId = "default_agent_id"; 
-      treatmentType = "Piles";
-    }
-
-    if (!agentId || agentId === "default_agent_id") {
+    // Log the agentId status
+    if (agentId === "default_agent_id") {
       Logger.warn("⚠️ Using default agentId", { sessionId });
-      // Continue with default - don't return
+    } else {
+      Logger.info("✅ Valid agentId extracted from metadata", { sessionId, agentId });
     }
 
-    // Create ElevenLabs conversation
+    // Create ElevenLabs conversation - pass full metadata for destructuring there
     const elevenLabsAgentService = require("../../../streaming/adapters/elevenlabs");
     const agentConversation = await elevenLabsAgentService.createConversation(
       agentId,
       sessionId,
-      { treatmentType }
+      metadata // Pass full metadata object for ElevenLabs to destructure
     );
 
     // Store agent conversation

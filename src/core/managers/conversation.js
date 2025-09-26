@@ -17,12 +17,12 @@ const activeConversations = new Map();
 /**
  * Create new conversation session with ElevenLabs
  */
-async function createConversation(agentId, sessionId, patientQuery) {
+async function createConversation(agentId, sessionId, metadata) {
   try {
     const conversationSession = {
       sessionId,
-      patientQuery,
-      patientData: { query: patientQuery },
+      patientQuery: metadata, // Store full metadata as received
+      patientData: metadata, // Pass metadata directly
       status: SESSION_MANAGER.CONVERSATION_STATUS.ACTIVE,
       createdAt: new Date(),
       agentWebSocket: null,
@@ -35,7 +35,7 @@ async function createConversation(agentId, sessionId, patientQuery) {
     const agentWebSocket = await websocketManager.createElevenLabsWebSocket(
       agentId,
       sessionId,
-      patientQuery
+      metadata // Pass raw metadata to websocket manager
     );
     conversationSession.agentWebSocket = agentWebSocket;
 

@@ -57,15 +57,13 @@ function initializeConversation(agentWebSocket, sessionId, innerMetadata) {
   const initializationMessage = {
     type: "conversation_initiation_client_data",
     dynamic_variables: {
-      user_name: userName,
-      language: language === "hi" ? "hindi" : language,
       user_id: sessionId,
       ...innerMetadata,
     },
     // Optional: Add conversation config overrides
     conversation_config_override: {
       agent: {
-        language: language || "hi",
+        language: innerMetadata?.language || "hi",
       },
     },
   };

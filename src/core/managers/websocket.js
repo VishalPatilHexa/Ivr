@@ -26,8 +26,9 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
     });
 
     agentWebSocket.on("open", () => {
-      // Initialize conversation with user context
-      initializeConversation(agentWebSocket, sessionId, metadata);
+      // Extract only the inner metadata and pass it
+      const innerMetadata = metadata?.metadata?.metadata || {};
+      initializeConversation(agentWebSocket, sessionId, innerMetadata);
       resolve(agentWebSocket);
     });
 
@@ -50,23 +51,29 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
 /**
  * Initialize conversation with user context and settings
  */
-function initializeConversation(agentWebSocket, sessionId, metadata) {
+function initializeConversation(agentWebSocket, sessionId, innerMetadata) {
+  // Destructure the clean inner metadata directl
+
   const initializationMessage = {
     type: "conversation_initiation_client_data",
     dynamic_variables: {
-      user_name: "Patient",
-      language: "hindi", 
+      user_name: userName,
+      language: language === "hi" ? "hindi" : language,
       user_id: sessionId,
-      // Pass the full metadata object directly to ElevenLabs
-      ...metadata,
+      ...innerMetadata,
     },
     // Optional: Add conversation config overrides
     conversation_config_override: {
       agent: {
-        language: "hi", // Set agent language to Hindi
+        language: language || "hi",
       },
     },
   };
+
+  Logger.debug("Sending initialization message to ElevenLabs", {
+    sessionId,
+    dynamicVariables: initializationMessage.dynamic_variables,
+  });
 
   agentWebSocket.send(JSON.stringify(initializationMessage));
 }

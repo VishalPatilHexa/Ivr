@@ -8,6 +8,111 @@
  */
 
 // =============================================================================
+// HTTP STATUS CODES
+// =============================================================================
+const HTTP_STATUS = {
+  // Success
+  OK: 200,
+  CREATED: 201,
+  ACCEPTED: 202,
+  NO_CONTENT: 204,
+
+  // Client Errors
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+
+  // Server Errors
+  INTERNAL_SERVER_ERROR: 500,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
+  GATEWAY_TIMEOUT: 504,
+};
+
+// =============================================================================
+// ERROR MESSAGES
+// =============================================================================
+const ERROR_MESSAGES = {
+  // Validation Errors
+  VALIDATION: {
+    REQUIRED_FIELD: "This field is required",
+    INVALID_FORMAT: "Invalid format provided",
+    INVALID_PHONE_NUMBER: "Invalid phone number format",
+    INVALID_AGENT_ID: "Invalid agent ID format",
+    MISSING_METADATA: "Metadata is required",
+    MISSING_AGENT_ID: "Agent ID is required in metadata",
+    INVALID_PROVIDER: "Invalid provider specified",
+    INVALID_REQUEST_BODY: "Request body is required and must be valid JSON",
+  },
+
+  // Outbound Call Errors
+  OUTBOUND: {
+    CALL_FAILED: "Failed to initiate outbound call",
+    PROVIDER_NOT_CONFIGURED: "Provider not properly configured",
+    PROVIDER_NOT_FOUND: "Provider configuration not found",
+    API_CALL_FAILED: "External API call failed",
+    TIMEOUT: "Request timeout - call could not be completed",
+    INVALID_RESPONSE: "Invalid response from provider",
+    RATE_LIMITED: "Rate limit exceeded, please try again later",
+  },
+
+  // Authentication Errors
+  AUTH: {
+    INVALID_API_KEY: "Invalid or missing API key",
+    UNAUTHORIZED_ACCESS: "Unauthorized access",
+    FORBIDDEN_RESOURCE: "Access to this resource is forbidden",
+  },
+
+  // Server Errors
+  SERVER: {
+    INTERNAL_ERROR: "Internal server error occurred",
+    SERVICE_UNAVAILABLE: "Service temporarily unavailable",
+    DATABASE_ERROR: "Database operation failed",
+    NETWORK_ERROR: "Network error occurred",
+  },
+
+  // WebSocket Errors
+  WEBSOCKET: {
+    CONNECTION_FAILED: "WebSocket connection failed",
+    INVALID_MESSAGE: "Invalid WebSocket message format",
+    AGENT_INITIALIZATION_FAILED: "Failed to initialize agent conversation",
+    METADATA_PROCESSING_FAILED: "Failed to process call metadata",
+  },
+};
+
+// =============================================================================
+// SUCCESS MESSAGES
+// =============================================================================
+const SUCCESS_MESSAGES = {
+  // Outbound Calls
+  OUTBOUND: {
+    CALL_INITIATED: "Outbound call initiated successfully",
+    CALL_QUEUED: "Call has been queued for processing",
+    PROVIDER_INFO_RETRIEVED: "Provider information retrieved successfully",
+    TEST_COMPLETED: "Test request completed successfully",
+  },
+
+  // General
+  GENERAL: {
+    OPERATION_SUCCESSFUL: "Operation completed successfully",
+    DATA_RETRIEVED: "Data retrieved successfully",
+    UPDATE_SUCCESSFUL: "Update completed successfully",
+    DELETE_SUCCESSFUL: "Delete completed successfully",
+  },
+
+  // Health Check
+  HEALTH: {
+    SERVICE_HEALTHY: "Service is healthy and running",
+    ALL_SYSTEMS_OPERATIONAL: "All systems operational",
+  },
+};
+
+// =============================================================================
 // CONNECTION POOL CONSTANTS
 // =============================================================================
 const CONNECTION_POOL = {
@@ -455,6 +560,9 @@ const DATABASE = {
 };
 
 module.exports = {
+  HTTP_STATUS,
+  ERROR_MESSAGES,
+  SUCCESS_MESSAGES,
   CONNECTION_POOL,
   SESSION_MANAGER,
   REDIS_POOL,

@@ -8,7 +8,7 @@
 
 const express = require('express');
 const router = express.Router();
-const outboundCallService = require('../services/outboundCall');
+const outboundCallService = require('../../services/outboundCall');
 const Logger = require('../utils/logger');
 const { HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } = require('../../constants');
 

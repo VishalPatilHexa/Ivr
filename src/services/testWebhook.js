@@ -221,7 +221,7 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         attemptOfTheLifetime: 1,
         attemptOfTheDay: 1,
         customParam: {
-          "Lead DID": sessionId,
+          "Lead DID": "265404001082342921",
           "Created Time": startTime.toISOString(),
           "Mobile": callerNumber,
           "Page Source": "HexaHealth-IVR-Call",
@@ -241,13 +241,13 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         "Lead Channel": "IVR",
         "Lead Source": "Voice Call",
         "Page Source": "HexaHealth-IVR-Call",
-        "leadId": sessionId,
+        "leadId": "265404001082342921",
         "Summary": elevenLabsData.TranscriptSummary || "",
         "NAME_PATIENT": patientName,
         "CITY_PATIENT": cityName,
         "DETAIL_TREATMENT": treatmentType,
         "PATIENT_CONFIRMATION": consent,
-        "OPD_CONFIRMATION": opdConfirmation,
+        "opdConfirmation": opdConfirmation,
         "SYMPTOMS": symptoms,
         "start_time": formatDateTime(startTime),
         "end_time": formatDateTime(endTime),
@@ -305,19 +305,19 @@ function extractCityFromValue(cityValue) {
  * Extract consent value from complex format
  */
 function extractConsentValue(consentValue) {
-  if (!consentValue) return null;
+  if (!consentValue) return "N/A";
   
   try {
-    // Handle formats like "{'consent': 1, 'relationship': 'self'}"
+    // Handle formats like "{'consent': 1, 'relationship': 'self'}" or "{'consent': 1, 'relationship': None}"
     if (typeof consentValue === 'string' && consentValue.includes('consent')) {
-      // Try to parse as JSON-like string
-      const cleanValue = consentValue.replace(/'/g, '"');
+      // Replace Python None with null for JSON parsing
+      let cleanValue = consentValue.replace(/None/g, 'null').replace(/'/g, '"');
       const parsed = JSON.parse(cleanValue);
-      return parsed.consent === 1 ? "Yes" : "No";
+      return parsed.consent === 1 ? "Yes" : parsed.consent === 0 ? "No" : "N/A";
     }
   } catch (error) {
-    // If parsing fails, return the original value
-    return consentValue;
+    // If parsing fails, return N/A
+    return "N/A";
   }
   
   return consentValue;
@@ -337,7 +337,7 @@ function extractOpdConfirmation(opdValue) {
       
       return {
         confirmation: parsed.confirmation || "No",
-        dateOfAppointment: parsed.dateOfAppointment ? new Date(parsed.dateOfAppointment * 1000).toISOString().split('T')[0] : null,
+        dateOfAppointment: parsed.dateOfAppointment || null,
         priorConsultation: parsed.priorConsultation || "No",
         priorHealthCondition: parsed.priorHealthCondition || "None"
       };
@@ -350,21 +350,6 @@ function extractOpdConfirmation(opdValue) {
   return opdValue;
 }
 
-/**
- * Get department based on treatment type
- */
-function getDepartmentFromTreatment(treatmentType) {
-  const departmentMap = {
-    'Piles': 'Gastroenterology',
-    'Varicose Veins': 'Vascular',
-    'Gallbladder': 'General Surgery',
-    'Hernia': 'General Surgery',
-    'Kidney Stone': 'Urology',
-    'Cataract': 'Ophthalmology',
-  };
-  
-  return departmentMap[treatmentType] || 'General';
-}
 
 /**
  * Format date time for CRM

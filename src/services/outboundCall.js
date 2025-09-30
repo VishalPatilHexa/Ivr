@@ -75,11 +75,10 @@ async function makeOutboundCall(callData) {
 
     // Create database record with INITIATED status
     dbRecord = await createCallRecord({
-      callId,
+      sessionId: callId, // Use callId as sessionId
       provider: provider.name,
       callerNumber: callData.callerNumber,
       customerNumber: callData.customerNumber,
-      sessionId: callData.sessionId,
       isPromotional: callData.isPromotional || false,
       status: CALL_STATUS.INITIATED,
       metadata: callData.metadata,
@@ -299,12 +298,12 @@ async function makeApiCall(provider, payload) {
  */
 async function createCallRecord(callData) {
   try {
-    const record = await db.ivr_calls.create(callData);
-    Logger.info("📝 Call record created", { callId: callData.callId });
+    const record = await db.IvrCall.create(callData);
+    Logger.info("📝 Call record created", { sessionId: callData.sessionId });
     return record;
   } catch (error) {
     Logger.error("❌ Failed to create call record", {
-      callId: callData.callId,
+      sessionId: callData.sessionId,
       error: error.message,
     });
     throw error;
@@ -316,8 +315,8 @@ async function createCallRecord(callData) {
  */
 async function updateCallRecord(callId, updateData) {
   try {
-    await db.ivr_calls.update(updateData, {
-      where: { callId },
+    await db.IvrCall.update(updateData, {
+      where: { sessionId: callId },
     });
     Logger.info("📝 Call record updated", { callId, updates: Object.keys(updateData) });
   } catch (error) {

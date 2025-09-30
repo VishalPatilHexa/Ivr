@@ -33,7 +33,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       countryCode: {
-        type: DataTypes.INT,
+        type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 91,
       },

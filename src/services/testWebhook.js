@@ -212,7 +212,8 @@ function mapElevenLabsToWebhook(elevenLabsData) {
     return {
       callTo: calledNumber || "",
       agentId: dynamicVars.system__agent_id || "",
-      recording_url: elevenLabsData.RecordingURL !== "No recording available" ? elevenLabsData.RecordingURL : "",
+      recording_url:
+      "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
       transcript: generateTranscriptFromSummary(elevenLabsData.TranscriptSummary),
       scheduleInfo: {
         campaignId: "", // Not available in ElevenLabs data
@@ -227,7 +228,7 @@ function mapElevenLabsToWebhook(elevenLabsData) {
           "Lead Channel": "IVR",
           "Lead Name": patientName,
           "City": cityName,
-          "Department": "General",
+          "Department": "",
           "Condition": treatmentType,
           "Procedure": [],
           "retryInfo": null,
@@ -297,6 +298,21 @@ function extractCityFromValue(cityValue) {
   return cityValue;
 }
 
+/**
+ * Get department based on treatment type
+ */
+function getDepartmentFromTreatment(treatmentType) {
+  const departmentMap = {
+    'Piles': 'Gastroenterology',
+    'Varicose Veins': 'Vascular',
+    'Gallbladder': 'General Surgery',
+    'Hernia': 'General Surgery',
+    'Kidney Stone': 'Urology',
+    'Cataract': 'Ophthalmology',
+  };
+  
+  return departmentMap[treatmentType] || 'General';
+}
 
 /**
  * Format date time for CRM

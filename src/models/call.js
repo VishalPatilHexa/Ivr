@@ -16,7 +16,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BIGINT,
         autoIncrement: true,
       },
-      agentId: {},
+      agentId: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
       provider: {
         type: DataTypes.ENUM("knowlarity", "acephone"),
         allowNull: false,
@@ -113,7 +116,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       indexes: [
         {
-          fields: ["callId"],
+          fields: ["agentId"],
         },
         {
           fields: ["status"],

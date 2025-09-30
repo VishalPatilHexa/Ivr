@@ -28,10 +28,6 @@ module.exports = (sequelize, DataTypes) => {
       patientId: {
         type: DataTypes.BIGINT,
         allowNull: true,
-        references: {
-          model: DATABASE.TABLES.PATIENTS,
-          key: "id",
-        },
       },
       agentId: {
         type: DataTypes.STRING,
@@ -92,11 +88,7 @@ module.exports = (sequelize, DataTypes) => {
 
   // Define associations
   Session.associate = (models) => {
-    Session.belongsTo(models.patients, {
-      foreignKey: "patientId",
-      as: "patient",
-    });
-
+    // Remove patients association since patients model doesn't exist
     Session.hasMany(models.conversations, {
       foreignKey: "sessionId",
       as: "conversations",

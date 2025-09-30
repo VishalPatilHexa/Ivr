@@ -9,6 +9,7 @@
 const axios = require("axios");
 const Logger = require("../utils/logger");
 const { HTTP_STATUS } = require("../constants");
+const { getField, getFields, extractPhoneFromSession, transformers } = require("../utils/elevenLabsExtractor");
 
 /**
  * Test webhook call to external API
@@ -234,40 +235,45 @@ async function makeWebhookCall(payload) {
  */
 function mapElevenLabsToWebhook(elevenLabsData) {
   try {
-    const dynamicVars = elevenLabsData.AllDynamicVariables || {};
-    const collectedData = elevenLabsData.AllCollectedData || {};
-
-    // Extract phone numbers from session ID or metadata
+    // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
-    const callerNumber =
-      dynamicVars.system__caller_id || extractPhoneFromSession(sessionId) || "";
-    const calledNumber = dynamicVars.system__called_number || "";
+    
+    // Extract phone numbers using the generic utility
+    const callerNumber = getField(elevenLabsData, "system__caller_id") || extractPhoneFromSession(sessionId) || "";
+    const calledNumber = getField(elevenLabsData, "system__called_number") || "";
+    const customerNumber = calledNumber || extractPhoneFromSession(sessionId) || "";
 
-    // Extract patient information
-    const patientName = collectedData.patientName?.value || "NA";
-    const cityName =
-      extractCityFromValue(collectedData.cityName?.value) || "NA";
-    const treatmentType =
-      collectedData.treatmentType?.value || dynamicVars.treatmentType || "NA";
-    const symptoms = collectedData.symptoms?.value || "NA";
-    const consent =
-      extractConsentValue(collectedData.consent?.value) ||
-      collectedData.Consent?.value ||
-      "NA";
-    const opdConfirmation =
-      extractOpdConfirmation(collectedData.opdConfirmation?.value) || "NA";
+    // Extract all patient/call information using the generic utility
+    const extractedData = getFields(elevenLabsData, {
+      patientName: { fallback: "NA" },
+      cityName: { transform: transformers.city, fallback: "NA" },
+      treatmentType: { fallback: "NA" },
+      symptoms: { fallback: "NA" },
+      consent: { transform: transformers.consent, fallback: "N/A" },
+      Consent: { transform: transformers.consent, fallback: "N/A" }, // Alternative spelling
+      opdConfirmation: { fallback: "NA" },
+      agentId: "system__agent_id",
+      callDuration: "system__call_duration_secs",
+      timeUtc: "system__time_utc"
+    });
+
+    // Use the best available values
+    const patientName = extractedData.patientName;
+    const cityName = extractedData.cityName;
+    const treatmentType = extractedData.treatmentType || getField(elevenLabsData, "treatmentType", { source: "dynamic" }) || "NA";
+    const symptoms = extractedData.symptoms;
+    const consent = extractedData.consent !== "N/A" ? extractedData.consent : extractedData.Consent;
+    const opdConfirmation = extractedData.opdConfirmation;
 
     // Create timestamp
-    const timestamp = new Date(
-      elevenLabsData.Timestamp || Date.now()
-    ).getTime();
-    const startTime = new Date(dynamicVars.system__time_utc || Date.now());
-    const callDuration = dynamicVars.system__call_duration_secs || 0;
+    const timestamp = new Date(elevenLabsData.Timestamp || Date.now()).getTime();
+    const startTime = new Date(extractedData.timeUtc || Date.now());
+    const callDuration = extractedData.callDuration || 0;
     const endTime = new Date(startTime.getTime() + callDuration * 1000);
 
     return {
-      callTo: calledNumber || "",
-      agentId: dynamicVars.system__agent_id || "",
+      callTo: customerNumber,
+      agentId: extractedData.agentId || "",
       recording_url:
         "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
       transcript: generateTranscriptFromSummary(
@@ -337,78 +343,6 @@ function mapElevenLabsToWebhook(elevenLabsData) {
   }
 }
 
-/**
- * Extract phone number from session ID (if embedded)
- */
-function extractPhoneFromSession(sessionId) {
-  // Session ID format might include phone number
-  const phoneMatch = sessionId.match(/(\d{10,15})/);
-  return phoneMatch ? `+91${phoneMatch[1]}` : null;
-}
-
-/**
- * Extract city name from complex value format
- */
-function extractCityFromValue(cityValue) {
-  if (!cityValue) return null;
-
-  // Handle formats like "{'cityName': 'Gurgaon'}"
-  if (typeof cityValue === "string" && cityValue.includes("cityName")) {
-    const match = cityValue.match(/'([^']+)'/);
-    return match ? match[1] : null;
-  }
-
-  return cityValue;
-}
-
-/**
- * Extract consent value from complex format
- */
-function extractConsentValue(consentValue) {
-  if (!consentValue) return "N/A";
-
-  try {
-    // Handle formats like "{'consent': 1, 'relationship': 'self'}" or "{'consent': 1, 'relationship': None}"
-    if (typeof consentValue === "string" && consentValue.includes("consent")) {
-      // Replace Python None with null for JSON parsing
-      let cleanValue = consentValue.replace(/None/g, "null").replace(/'/g, '"');
-      const parsed = JSON.parse(cleanValue);
-      return parsed.consent === 1 ? "Yes" : parsed.consent === 0 ? "No" : "N/A";
-    }
-  } catch (error) {
-    // If parsing fails, return N/A
-    return "N/A";
-  }
-
-  return consentValue;
-}
-
-/**
- * Extract OPD confirmation details
- */
-function extractOpdConfirmation(opdValue) {
-  if (!opdValue) return null;
-
-  try {
-    // Handle formats like "{'confirmation': 'Yes', 'dateOfAppointment': 1769884200, 'priorConsultation': 'No', 'priorHealthCondition': 'bleeding'}"
-    if (typeof opdValue === "string" && opdValue.includes("confirmation")) {
-      const cleanValue = opdValue.replace(/'/g, '"');
-      const parsed = JSON.parse(cleanValue);
-
-      return {
-        confirmation: parsed.confirmation || "NA",
-        dateOfAppointment: parsed.dateOfAppointment || "NA",
-        priorConsultation: parsed.priorConsultation || "NA",
-        priorHealthCondition: parsed.priorHealthCondition || "NA",
-      };
-    }
-  } catch (error) {
-    // If parsing fails, return the original value
-    return opdValue;
-  }
-
-  return opdValue;
-}
 
 /**
  * Format date time for CRM

@@ -18,7 +18,7 @@ const {
   HTTP_STATUS,
   ERROR_MESSAGES,
   SUCCESS_MESSAGES,
-  OUTBOUND_CALL_STATUS,
+  CALL_STATUS,
   OUTBOUND_PROVIDERS,
 } = require("../constants");
 
@@ -81,7 +81,7 @@ async function makeOutboundCall(callData) {
       customerNumber: callData.customerNumber,
       sessionId: callData.sessionId,
       isPromotional: callData.isPromotional || false,
-      status: OUTBOUND_CALL_STATUS.INITIATED,
+      status: CALL_STATUS.INITIATED,
       metadata: callData.metadata,
     });
 
@@ -141,7 +141,7 @@ async function makeOutboundCall(callData) {
     // Update database record with FAILED status
     if (dbRecord) {
       await updateCallRecord(callId, {
-        status: OUTBOUND_CALL_STATUS.FAILED,
+        status: CALL_STATUS.FAILED,
         errorMessage: error.message,
         endTime: new Date(),
       });
@@ -333,7 +333,7 @@ async function updateCallRecord(callId, updateData) {
  */
 async function markCallCompleted(callId, duration = null) {
   return updateCallRecord(callId, {
-    status: OUTBOUND_CALL_STATUS.COMPLETED,
+    status: CALL_STATUS.COMPLETED,
     endTime: new Date(),
     ...(duration && { duration }),
   });
@@ -344,7 +344,7 @@ async function markCallCompleted(callId, duration = null) {
  */
 async function markCallFailed(callId, errorMessage) {
   return updateCallRecord(callId, {
-    status: OUTBOUND_CALL_STATUS.FAILED,
+    status: CALL_STATUS.FAILED,
     errorMessage,
     endTime: new Date(),
   });
@@ -355,7 +355,7 @@ async function markCallFailed(callId, errorMessage) {
  */
 async function markCallCancelled(callId) {
   return updateCallRecord(callId, {
-    status: OUTBOUND_CALL_STATUS.CANCELLED,
+    status: CALL_STATUS.CANCELLED,
     endTime: new Date(),
   });
 }

@@ -47,7 +47,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 0, // 0: initiated, 1: completed, 2: failed, 3: cancelled
         validate: {
-          isIn: [Object.values(OUTBOUND_CALL_STATUS)],
+          isIn: [Object.values(CALL_STATUS)],
         },
       },
       providerCallId: {

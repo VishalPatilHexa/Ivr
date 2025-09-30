@@ -298,6 +298,10 @@ async function makeApiCall(provider, payload) {
  */
 async function createCallRecord(callData) {
   try {
+    // Debug: Log available models
+    Logger.info("📋 Available models in db:", Object.keys(db));
+    Logger.info("📋 Looking for ivr_calls model:", !!db.ivr_calls);
+    
     const record = await db.ivr_calls.create(callData);
     Logger.info("📝 Call record created", { sessionId: callData.sessionId });
     return record;
@@ -305,6 +309,7 @@ async function createCallRecord(callData) {
     Logger.error("❌ Failed to create call record", {
       sessionId: callData.sessionId,
       error: error.message,
+      availableModels: Object.keys(db),
     });
     throw error;
   }

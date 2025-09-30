@@ -9,10 +9,10 @@
 
 const options = {
   DB: {
-    HOST: process.env.DB_REPLICA_HOST || "hexahealth-replica-db.cqnt4cbjitmj.ap-south-1.rds.amazonaws.com",
-    USER: process.env.DB_REPLICA_USER || "preproduser",
-    PASSWORD: process.env.DB_REPLICA_PASSWORD || "hexa@mysql",
-    DB: process.env.DB_REPLICA_NAME || "new_dev_db",
+    HOST: process.env.DB_REPLICA_HOST || "hexa-staging-db.cqnt4cbjitmj.ap-south-1.rds.amazonaws.com",
+    USER: process.env.DB_REPLICA_USER || "admin", 
+    PASSWORD: process.env.DB_REPLICA_PASSWORD || "h3xah3a1tH14",
+    DB: process.env.DB_REPLICA_NAME || "hexahealth_db",
     PORT: parseInt(process.env.DB_REPLICA_PORT) || 3306,
     dialect: "mysql",
     

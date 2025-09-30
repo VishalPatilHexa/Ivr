@@ -11,7 +11,7 @@ const {
   activeConnections,
   cleanupSession,
 } = require("../websockets/events/stream");
-const { addDataToSheet } = require("../services/analytics");
+const { callTestWebhook, mapElevenLabsToWebhook } = require("../services/testWebhook");
 
 /**
  * Handle ElevenLabs post-call webhook
@@ -86,8 +86,8 @@ async function handlePostCallWebhook(req, res) {
         knowlarityMetadata.raw || "No metadata stored"
       );
 
-      // Prepare combined data for Google Sheets with exact column names
-      const combinedData = {
+      // Prepare combined data for webhook
+      const elevenLabsData = {
         Timestamp: new Date().toISOString(),
         SessionID: sessionId,
         ConversationID: conversationId,
@@ -99,11 +99,24 @@ async function handlePostCallWebhook(req, res) {
         DataExtractedByAI: allCollectedData,
       };
 
-      console.log("🔗 ===== COMBINED DATA FOR GOOGLE SHEETS =====");
-      console.log(JSON.stringify(combinedData, null, 2));
+      console.log("🔗 ===== ELEVENLABS DATA FOR WEBHOOK =====");
+      console.log(JSON.stringify(elevenLabsData, null, 2));
 
-      // Write to Google Sheets instead of external API
-      await addDataToSheet(combinedData);
+      // Map ElevenLabs data to webhook format and call external API
+      try {
+        const webhookPayload = mapElevenLabsToWebhook(elevenLabsData);
+        const webhookResult = await callTestWebhook(webhookPayload);
+        
+        console.log("🎯 External webhook called successfully", {
+          sessionId,
+          success: webhookResult.success,
+        });
+      } catch (error) {
+        console.error("❌ Failed to call external webhook", {
+          sessionId,
+          error: error.message,
+        });
+      }
 
       // Close Knowlarity WebSocket if still active (agent ended call but Knowlarity socket still open)
       if (connection.websocket && connection.websocket.readyState === 1) {
@@ -122,7 +135,7 @@ async function handlePostCallWebhook(req, res) {
       console.log("⚠️ No connection found for session:", sessionId);
       console.log("💡 This is normal - cleanup may have already happened");
 
-      // Still write to Google Sheets even without Knowlarity metadata
+      // Handle case without Knowlarity metadata
       const elevenLabsOnlyData = {
         Timestamp: new Date().toISOString(),
         SessionID: sessionId,
@@ -140,8 +153,21 @@ async function handlePostCallWebhook(req, res) {
       console.log("📊 ===== ELEVENLABS DATA ONLY =====");
       console.log(JSON.stringify(elevenLabsOnlyData, null, 2));
 
-      // Write to Google Sheets
-      await addDataToSheet(elevenLabsOnlyData);
+      // Map ElevenLabs data to webhook format and call external API
+      try {
+        const webhookPayload = mapElevenLabsToWebhook(elevenLabsOnlyData);
+        const webhookResult = await callTestWebhook(webhookPayload);
+        
+        console.log("🎯 External webhook called successfully", {
+          sessionId,
+          success: webhookResult.success,
+        });
+      } catch (error) {
+        console.error("❌ Failed to call external webhook", {
+          sessionId,
+          error: error.message,
+        });
+      }
     }
 
     console.log("🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====");
@@ -164,46 +190,6 @@ async function handlePostCallWebhook(req, res) {
   }
 }
 
-/**
- * Call external API with combined Knowlarity and ElevenLabs data
- */
-async function callExternalAPI(combinedData) {
-  try {
-    console.log("📡 ===== CALLING EXTERNAL API =====");
-    console.log("🚀 Data to send:", JSON.stringify(combinedData, null, 2));
-
-    // TODO: Replace with actual external API endpoint
-    const externalApiUrl =
-      process.env.EXTERNAL_API_URL || "https://your-api-endpoint.com/webhook";
-
-    console.log(`📞 Would call external API: ${externalApiUrl}`);
-    console.log("📦 Payload:", combinedData);
-
-    // Uncomment below when ready to make actual API call
-    /*
-    const response = await fetch(externalApiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.EXTERNAL_API_TOKEN}`
-      },
-      body: JSON.stringify(combinedData)
-    });
-    
-    if (response.ok) {
-      const result = await response.json();
-      console.log('✅ External API call successful:', result);
-    } else {
-      console.error('❌ External API call failed:', response.statusText);
-    }
-    */
-
-    console.log("✅ External API call completed (currently mocked)");
-  } catch (error) {
-    console.error("❌ Error calling external API:", error);
-    throw error;
-  }
-}
 
 module.exports = {
   handlePostCallWebhook,

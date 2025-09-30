@@ -9,7 +9,7 @@ const { DATABASE, CALL_STATUS } = require("../constants");
 
 module.exports = (sequelize, DataTypes) => {
   const IvrCall = sequelize.define(
-    DATABASE.TABLES.IVR_CALLS,
+    "ivr_calls",
     {
       id: {
         primaryKey: true,

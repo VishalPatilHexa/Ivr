@@ -298,7 +298,7 @@ async function makeApiCall(provider, payload) {
  */
 async function createCallRecord(callData) {
   try {
-    const record = await db.IvrCall.create(callData);
+    const record = await db.ivr_calls.create(callData);
     Logger.info("📝 Call record created", { sessionId: callData.sessionId });
     return record;
   } catch (error) {
@@ -315,7 +315,7 @@ async function createCallRecord(callData) {
  */
 async function updateCallRecord(callId, updateData) {
   try {
-    await db.IvrCall.update(updateData, {
+    await db.ivr_calls.update(updateData, {
       where: { sessionId: callId },
     });
     Logger.info("📝 Call record updated", { callId, updates: Object.keys(updateData) });

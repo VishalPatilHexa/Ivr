@@ -15,7 +15,7 @@ const { HTTP_STATUS } = require("../constants");
  *
  * @param {Object} callData - Call completion data
  * @param {string} callData.callTo - Customer phone number
- * @param {string} callData.callFrom - Caller phone number  
+ * @param {string} callData.callFrom - Caller phone number
  * @param {string} callData.agentId - Agent ID used for the call
  * @param {string} callData.recording_url - URL of call recording
  * @param {Array} callData.transcript - Conversation transcript
@@ -66,61 +66,98 @@ async function callTestWebhook(callData) {
 }
 
 /**
- * Create standardized webhook payload
+ * Create flexible webhook payload with dynamic field handling
  */
 function createWebhookPayload(callData) {
+  // Helper function to merge objects with fallbacks
+  const safeAssign = (target, source, fallback = {}) => {
+    if (!source || typeof source !== "object")
+      return { ...target, ...fallback };
+    return { ...target, ...source };
+  };
+
+  // Helper function to get value with fallback
+  const getValue = (obj, path, fallback = "") => {
+    return obj?.[path] !== undefined ? obj[path] : fallback;
+  };
+
   return {
-    callTo: callData.callTo || "",
-    agentId: callData.agentId || "",
-    recording_url: callData.recording_url || "",
-    transcript: callData.transcript || [],
-    scheduleInfo: {
-      campaignId: callData.scheduleInfo?.campaignId || "",
-      attemptOfTheLifetime: callData.scheduleInfo?.attemptOfTheLifetime || 0,
-      attemptOfTheDay: callData.scheduleInfo?.attemptOfTheDay || 0,
-      customParam: {
-        "Lead DID": callData.scheduleInfo?.customParam?.["Lead DID"] || "",
-        "Created Time": callData.scheduleInfo?.customParam?.["Created Time"] || "",
-        "Mobile": callData.scheduleInfo?.customParam?.["Mobile"] || "",
-        "Page Source": callData.scheduleInfo?.customParam?.["Page Source"] || "",
-        "Lead Source": callData.scheduleInfo?.customParam?.["Lead Source"] || "",
-        "Lead Channel": callData.scheduleInfo?.customParam?.["Lead Channel"] || "",
-        "Lead Name": callData.scheduleInfo?.customParam?.["Lead Name"] || "",
-        "City": callData.scheduleInfo?.customParam?.["City"] || "",
-        "Department": callData.scheduleInfo?.customParam?.["Department"] || "",
-        "Condition": callData.scheduleInfo?.customParam?.["Condition"] || "",
-        "Procedure": callData.scheduleInfo?.customParam?.["Procedure"] || [],
-        "retryInfo": callData.scheduleInfo?.customParam?.["retryInfo"] || null,
+    // Core fields
+    event: getValue(callData, "event", "CALL_COMPLETED"),
+    callTo: getValue(callData, "callTo"),
+    agentId: getValue(callData, "agentId"),
+    callFrom: getValue(callData, "callFrom"),
+    timestamp: getValue(callData, "timestamp", Date.now()),
+    businessId: getValue(callData, "businessId", "67bff39c63b61e495e90079f"),
+
+    // Transcript - pass through as-is
+    transcript: Array.isArray(callData.transcript) ? callData.transcript : [],
+
+    // Recording URL
+    recording_url: getValue(callData, "recording_url"),
+
+    // Call History - flexible object merge
+    callHistory: safeAssign(
+      {
+        callDuration: 0,
+        callInitTime: 0,
+        callEndTime: 0,
+        callStatus: "",
+        callStartTime: 0,
+        provider_0: "",
+        id: "",
       },
+      callData.callHistory
+    ),
+
+    // Schedule Info - flexible with custom params
+    scheduleInfo: {
+      campaignId: getValue(callData.scheduleInfo, "campaignId"),
+      attemptOfTheLifetime: getValue(
+        callData.scheduleInfo,
+        "attemptOfTheLifetime",
+        1
+      ),
+      attemptOfTheDay: getValue(callData.scheduleInfo, "attemptOfTheDay", 1),
+      // Pass through all customParam fields dynamically
+      customParam: safeAssign(
+        {
+          "Lead DID": "",
+          "Created Time": "",
+          Mobile: "",
+          "Page Source": "HexaHealth-IVR-Call",
+          "Lead Source": "Voice Call",
+          "Lead Channel": "IVR",
+          "Lead Name": "NA",
+          City: "NA",
+          Department: "",
+          Condition: "NA",
+          Procedure: [],
+          retryInfo: null,
+        },
+        callData.scheduleInfo?.customParam
+      ),
     },
-    callFrom: callData.callFrom || "",
-    businessId: callData.businessId || "",
-    customer_crm_data: {
-      "Lead Channel": callData.customer_crm_data?.["Lead Channel"] || "",
-      "Lead Source": callData.customer_crm_data?.["Lead Source"] || "",
-      "Page Source": callData.customer_crm_data?.["Page Source"] || "",
-      "leadId": callData.customer_crm_data?.["leadId"] || "",
-      "Summary": callData.customer_crm_data?.["Summary"] || "",
-      "NAME_PATIENT": callData.customer_crm_data?.["NAME_PATIENT"] || "NA",
-      "CITY_PATIENT": callData.customer_crm_data?.["CITY_PATIENT"] || "NA",
-      "DETAIL_TREATMENT": callData.customer_crm_data?.["DETAIL_TREATMENT"] || "NA",
-      "PATIENT_CONFIRMATION": callData.customer_crm_data?.["PATIENT_CONFIRMATION"] || "NA",
-      "start_time": callData.customer_crm_data?.["start_time"] || "",
-      "end_time": callData.customer_crm_data?.["end_time"] || "",
-      "recording_url": callData.customer_crm_data?.["recording_url"] || "",
-      "status": callData.customer_crm_data?.["status"] || "",
-    },
-    event: callData.event || "CALL_COMPLETED",
-    callHistory: {
-      callDuration: callData.callHistory?.callDuration || 0,
-      callInitTime: callData.callHistory?.callInitTime || 0,
-      callEndTime: callData.callHistory?.callEndTime || 0,
-      callStatus: callData.callHistory?.callStatus || "",
-      callStartTime: callData.callHistory?.callStartTime || 0,
-      provider_0: callData.callHistory?.provider_0 || "",
-      id: callData.callHistory?.id || "",
-    },
-    timestamp: callData.timestamp || Date.now(),
+
+    // Customer CRM Data - flexible with dynamic fields
+    customer_crm_data: safeAssign(
+      {
+        "Lead Channel": "IVR",
+        "Lead Source": "Voice Call",
+        "Page Source": "HexaHealth-IVR-Call",
+        leadId: "",
+        Summary: "",
+        NAME_PATIENT: "NA",
+        CITY_PATIENT: "NA",
+        DETAIL_TREATMENT: "NA",
+        PATIENT_CONFIRMATION: "NA",
+        start_time: "",
+        end_time: "",
+        recording_url: "",
+        status: "completed",
+      },
+      callData.customer_crm_data
+    ),
   };
 }
 
@@ -128,19 +165,23 @@ function createWebhookPayload(callData) {
  * Make webhook API call
  */
 async function makeWebhookCall(payload) {
-  const webhookUrl = "https://api.hexahealth.com/call/v1/thirdparty/voice-bot-sync";
-  
+  const webhookUrl =
+    "https://api.hexahealth.com/call/v1/thirdparty/voice-bot-sync";
+
   const headers = {
-    "connection": "upgrade",
-    "host": "api.hexahealth.com",
+    connection: "upgrade",
+    host: "api.hexahealth.com",
     "x-forwarded-for": "3.223.179.38",
     "x-forwarded-proto": "https",
     "x-forwarded-port": "443",
     "x-amzn-trace-id": "Root=1-68db7855-0bb9be7722d1fe3e41b3e3b6",
-    "accept": "text/plain, application/xml, text/xml, application/json, application/*+xml, application/*+json, */*",
+    accept:
+      "text/plain, application/xml, text/xml, application/json, application/*+xml, application/*+json, */*",
     "content-type": "application/json",
-    "applicationtype": "crmapi",
-    "authorization": process.env.HEXAHEALTH_WEBHOOK_TOKEN || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NzI4NzcsIm5hbWUiOiJwYXJ0aCB0ZXN0Iiwicm9sZSI6IlRISVJEX1BBUlRZIiwic2Vjb25kYXJ5Um9sZXMiOm51bGwsIm1vYmlsZU5vIjo5OTUzODEwMTI3LCJpYXQiOjE3NDI4MjA4NzAsImV4cCI6MTgzNzQ5NTU0MH0.TYtOpu9n2-OB9l5ZWI5DS_MWHFFtWaPAxB3WzN0bgQU",
+    applicationtype: "crmapi",
+    authorization:
+      process.env.HEXAHEALTH_WEBHOOK_TOKEN ||
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NzI4NzcsIm5hbWUiOiJwYXJ0aCB0ZXN0Iiwicm9sZSI6IlRISVJEX1BBUlRZIiwic2Vjb25kYXJ5Um9sZXMiOm51bGwsIm1vYmlsZU5vIjo5OTUzODEwMTI3LCJpYXQiOjE3NDI4MjA4NzAsImV4cCI6MTgzNzQ5NTU0MH0.TYtOpu9n2-OB9l5ZWI5DS_MWHFFtWaPAxB3WzN0bgQU",
     "user-agent": "Apache-HttpClient/4.5.13 (Java/17.0.14)",
     "accept-encoding": "gzip,deflate",
   };
@@ -156,7 +197,10 @@ async function makeWebhookCall(payload) {
       timeout: 30000, // 30 second timeout
     });
 
-    if (response.status !== HTTP_STATUS.OK && response.status !== HTTP_STATUS.CREATED) {
+    if (
+      response.status !== HTTP_STATUS.OK &&
+      response.status !== HTTP_STATUS.CREATED
+    ) {
       throw new Error(`Webhook call failed - Status: ${response.status}`);
     }
 
@@ -172,7 +216,9 @@ async function makeWebhookCall(payload) {
     }
 
     if (error.response?.status >= 500) {
-      throw new Error(`Webhook service unavailable - Status: ${error.response.status}`);
+      throw new Error(
+        `Webhook service unavailable - Status: ${error.response.status}`
+      );
     }
 
     // Re-throw original error if not handled above
@@ -190,32 +236,43 @@ function mapElevenLabsToWebhook(elevenLabsData) {
   try {
     const dynamicVars = elevenLabsData.AllDynamicVariables || {};
     const collectedData = elevenLabsData.AllCollectedData || {};
-    
+
     // Extract phone numbers from session ID or metadata
     const sessionId = elevenLabsData.SessionID || "";
-    const callerNumber = dynamicVars.system__caller_id || extractPhoneFromSession(sessionId) || "";
+    const callerNumber =
+      dynamicVars.system__caller_id || extractPhoneFromSession(sessionId) || "";
     const calledNumber = dynamicVars.system__called_number || "";
-    
+
     // Extract patient information
     const patientName = collectedData.patientName?.value || "NA";
-    const cityName = extractCityFromValue(collectedData.cityName?.value) || "NA";
-    const treatmentType = collectedData.treatmentType?.value || dynamicVars.treatmentType || "NA";
+    const cityName =
+      extractCityFromValue(collectedData.cityName?.value) || "NA";
+    const treatmentType =
+      collectedData.treatmentType?.value || dynamicVars.treatmentType || "NA";
     const symptoms = collectedData.symptoms?.value || "NA";
-    const consent = extractConsentValue(collectedData.consent?.value) || collectedData.Consent?.value || "NA";
-    const opdConfirmation = extractOpdConfirmation(collectedData.opdConfirmation?.value) || "NA";
-    
+    const consent =
+      extractConsentValue(collectedData.consent?.value) ||
+      collectedData.Consent?.value ||
+      "NA";
+    const opdConfirmation =
+      extractOpdConfirmation(collectedData.opdConfirmation?.value) || "NA";
+
     // Create timestamp
-    const timestamp = new Date(elevenLabsData.Timestamp || Date.now()).getTime();
+    const timestamp = new Date(
+      elevenLabsData.Timestamp || Date.now()
+    ).getTime();
     const startTime = new Date(dynamicVars.system__time_utc || Date.now());
     const callDuration = dynamicVars.system__call_duration_secs || 0;
-    const endTime = new Date(startTime.getTime() + (callDuration * 1000));
-    
+    const endTime = new Date(startTime.getTime() + callDuration * 1000);
+
     return {
       callTo: calledNumber || "",
       agentId: dynamicVars.system__agent_id || "",
       recording_url:
-      "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
-      transcript: generateTranscriptFromSummary(elevenLabsData.TranscriptSummary),
+        "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
+      transcript: generateTranscriptFromSummary(
+        elevenLabsData.TranscriptSummary
+      ),
       scheduleInfo: {
         campaignId: "", // Not available in ElevenLabs data
         attemptOfTheLifetime: 1,
@@ -223,16 +280,16 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         customParam: {
           "Lead DID": "265404001082342921",
           "Created Time": startTime.toISOString(),
-          "Mobile": callerNumber,
+          Mobile: callerNumber,
           "Page Source": "HexaHealth-IVR-Call",
           "Lead Source": "Voice Call",
           "Lead Channel": "IVR",
           "Lead Name": patientName,
-          "City": cityName,
-          "Department": "",
-          "Condition": treatmentType,
-          "Procedure": [],
-          "retryInfo": null,
+          City: cityName,
+          Department: "",
+          Condition: treatmentType,
+          Procedure: [],
+          retryInfo: null,
         },
       },
       callFrom: callerNumber,
@@ -241,18 +298,21 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         "Lead Channel": "IVR",
         "Lead Source": "Voice Call",
         "Page Source": "HexaHealth-IVR-Call",
-        "leadId": "265404001082342921",
-        "Summary": elevenLabsData.TranscriptSummary || "",
-        "NAME_PATIENT": patientName,
-        "CITY_PATIENT": cityName,
-        "DETAIL_TREATMENT": treatmentType,
-        "PATIENT_CONFIRMATION": consent,
-        "opdConfirmation": opdConfirmation,
-        "SYMPTOMS": symptoms,
-        "start_time": formatDateTime(startTime),
-        "end_time": formatDateTime(endTime),
-        "recording_url": elevenLabsData.RecordingURL !== "No recording available" ? elevenLabsData.RecordingURL : "",
-        "status": "completed",
+        leadId: "265404001082342921",
+        Summary: elevenLabsData.TranscriptSummary || "",
+        NAME_PATIENT: patientName,
+        CITY_PATIENT: cityName,
+        DETAIL_TREATMENT: treatmentType,
+        PATIENT_CONFIRMATION: consent,
+        opdConfirmation: opdConfirmation,
+        SYMPTOMS: symptoms,
+        start_time: formatDateTime(startTime),
+        end_time: formatDateTime(endTime),
+        recording_url:
+          elevenLabsData.RecordingURL !== "No recording available"
+            ? elevenLabsData.RecordingURL
+            : "",
+        status: "completed",
       },
       event: "CALL_COMPLETED",
       callHistory: {
@@ -271,7 +331,7 @@ function mapElevenLabsToWebhook(elevenLabsData) {
       error: error.message,
       elevenLabsData: elevenLabsData,
     });
-    
+
     // Return basic structure with available data
     return createSampleWebhookData();
   }
@@ -291,13 +351,13 @@ function extractPhoneFromSession(sessionId) {
  */
 function extractCityFromValue(cityValue) {
   if (!cityValue) return null;
-  
+
   // Handle formats like "{'cityName': 'Gurgaon'}"
-  if (typeof cityValue === 'string' && cityValue.includes('cityName')) {
+  if (typeof cityValue === "string" && cityValue.includes("cityName")) {
     const match = cityValue.match(/'([^']+)'/);
     return match ? match[1] : null;
   }
-  
+
   return cityValue;
 }
 
@@ -306,12 +366,12 @@ function extractCityFromValue(cityValue) {
  */
 function extractConsentValue(consentValue) {
   if (!consentValue) return "N/A";
-  
+
   try {
     // Handle formats like "{'consent': 1, 'relationship': 'self'}" or "{'consent': 1, 'relationship': None}"
-    if (typeof consentValue === 'string' && consentValue.includes('consent')) {
+    if (typeof consentValue === "string" && consentValue.includes("consent")) {
       // Replace Python None with null for JSON parsing
-      let cleanValue = consentValue.replace(/None/g, 'null').replace(/'/g, '"');
+      let cleanValue = consentValue.replace(/None/g, "null").replace(/'/g, '"');
       const parsed = JSON.parse(cleanValue);
       return parsed.consent === 1 ? "Yes" : parsed.consent === 0 ? "No" : "N/A";
     }
@@ -319,7 +379,7 @@ function extractConsentValue(consentValue) {
     // If parsing fails, return N/A
     return "N/A";
   }
-  
+
   return consentValue;
 }
 
@@ -328,40 +388,39 @@ function extractConsentValue(consentValue) {
  */
 function extractOpdConfirmation(opdValue) {
   if (!opdValue) return null;
-  
+
   try {
     // Handle formats like "{'confirmation': 'Yes', 'dateOfAppointment': 1769884200, 'priorConsultation': 'No', 'priorHealthCondition': 'bleeding'}"
-    if (typeof opdValue === 'string' && opdValue.includes('confirmation')) {
+    if (typeof opdValue === "string" && opdValue.includes("confirmation")) {
       const cleanValue = opdValue.replace(/'/g, '"');
       const parsed = JSON.parse(cleanValue);
-      
+
       return {
-        confirmation: parsed.confirmation || "No",
-        dateOfAppointment: parsed.dateOfAppointment || null,
-        priorConsultation: parsed.priorConsultation || "No",
-        priorHealthCondition: parsed.priorHealthCondition || "None"
+        confirmation: parsed.confirmation || "NA",
+        dateOfAppointment: parsed.dateOfAppointment || "NA",
+        priorConsultation: parsed.priorConsultation || "NA",
+        priorHealthCondition: parsed.priorHealthCondition || "NA",
       };
     }
   } catch (error) {
     // If parsing fails, return the original value
     return opdValue;
   }
-  
+
   return opdValue;
 }
-
 
 /**
  * Format date time for CRM
  */
 function formatDateTime(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
-  
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
@@ -370,20 +429,20 @@ function formatDateTime(date) {
  */
 function generateTranscriptFromSummary(summary) {
   if (!summary) return [];
-  
+
   return [
     {
       role: "assistant",
-      content: "Hello, मैं HexaHealth से बोल रही हूँ। आपकी क्या समस्या है?"
+      content: "Hello, मैं HexaHealth से बोल रही हूँ। आपकी क्या समस्या है?",
     },
     {
-      role: "user", 
-      content: "मुझे treatment की जरूरत है।"
+      role: "user",
+      content: "मुझे treatment की जरूरत है।",
     },
     {
       role: "system",
-      content: `Call Summary: ${summary}`
-    }
+      content: `Call Summary: ${summary}`,
+    },
   ];
 }
 
@@ -394,24 +453,27 @@ function createSampleWebhookData() {
   return {
     callTo: "00919228041668",
     agentId: "892db09d-9a50-42e7-9f19-0a41053efb6a",
-    recording_url: "https://recordings.xtremegenai.com/Hexahealth/2025/09/30/1759213584.949181_917666006788_00919228041668.wav",
+    recording_url:
+      "https://recordings.xtremegenai.com/Hexahealth/2025/09/30/1759213584.949181_917666006788_00919228041668.wav",
     transcript: [
       {
         role: "assistant",
-        content: "Hello, मैं Bhawna बोल रही हूँ HexaHealth से. Umm…… हमें आपकी query मिली है कि आप Varicose Veins का इलाज ढूंढ रहे हैं?."
+        content:
+          "Hello, मैं Bhawna बोल रही हूँ HexaHealth से. Umm…… हमें आपकी query मिली है कि आप Varicose Veins का इलाज ढूंढ रहे हैं?.",
       },
       {
         role: "system",
-        content: "System Asked If User can hear them and the next message will be user ackowledging if they can hear the AI"
+        content:
+          "System Asked If User can hear them and the next message will be user ackowledging if they can hear the AI",
       },
       {
         role: "system",
-        content: "User was silent for 6 seconds."
+        content: "User was silent for 6 seconds.",
       },
       {
         role: "assistant",
-        content: "Are you able to hear me?"
-      }
+        content: "Are you able to hear me?",
+      },
     ],
     scheduleInfo: {
       campaignId: "6833f198e6648b6a72e7e730",
@@ -420,17 +482,17 @@ function createSampleWebhookData() {
       customParam: {
         "Lead DID": "L265404002803622035",
         "Created Time": "2025-09-30T11:55:59+05:30",
-        "Mobile": "+917666006788",
+        Mobile: "+917666006788",
         "Page Source": "HexaHealth-Laser Varicose Veins-Mumbai-Display",
         "Lead Source": "Web Lead Form",
         "Lead Channel": "Ad - Facebook",
         "Lead Name": "Amit Kadam",
-        "City": "Mumbai",
-        "Department": "Vascular",
-        "Condition": "Varicose Veins",
-        "Procedure": [],
-        "retryInfo": null
-      }
+        City: "Mumbai",
+        Department: "Vascular",
+        Condition: "Varicose Veins",
+        Procedure: [],
+        retryInfo: null,
+      },
     },
     callFrom: "+917666006788",
     businessId: "67bff39c63b61e495e90079f",
@@ -438,16 +500,17 @@ function createSampleWebhookData() {
       "Lead Channel": "Ad - Facebook",
       "Lead Source": "Web Lead Form",
       "Page Source": "HexaHealth-Laser Varicose Veins-Mumbai-Display",
-      "leadId": "L265404002803622035",
-      "Summary": "Customer did not speak during the call.",
-      "NAME_PATIENT": "NA",
-      "CITY_PATIENT": "NA",
-      "DETAIL_TREATMENT": "NA",
-      "PATIENT_CONFIRMATION": "NA",
-      "start_time": "2025-09-30 06:26:49",
-      "end_time": "2025-09-30 06:27:20",
-      "recording_url": "https://recordings.xtremegenai.com/Hexahealth/2025/09/30/1759213584.949181_917666006788_00919228041668.wav",
-      "status": "completed"
+      leadId: "L265404002803622035",
+      Summary: "Customer did not speak during the call.",
+      NAME_PATIENT: "NA",
+      CITY_PATIENT: "NA",
+      DETAIL_TREATMENT: "NA",
+      PATIENT_CONFIRMATION: "NA",
+      start_time: "2025-09-30 06:26:49",
+      end_time: "2025-09-30 06:27:20",
+      recording_url:
+        "https://recordings.xtremegenai.com/Hexahealth/2025/09/30/1759213584.949181_917666006788_00919228041668.wav",
+      status: "completed",
     },
     event: "CALL_COMPLETED",
     callHistory: {
@@ -457,9 +520,9 @@ function createSampleWebhookData() {
       callStatus: "ANSWER",
       callStartTime: 1759213609000,
       provider_0: "1759213584.949181",
-      id: "68db781049449e1b0ff6bf97"
+      id: "68db781049449e1b0ff6bf97",
     },
-    timestamp: 1759213652577
+    timestamp: 1759213652577,
   };
 }
 

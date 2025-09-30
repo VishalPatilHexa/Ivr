@@ -201,7 +201,8 @@ function mapElevenLabsToWebhook(elevenLabsData) {
     const cityName = extractCityFromValue(collectedData.cityName?.value) || "NA";
     const treatmentType = collectedData.treatmentType?.value || dynamicVars.treatmentType || "NA";
     const symptoms = collectedData.symptoms?.value || "NA";
-    const consent = collectedData.Consent?.value || "NA";
+    const consent = extractConsentValue(collectedData.consent?.value) || collectedData.Consent?.value || "NA";
+    const opdConfirmation = extractOpdConfirmation(collectedData.opdConfirmation?.value) || "NA";
     
     // Create timestamp
     const timestamp = new Date(elevenLabsData.Timestamp || Date.now()).getTime();
@@ -246,6 +247,8 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         "CITY_PATIENT": cityName,
         "DETAIL_TREATMENT": treatmentType,
         "PATIENT_CONFIRMATION": consent,
+        "OPD_CONFIRMATION": opdConfirmation,
+        "SYMPTOMS": symptoms,
         "start_time": formatDateTime(startTime),
         "end_time": formatDateTime(endTime),
         "recording_url": elevenLabsData.RecordingURL !== "No recording available" ? elevenLabsData.RecordingURL : "",
@@ -296,6 +299,55 @@ function extractCityFromValue(cityValue) {
   }
   
   return cityValue;
+}
+
+/**
+ * Extract consent value from complex format
+ */
+function extractConsentValue(consentValue) {
+  if (!consentValue) return null;
+  
+  try {
+    // Handle formats like "{'consent': 1, 'relationship': 'self'}"
+    if (typeof consentValue === 'string' && consentValue.includes('consent')) {
+      // Try to parse as JSON-like string
+      const cleanValue = consentValue.replace(/'/g, '"');
+      const parsed = JSON.parse(cleanValue);
+      return parsed.consent === 1 ? "Yes" : "No";
+    }
+  } catch (error) {
+    // If parsing fails, return the original value
+    return consentValue;
+  }
+  
+  return consentValue;
+}
+
+/**
+ * Extract OPD confirmation details
+ */
+function extractOpdConfirmation(opdValue) {
+  if (!opdValue) return null;
+  
+  try {
+    // Handle formats like "{'confirmation': 'Yes', 'dateOfAppointment': 1769884200, 'priorConsultation': 'No', 'priorHealthCondition': 'bleeding'}"
+    if (typeof opdValue === 'string' && opdValue.includes('confirmation')) {
+      const cleanValue = opdValue.replace(/'/g, '"');
+      const parsed = JSON.parse(cleanValue);
+      
+      return {
+        confirmation: parsed.confirmation || "No",
+        dateOfAppointment: parsed.dateOfAppointment ? new Date(parsed.dateOfAppointment * 1000).toISOString().split('T')[0] : null,
+        priorConsultation: parsed.priorConsultation || "No",
+        priorHealthCondition: parsed.priorHealthCondition || "None"
+      };
+    }
+  } catch (error) {
+    // If parsing fails, return the original value
+    return opdValue;
+  }
+  
+  return opdValue;
 }
 
 /**

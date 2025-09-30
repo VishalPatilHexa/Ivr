@@ -14,21 +14,13 @@ const Logger = require("../../../utils/logger");
  */
 function handleConnection(websocket, urlPath, activeConnections) {
   Logger.info("🚀 Acephone handler called (basic implementation)");
-  
-  // Extract session info
-  const sessionId = `acephone_${Date.now()}`;
-  
-  Logger.info("📞 Acephone connection received", { 
-    sessionId, 
-    urlPath 
-  });
 
-  // Store basic connection info
+    // Store basic connection info
   activeConnections.set(sessionId, {
     websocket,
     clientType: "acephone",
     connectedAt: new Date(),
-    sessionId: sessionId,
+    // sessionId: sessionId, need to extract from metadata
   });
 
   // Basic message handling

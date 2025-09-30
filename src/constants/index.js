@@ -535,11 +535,8 @@ const DATABASE = {
     SESSIONS: "sessions",
     CONVERSATIONS: "conversations",
     CALL_LOGS: "call_logs",
+    IVR_CALLS: "ivr_calls",
     AGENTS: "agents",
-    PATIENTS: "patients",
-    ALLERGIES: "allergies",
-    MEDICAL_HISTORY: "medical_history",
-    APPOINTMENTS: "appointments",
   },
 
   // Database operations
@@ -559,6 +556,25 @@ const DATABASE = {
   },
 };
 
+// =============================================================================
+// OUTBOUND CALL STATUS CONSTANTS
+// =============================================================================
+const CALL_STATUS = {
+  INITIATED: 0,
+  COMPLETED: 1,
+  FAILED: 2,
+  CANCELLED: 3,
+  MISSED:4
+};
+
+// =============================================================================
+// OUTBOUND CALL PROVIDERS
+// =============================================================================
+const OUTBOUND_PROVIDERS = {
+  KNOWLARITY: "knowlarity",
+  ACEPHONE: "acephone",
+};
+
 module.exports = {
   HTTP_STATUS,
   ERROR_MESSAGES,
@@ -574,4 +590,6 @@ module.exports = {
   APPLICATION,
   DATABASE,
   API_ENDPOINTS,
+  CALL_STATUS,
+  OUTBOUND_PROVIDERS,
 };

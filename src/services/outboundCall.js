@@ -12,10 +12,14 @@
 
 const axios = require("axios");
 const Logger = require("../utils/logger");
+const { v4: uuidv4 } = require("uuid");
+const db = require("../models");
 const {
   HTTP_STATUS,
   ERROR_MESSAGES,
   SUCCESS_MESSAGES,
+  OUTBOUND_CALL_STATUS,
+  OUTBOUND_PROVIDERS,
 } = require("../constants");
 
 // Provider configurations
@@ -49,11 +53,16 @@ const PROVIDERS = {
  * @param {Object} callData.metadata - Call metadata (agentId, treatmentType, language, etc.)
  * @param {boolean} [callData.isPromotional=false] - Whether call is promotional
  * @param {string} [callData.ivrId] - IVR ID (for Knowlarity)
+ * @param {string} [callData.sessionId] - Session ID to link with call
  * @returns {Promise<Object>} API response
  */
 async function makeOutboundCall(callData) {
+  const callId = uuidv4();
+  let dbRecord = null;
+
   try {
     Logger.info("🚀 Making outbound call", {
+      callId,
       customerNumber: callData.customerNumber,
       provider: process.env.OUTBOUND_PROVIDER || "knowlarity",
     });
@@ -64,33 +73,83 @@ async function makeOutboundCall(callData) {
     // Determine provider from environment
     const provider = getActiveProvider();
 
+    // Create database record with INITIATED status
+    dbRecord = await createCallRecord({
+      callId,
+      provider: provider.name,
+      callerNumber: callData.callerNumber,
+      customerNumber: callData.customerNumber,
+      sessionId: callData.sessionId,
+      isPromotional: callData.isPromotional || false,
+      status: OUTBOUND_CALL_STATUS.INITIATED,
+      metadata: callData.metadata,
+    });
+
     // Create provider-specific payload
     const payload = createProviderPayload(provider, callData);
 
     // Make API call
     const response = await makeApiCall(provider, payload);
 
+    // Extract provider-specific call ID and session ID
+    let providerCallId, sessionIdFromProvider;
+    
+    if (provider.name === "knowlarity" && response.data.data?.call_ids?.[0]?.call_id) {
+      providerCallId = response.data.data.call_ids[0].call_id;
+      sessionIdFromProvider = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
+    } else if (provider.name === "acephone") {
+      providerCallId = response.data.call_id || response.data.id;
+      // For Acephone, use the sessionId we generated and passed in metadata
+      sessionIdFromProvider = callData.metadata.sessionId || callId;
+    } else {
+      providerCallId = response.data.call_id || response.data.id;
+      sessionIdFromProvider = callData.sessionId; // Use provided sessionId for other providers
+    }
+
+    // Update database record with provider response
+    await updateCallRecord(callId, {
+      providerCallId,
+      sessionId: sessionIdFromProvider || callData.sessionId,
+      providerResponse: response.data,
+      startTime: new Date(),
+    });
+
     Logger.info("✅ Outbound call initiated successfully", {
+      callId,
       provider: provider.name,
       customerNumber: callData.customerNumber,
-      callId: response.data.call_id || response.data.id || "unknown",
+      providerCallId,
+      sessionId: sessionIdFromProvider,
     });
 
     return {
       success: true,
+      callId,
       provider: provider.name,
-      callId: response.data.call_id || response.data.id,
+      providerCallId,
+      sessionId: sessionIdFromProvider,
       data: response.data,
     };
   } catch (error) {
     Logger.error("❌ Failed to make outbound call", {
+      callId,
       error: error.message,
       customerNumber: callData.customerNumber,
       stack: error.stack,
     });
 
+    // Update database record with FAILED status
+    if (dbRecord) {
+      await updateCallRecord(callId, {
+        status: OUTBOUND_CALL_STATUS.FAILED,
+        errorMessage: error.message,
+        endTime: new Date(),
+      });
+    }
+
     return {
       success: false,
+      callId,
       error: error.message,
       provider: process.env.OUTBOUND_PROVIDER || "unknown",
     };
@@ -173,12 +232,16 @@ function createKnowlarityPayload(callData) {
 function createAcephonePayload(callData) {
   // Remove + prefix and country code for Acephone (they expect 10-digit numbers)
   const cleanCustomerNumber = callData.customerNumber.replace(/^\+?91/, "");
+  
+  // Generate sessionId for Acephone if not provided
+  const sessionId = callData.sessionId || uuidv4();
 
   return {
     customer_number: cleanCustomerNumber,
     api_key: process.env.ACEPHONE_API_KEY,
     metadata: {
       ...callData.metadata, // Include any additional metadata
+      sessionId, // Add sessionId to metadata for WebSocket connection
     },
     async: 1, // Acephone async flag
   };
@@ -232,6 +295,72 @@ async function makeApiCall(provider, payload) {
 }
 
 /**
+ * Create outbound call record in database
+ */
+async function createCallRecord(callData) {
+  try {
+    const record = await db.ivr_calls.create(callData);
+    Logger.info("📝 Call record created", { callId: callData.callId });
+    return record;
+  } catch (error) {
+    Logger.error("❌ Failed to create call record", {
+      callId: callData.callId,
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Update outbound call record in database
+ */
+async function updateCallRecord(callId, updateData) {
+  try {
+    await db.ivr_calls.update(updateData, {
+      where: { callId },
+    });
+    Logger.info("📝 Call record updated", { callId, updates: Object.keys(updateData) });
+  } catch (error) {
+    Logger.error("❌ Failed to update call record", {
+      callId,
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Mark call as completed
+ */
+async function markCallCompleted(callId, duration = null) {
+  return updateCallRecord(callId, {
+    status: OUTBOUND_CALL_STATUS.COMPLETED,
+    endTime: new Date(),
+    ...(duration && { duration }),
+  });
+}
+
+/**
+ * Mark call as failed
+ */
+async function markCallFailed(callId, errorMessage) {
+  return updateCallRecord(callId, {
+    status: OUTBOUND_CALL_STATUS.FAILED,
+    errorMessage,
+    endTime: new Date(),
+  });
+}
+
+/**
+ * Mark call as cancelled
+ */
+async function markCallCancelled(callId) {
+  return updateCallRecord(callId, {
+    status: OUTBOUND_CALL_STATUS.CANCELLED,
+    endTime: new Date(),
+  });
+}
+
+/**
  * Get provider status and configuration info
  */
 function getProviderInfo() {
@@ -257,6 +386,9 @@ function getProviderInfo() {
 
 module.exports = {
   makeOutboundCall,
+  markCallCompleted,
+  markCallFailed,
+  markCallCancelled,
   getProviderInfo,
   PROVIDERS,
 };

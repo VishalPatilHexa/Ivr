@@ -21,37 +21,33 @@ const Logger = require("../utils/logger");
 // Initialize primary database connection (for writes)
 let sequelize = new Sequelize(config.DB.DB, config.DB.USER, config.DB.PASSWORD, {
     host: config.DB.HOST,
+    port: config.DB.PORT,
     dialect: config.DB.dialect,
     operatorsAliases: 0,
-    define: {
-        freezeTableName: true,
-    },
-    pool: {
-        max: config.DB.pool.max,
-        min: config.DB.pool.min,
-        acquire: config.DB.pool.acquire,
-        idle: config.DB.pool.idle,
-    },
-    logging: env === 'production' ? false : (msg) => Logger.info('Database Query', { query: msg }),
-    timezone: '+05:30', // IST timezone
+    pool: config.DB.pool,
+    dialectOptions: config.DB.dialectOptions,
+    query: config.DB.query,
+    retry: config.DB.retry,
+    timezone: config.DB.timezone,
+    logging: config.DB.logging,
+    benchmark: config.DB.benchmark,
+    define: config.DB.define
 });
 
 // Initialize replica database connection (for reads)
 let replicaSequelize = new Sequelize(replicaConfig.DB.DB, replicaConfig.DB.USER, replicaConfig.DB.PASSWORD, {
     host: replicaConfig.DB.HOST,
+    port: replicaConfig.DB.PORT,
     dialect: replicaConfig.DB.dialect,
     operatorsAliases: 0,
-    define: {
-        freezeTableName: true,
-    },
-    pool: {
-        max: replicaConfig.DB.pool.max,
-        min: replicaConfig.DB.pool.min,
-        acquire: replicaConfig.DB.pool.acquire,
-        idle: replicaConfig.DB.pool.idle,
-    },
-    logging: env === 'production' ? false : (msg) => Logger.info('Replica Database Query', { query: msg }),
-    timezone: '+05:30', // IST timezone
+    pool: replicaConfig.DB.pool,
+    dialectOptions: replicaConfig.DB.dialectOptions,
+    query: replicaConfig.DB.query,
+    retry: replicaConfig.DB.retry,
+    timezone: replicaConfig.DB.timezone,
+    logging: replicaConfig.DB.logging,
+    benchmark: replicaConfig.DB.benchmark,
+    define: replicaConfig.DB.define
 });
 
 const db = {};

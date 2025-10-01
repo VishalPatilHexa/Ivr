@@ -48,6 +48,8 @@ router.post('/call', async (req, res) => {
         error: ERROR_MESSAGES.VALIDATION.INVALID_REQUEST_BODY
       });
     }
+    console.log(req.body,"-------------------------------------------------------");
+    
 
     const callData = {
       customerNumber: req.body.customerNumber,

@@ -9,16 +9,21 @@ const { DATABASE, CALL_STATUS } = require("../constants");
 
 module.exports = (sequelize, DataTypes) => {
   const IvrCall = sequelize.define(
-    "ivr_calls",
+    DATABASE.TABLES.IVR_CALLS,
     {
       id: {
         primaryKey: true,
         type: DataTypes.BIGINT,
         autoIncrement: true,
       },
-      agentId: {
-        type: DataTypes.STRING,
+      campaignId: {
+        type: DataTypes.BIGINT,
         allowNull: true,
+      },
+      crmSynced: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
       },
       provider: {
         type: DataTypes.ENUM("knowlarity", "acephone"),
@@ -53,10 +58,6 @@ module.exports = (sequelize, DataTypes) => {
           isIn: [Object.values(CALL_STATUS)],
         },
       },
-      providerCallId: {
-        type: DataTypes.STRING,
-        allowNull: true,
-      },
       providerResponse: {
         type: DataTypes.JSON,
         allowNull: true,
@@ -82,6 +83,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
       metadata: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+      extractedJson: {
         type: DataTypes.JSON,
         allowNull: true,
       },
@@ -115,9 +120,8 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
       indexes: [
-        {
-          fields: ["agentId"],
-        },
+        { fields: ["campaignId"] },
+        { fields: ["customerNumber"] },
         {
           fields: ["status"],
         },

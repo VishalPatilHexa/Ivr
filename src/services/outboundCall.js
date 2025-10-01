@@ -94,8 +94,11 @@ async function makeOutboundCall(callData) {
 
     // Extract provider-specific call ID and session ID
     let providerCallId, sessionIdFromProvider;
-    
-    if (provider.name === "knowlarity" && response.data.data?.call_ids?.[0]?.call_id) {
+
+    if (
+      provider.name === "knowlarity" &&
+      response.data.data?.call_ids?.[0]?.call_id
+    ) {
       providerCallId = response.data.data.call_ids[0].call_id;
       sessionIdFromProvider = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
     } else if (provider.name === "acephone") {
@@ -218,8 +221,8 @@ function createKnowlarityPayload(callData) {
   return {
     ivr_id: process.env.KNOWLARITY_IVR_ID,
     k_number: process.env.KNOWLARITY_VIRTUAL_NUMBER,
-    caller_id: callData.callerNumber,
-    customer_number: callData.customerNumber,
+    caller_id: formatPhoneWithCountryCode(callData.callerNumber),
+    customer_number: formatPhoneWithCountryCode(callData.customerNumber),
     is_promotional: callData.isPromotional ? "true" : "false",
     metadata: {
       ...callData.metadata, // Include any additional metadata
@@ -233,7 +236,7 @@ function createKnowlarityPayload(callData) {
 function createAcephonePayload(callData) {
   // Remove + prefix and country code for Acephone (they expect 10-digit numbers)
   const cleanCustomerNumber = callData.customerNumber.replace(/^\+?91/, "");
-  
+
   // Generate sessionId for Acephone if not provided
   const sessionId = callData.sessionId || uuidv4();
 
@@ -296,12 +299,53 @@ async function makeApiCall(provider, payload) {
 }
 
 /**
+ * Normalize phone number for database storage (get last 10 digits)
+ */
+function normalizePhoneNumber(phoneNumber) {
+  if (!phoneNumber) return "";
+
+  // Convert to string and remove any non-digit characters
+  const cleanNumber = String(phoneNumber).replace(/\D/g, "");
+
+  // Get last 10 digits for database storage
+  return cleanNumber.slice(-10);
+}
+
+/**
+ * Format phone number with country code for API calls
+ */
+function formatPhoneWithCountryCode(phoneNumber, countryCode = "+91") {
+  if (!phoneNumber) return "";
+
+  // Get normalized 10-digit number
+  const normalizedNumber = normalizePhoneNumber(phoneNumber);
+
+  // Add country code if not already present
+  if (normalizedNumber.length === 10) {
+    return `${countryCode}${normalizedNumber}`;
+  }
+
+  return phoneNumber; // Return as-is if already formatted
+}
+
+/**
  * Create outbound call record in database
  */
 async function createCallRecord(callData) {
   try {
-    const record = await db.ivr_calls.create(callData);
-    Logger.info("📝 Call record created", { sessionId: callData.sessionId });
+    // Normalize phone numbers for database storage
+    const normalizedData = {
+      ...callData,
+      callerNumber: normalizePhoneNumber(callData.callerNumber),
+      customerNumber: normalizePhoneNumber(callData.customerNumber),
+    };
+
+    const record = await db.ivr_calls.create(normalizedData);
+    Logger.info("📝 Call record created", {
+      sessionId: callData.sessionId,
+      callerNumber: normalizedData.callerNumber,
+      customerNumber: normalizedData.customerNumber,
+    });
     return record;
   } catch (error) {
     Logger.error("❌ Failed to create call record", {
@@ -319,11 +363,14 @@ async function updateCallRecord(callId, updateData) {
   try {
     // Always update the updatedAt timestamp
     updateData.updatedAt = Math.floor(Date.now());
-    
+
     await db.ivr_calls.update(updateData, {
       where: { sessionId: callId },
     });
-    Logger.info("📝 Call record updated", { callId, updates: Object.keys(updateData) });
+    Logger.info("📝 Call record updated", {
+      callId,
+      updates: Object.keys(updateData),
+    });
   } catch (error) {
     Logger.error("❌ Failed to update call record", {
       callId,
@@ -394,5 +441,7 @@ module.exports = {
   markCallFailed,
   markCallCancelled,
   getProviderInfo,
+  normalizePhoneNumber,
+  formatPhoneWithCountryCode,
   PROVIDERS,
 };

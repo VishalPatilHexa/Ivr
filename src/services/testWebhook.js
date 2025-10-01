@@ -10,6 +10,7 @@ const axios = require("axios");
 const Logger = require("../utils/logger");
 const { HTTP_STATUS } = require("../constants");
 const { getField, getFields, extractPhoneFromSession, transformers } = require("../utils/elevenLabsExtractor");
+const { normalizePhoneNumber, formatPhoneWithCountryCode } = require("./outboundCall");
 
 /**
  * Test webhook call to external API
@@ -167,11 +168,11 @@ function createWebhookPayload(callData) {
  */
 async function makeWebhookCall(payload) {
   const webhookUrl =
-    "https://api.hexahealth.com/call/v1/thirdparty/voice-bot-sync";
+    "https://stagapi.hexahealth.com/call/v1/thirdparty/voice-bot-sync";
 
   const headers = {
     connection: "upgrade",
-    host: "api.hexahealth.com",
+    host: "stagapi.hexahealth.com",
     "x-forwarded-for": "3.223.179.38",
     "x-forwarded-proto": "https",
     "x-forwarded-port": "443",
@@ -239,9 +240,13 @@ function mapElevenLabsToWebhook(elevenLabsData) {
     const sessionId = elevenLabsData.SessionID || "";
     
     // Extract phone numbers using the generic utility
-    const callerNumber = getField(elevenLabsData, "system__caller_id") || extractPhoneFromSession(sessionId) || "";
-    const calledNumber = getField(elevenLabsData, "system__called_number") || "";
-    const customerNumber = calledNumber || extractPhoneFromSession(sessionId) || "";
+    const rawCallerNumber = getField(elevenLabsData, "system__caller_id") || extractPhoneFromSession(sessionId) || "";
+    const rawCalledNumber = getField(elevenLabsData, "system__called_number") || "";
+    const rawCustomerNumber = rawCalledNumber || extractPhoneFromSession(sessionId) || "";
+    
+    // Normalize phone numbers for consistent storage (last 10 digits)  
+    const normalizedCallerNumber = normalizePhoneNumber(rawCallerNumber);
+    const normalizedCustomerNumber = normalizePhoneNumber(rawCustomerNumber);
 
     // Extract all patient/call information using the generic utility
     const extractedData = getFields(elevenLabsData, {
@@ -272,7 +277,7 @@ function mapElevenLabsToWebhook(elevenLabsData) {
     const endTime = new Date(startTime.getTime() + callDuration * 1000);
 
     return {
-      callTo: customerNumber,
+      callTo: formatPhoneWithCountryCode(rawCustomerNumber),
       agentId: extractedData.agentId || "",
       recording_url:
         "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
@@ -286,7 +291,7 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         customParam: {
           "Lead DID": "265404001082342921",
           "Created Time": startTime.toISOString(),
-          Mobile: callerNumber,
+          Mobile: formatPhoneWithCountryCode(rawCallerNumber),
           "Page Source": "HexaHealth-IVR-Call",
           "Lead Source": "Voice Call",
           "Lead Channel": "IVR",
@@ -298,7 +303,7 @@ function mapElevenLabsToWebhook(elevenLabsData) {
           retryInfo: null,
         },
       },
-      callFrom: callerNumber,
+      callFrom: formatPhoneWithCountryCode(rawCallerNumber),
       businessId: "67bff39c63b61e495e90079f", // Default business ID
       customer_crm_data: {
         "Lead Channel": "IVR",
@@ -385,7 +390,7 @@ function generateTranscriptFromSummary(summary) {
  */
 function createSampleWebhookData() {
   return {
-    callTo: "00919228041668",
+    callTo: "+919228041668",
     agentId: "892db09d-9a50-42e7-9f19-0a41053efb6a",
     recording_url:
       "https://recordings.xtremegenai.com/Hexahealth/2025/09/30/1759213584.949181_917666006788_00919228041668.wav",

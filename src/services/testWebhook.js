@@ -286,12 +286,10 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         : extractedData.Consent;
     const opdConfirmation = extractedData.opdConfirmation;
 
-    // Create timestamp
-    const timestamp = new Date(
-      elevenLabsData.Timestamp || Date.now()
-    ).getTime();
-    const startTime = new Date(extractedData.timeUtc || Date.now());
-    const callDuration = extractedData.callDuration || 0;
+    // Use static timestamps for now
+    const timestamp = Date.now();
+    const startTime = new Date();
+    const callDuration = extractedData.callDuration || 60; // Default 60 seconds
     const endTime = new Date(startTime.getTime() + callDuration * 1000);
 
     return {

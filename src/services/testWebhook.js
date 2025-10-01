@@ -239,9 +239,10 @@ async function makeWebhookCall(payload) {
  * Map ElevenLabs data to webhook payload format
  *
  * @param {Object} elevenLabsData - Data from ElevenLabs webhook
+ * @param {Object} callRecord - Optional call record from ivr_calls table
  * @returns {Object} Mapped webhook payload
  */
-function mapElevenLabsToWebhook(elevenLabsData) {
+function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
   try {
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
@@ -304,7 +305,7 @@ function mapElevenLabsToWebhook(elevenLabsData) {
         campaignId: "", // Not available in ElevenLabs data
         attemptOfTheLifetime: 1,
         attemptOfTheDay: 1,
-        customParam: {
+        customParam: callRecord?.metadata?.custom_field || {
           "Lead DID": "265404001082342921",
           "Created Time": startTime.toISOString(),
           Mobile: formatPhoneWithCountryCode(rawCallerNumber),

@@ -11,9 +11,12 @@ const {
   activeConnections,
   cleanupSession,
 } = require("../websockets/events/stream");
-const { callTestWebhook, mapElevenLabsToWebhook } = require("../services/testWebhook");
+const {
+  callTestWebhook,
+  mapElevenLabsToWebhook,
+} = require("../services/testWebhook");
 const { updateCallWithElevenLabsData } = require("../services/outboundCall");
-
+const db = require("../models");
 /**
  * Handle ElevenLabs post-call webhook
  */
@@ -53,7 +56,6 @@ async function handlePostCallWebhook(req, res) {
     const connection = activeConnections.get(sessionId);
 
     if (connection) {
-
       // Prepare combined data for webhook
       const elevenLabsData = {
         Timestamp: new Date().toISOString(),
@@ -80,11 +82,28 @@ async function handlePostCallWebhook(req, res) {
         });
       }
 
+      // Fetch call record to get metadata.custom_field
+      let callRecord = null;
+      try {
+        callRecord = await db.ivr_calls.findOne({
+          where: { sessionId: sessionId },
+        });
+        console.log("📋 Call record found:", !!callRecord);
+      } catch (error) {
+        console.error("❌ Failed to fetch call record", {
+          sessionId,
+          error: error.message,
+        });
+      }
+
       // Map ElevenLabs data to webhook format and call external API
       try {
-        const webhookPayload = mapElevenLabsToWebhook(elevenLabsData);
+        const webhookPayload = mapElevenLabsToWebhook(
+          elevenLabsData,
+          callRecord
+        );
         const webhookResult = await callTestWebhook(webhookPayload);
-        
+
         console.log("🎯 External webhook called successfully", {
           sessionId,
           success: webhookResult.success,
@@ -129,11 +148,29 @@ async function handlePostCallWebhook(req, res) {
       console.log("📊 ===== ELEVENLABS DATA ONLY =====");
       console.log(JSON.stringify(elevenLabsOnlyData, null, 2));
 
+      // Fetch call record to get metadata.custom_field
+      let callRecord = null;
+      try {
+        const db = require("../models");
+        callRecord = await db.ivr_calls.findOne({
+          where: { sessionId: sessionId },
+        });
+        console.log("📋 Call record found (no connection case):", !!callRecord);
+      } catch (error) {
+        console.error("❌ Failed to fetch call record (no connection case)", {
+          sessionId,
+          error: error.message,
+        });
+      }
+
       // Map ElevenLabs data to webhook format and call external API
       try {
-        const webhookPayload = mapElevenLabsToWebhook(elevenLabsOnlyData);
+        const webhookPayload = mapElevenLabsToWebhook(
+          elevenLabsOnlyData,
+          callRecord
+        );
         const webhookResult = await callTestWebhook(webhookPayload);
-        
+
         console.log("🎯 External webhook called successfully", {
           sessionId,
           success: webhookResult.success,
@@ -165,7 +202,6 @@ async function handlePostCallWebhook(req, res) {
     });
   }
 }
-
 
 module.exports = {
   handlePostCallWebhook,

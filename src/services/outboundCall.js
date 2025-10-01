@@ -361,17 +361,24 @@ async function updateCallRecord(callId, updateData) {
     // Always update the updatedAt timestamp
     updateData.updatedAt = Math.floor(Date.now());
 
-    await db.ivr_calls.update(updateData, {
+    const [updatedRows] = await db.ivr_calls.update(updateData, {
       where: { sessionId: callId },
     });
+
     Logger.info("📝 Call record updated", {
       callId,
+      updatedRows,
       updates: Object.keys(updateData),
     });
+
+    if (updatedRows === 0) {
+      Logger.warn("⚠️ No call record found to update", { sessionId: callId });
+    }
   } catch (error) {
     Logger.error("❌ Failed to update call record", {
       callId,
       error: error.message,
+      stack: error.stack,
     });
   }
 }
@@ -426,16 +433,23 @@ async function updateCallWithElevenLabsData(sessionId, elevenLabsData) {
       rawResponse: elevenLabsData,
     };
 
-    // Update the call record
-    await updateCallRecord(sessionId, {
-      extractedJson: extractedJson,
-      status: CALL_STATUS.COMPLETED,
+    // Check if call record exists
+    const existingRecord = await db.ivr_calls.findOne({
+      where: { sessionId: sessionId },
     });
 
-    Logger.info("✅ Call updated with ElevenLabs data", {
-      sessionId,
-      dataSize: JSON.stringify(extractedJson).length,
-    });
+    if (existingRecord) {
+      // Update existing record
+      await updateCallRecord(sessionId, {
+        extractedJson: extractedJson,
+        status: CALL_STATUS.COMPLETED,
+        callEndTime: new Date(),
+      });
+      Logger.info("✅ Existing call record updated with ElevenLabs data", {
+        sessionId,
+        dataSize: JSON.stringify(extractedJson).length,
+      });
+    }
 
     return extractedJson;
   } catch (error) {

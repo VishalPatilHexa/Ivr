@@ -404,8 +404,48 @@ async function markCallFailed(callId, errorMessage) {
 async function markCallCancelled(callId) {
   return updateCallRecord(callId, {
     status: CALL_STATUS.CANCELLED,
-    endTime: new Date(),
+    callEndTime: new Date(),
   });
+}
+
+/**
+ * Update call record with ElevenLabs extracted data
+ */
+async function updateCallWithElevenLabsData(sessionId, elevenLabsData) {
+  try {
+    Logger.info("📋 Updating call with ElevenLabs data", { sessionId });
+
+    // Create comprehensive extracted JSON from ElevenLabs response
+    const extractedJson = {
+      conversationId: elevenLabsData.ConversationID || "",
+      transcriptSummary: elevenLabsData.TranscriptSummary || "",
+      // All collected data from the conversation
+      collectedData: elevenLabsData.AllCollectedData || {},
+
+      // Raw response for complete data preservation
+      rawResponse: elevenLabsData,
+    };
+
+    // Update the call record
+    await updateCallRecord(sessionId, {
+      extractedJson: extractedJson,
+      status: CALL_STATUS.COMPLETED,
+    });
+
+    Logger.info("✅ Call updated with ElevenLabs data", {
+      sessionId,
+      dataSize: JSON.stringify(extractedJson).length,
+    });
+
+    return extractedJson;
+  } catch (error) {
+    Logger.error("❌ Failed to update call with ElevenLabs data", {
+      sessionId,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
 }
 
 /**
@@ -437,6 +477,7 @@ module.exports = {
   markCallCompleted,
   markCallFailed,
   markCallCancelled,
+  updateCallWithElevenLabsData,
   getProviderInfo,
   normalizePhoneNumber,
   formatPhoneWithCountryCode,

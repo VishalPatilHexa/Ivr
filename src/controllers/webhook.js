@@ -12,6 +12,7 @@ const {
   cleanupSession,
 } = require("../websockets/events/stream");
 const { callTestWebhook, mapElevenLabsToWebhook } = require("../services/testWebhook");
+const { updateCallWithElevenLabsData } = require("../services/outboundCall");
 
 /**
  * Handle ElevenLabs post-call webhook
@@ -33,11 +34,6 @@ async function handlePostCallWebhook(req, res) {
     // Extract ALL ElevenLabs data (complete webhook data)
     const elevenLabsCompleteData = webhookData.data || {};
 
-    // Extract all dynamic variables (not just predefined ones)
-    const allDynamicVariables =
-      elevenLabsCompleteData.conversation_initiation_client_data
-        ?.dynamic_variables || {};
-
     // Extract all collected data from analysis
     const allCollectedData = {};
     if (elevenLabsCompleteData.analysis?.data_collection_results) {
@@ -53,54 +49,36 @@ async function handlePostCallWebhook(req, res) {
       });
     }
 
-    // Recording URL from metadata
-    const recordingUrl =
-      elevenLabsCompleteData.metadata?.audio_url ||
-      elevenLabsCompleteData.metadata?.recording_url ||
-      "No recording available";
-
-    console.log("📊 ===== ELEVENLABS COMPLETE DATA =====");
-    console.log(
-      "🎯 All Dynamic Variables:",
-      JSON.stringify(allDynamicVariables, null, 2)
-    );
-    console.log(
-      "📋 All Collected Data:",
-      JSON.stringify(allCollectedData, null, 2)
-    );
-    console.log("🎵 Recording URL:", recordingUrl);
-    console.log(
-      "📄 Summary:",
-      elevenLabsCompleteData.analysis?.transcript_summary
-    );
-
     // Get Knowlarity metadata from stored connection
     const connection = activeConnections.get(sessionId);
 
     if (connection) {
-      const knowlarityMetadata = connection.knowlarityMetadata || {};
-
-      console.log("📞 ===== KNOWLARITY METADATA =====");
-      console.log(
-        "🔍 Raw metadata:",
-        knowlarityMetadata.raw || "No metadata stored"
-      );
 
       // Prepare combined data for webhook
       const elevenLabsData = {
         Timestamp: new Date().toISOString(),
         SessionID: sessionId,
         ConversationID: conversationId,
-        RecordingURL: recordingUrl,
         TranscriptSummary:
           elevenLabsCompleteData.analysis?.transcript_summary || "",
-        AllDynamicVariables: allDynamicVariables,
         AllCollectedData: allCollectedData,
         DataExtractedByAI: allCollectedData,
       };
 
       console.log("🔗 ===== ELEVENLABS DATA FOR WEBHOOK =====");
       console.log(JSON.stringify(elevenLabsData, null, 2));
+
+      // Update call record with extracted ElevenLabs data
+      try {
+        console.log("📝 Updating call record with ElevenLabs data...");
+        await updateCallWithElevenLabsData(sessionId, elevenLabsData);
+        console.log("✅ Call record updated successfully");
+      } catch (error) {
+        console.error("❌ Failed to update call record", {
+          sessionId,
+          error: error.message,
+        });
+      }
 
       // Map ElevenLabs data to webhook format and call external API
       try {

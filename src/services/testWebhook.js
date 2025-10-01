@@ -9,8 +9,15 @@
 const axios = require("axios");
 const Logger = require("../utils/logger");
 const { HTTP_STATUS } = require("../constants");
-const { getField, getFields, extractPhoneFromSession, transformers } = require("../utils/elevenLabsExtractor");
-const { normalizePhoneNumber, formatPhoneWithCountryCode } = require("./outboundCall");
+const {
+  getField,
+  getFields,
+  extractPhoneFromSession,
+  transformers,
+} = require("../utils/elevenLabsExtractor");
+const {
+  formatPhoneWithCountryCode,
+} = require("./outboundCall");
 
 /**
  * Test webhook call to external API
@@ -238,15 +245,18 @@ function mapElevenLabsToWebhook(elevenLabsData) {
   try {
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
-    
+
     // Extract phone numbers using the generic utility
-    const rawCallerNumber = getField(elevenLabsData, "system__caller_id") || extractPhoneFromSession(sessionId) || "";
-    const rawCalledNumber = getField(elevenLabsData, "system__called_number") || "";
-    const rawCustomerNumber = rawCalledNumber || extractPhoneFromSession(sessionId) || "";
-    
-    // Normalize phone numbers for consistent storage (last 10 digits)  
-    const normalizedCallerNumber = normalizePhoneNumber(rawCallerNumber);
-    const normalizedCustomerNumber = normalizePhoneNumber(rawCustomerNumber);
+    const rawCallerNumber =
+      getField(elevenLabsData, "system__caller_id") ||
+      extractPhoneFromSession(sessionId) ||
+      "";
+    const rawCalledNumber =
+      getField(elevenLabsData, "system__called_number") || "";
+    const rawCustomerNumber =
+      rawCalledNumber || extractPhoneFromSession(sessionId) || "";
+
+    // Note: Phone numbers are normalized in the database layer
 
     // Extract all patient/call information using the generic utility
     const extractedData = getFields(elevenLabsData, {
@@ -259,19 +269,27 @@ function mapElevenLabsToWebhook(elevenLabsData) {
       opdConfirmation: { fallback: "NA" },
       agentId: "system__agent_id",
       callDuration: "system__call_duration_secs",
-      timeUtc: "system__time_utc"
+      timeUtc: "system__time_utc",
     });
 
     // Use the best available values
     const patientName = extractedData.patientName;
     const cityName = extractedData.cityName;
-    const treatmentType = extractedData.treatmentType || getField(elevenLabsData, "treatmentType", { source: "dynamic" }) || "NA";
+    const treatmentType =
+      extractedData.treatmentType ||
+      getField(elevenLabsData, "treatmentType", { source: "dynamic" }) ||
+      "NA";
     const symptoms = extractedData.symptoms;
-    const consent = extractedData.consent !== "N/A" ? extractedData.consent : extractedData.Consent;
+    const consent =
+      extractedData.consent !== "N/A"
+        ? extractedData.consent
+        : extractedData.Consent;
     const opdConfirmation = extractedData.opdConfirmation;
 
     // Create timestamp
-    const timestamp = new Date(elevenLabsData.Timestamp || Date.now()).getTime();
+    const timestamp = new Date(
+      elevenLabsData.Timestamp || Date.now()
+    ).getTime();
     const startTime = new Date(extractedData.timeUtc || Date.now());
     const callDuration = extractedData.callDuration || 0;
     const endTime = new Date(startTime.getTime() + callDuration * 1000);

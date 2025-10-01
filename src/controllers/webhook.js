@@ -122,7 +122,6 @@ async function handlePostCallWebhook(req, res) {
           elevenLabsCompleteData.analysis?.transcript_summary || "",
         KnowlarityRawMetadata: "",
         PhoneCallMetadata: "",
-        AllDynamicVariables: allDynamicVariables,
         AllCollectedData: allCollectedData,
         DataExtractedByAI: allCollectedData,
       };

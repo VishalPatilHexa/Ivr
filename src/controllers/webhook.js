@@ -118,7 +118,6 @@ async function handlePostCallWebhook(req, res) {
         Timestamp: new Date().toISOString(),
         SessionID: sessionId,
         ConversationID: conversationId,
-        RecordingURL: recordingUrl,
         TranscriptSummary:
           elevenLabsCompleteData.analysis?.transcript_summary || "",
         KnowlarityRawMetadata: "",

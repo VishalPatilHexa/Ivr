@@ -92,37 +92,32 @@ async function makeOutboundCall(callData) {
     // Make API call
     const response = await makeApiCall(provider, payload);
 
-    // Extract provider-specific call ID and session ID
-    let providerCallId, sessionIdFromProvider;
+    // Extract session ID from provider response
+    let sessionIdFromProvider;
 
     if (
       provider.name === "knowlarity" &&
       response.data.data?.call_ids?.[0]?.call_id
     ) {
-      providerCallId = response.data.data.call_ids[0].call_id;
       sessionIdFromProvider = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
     } else if (provider.name === "acephone") {
-      providerCallId = response.data.call_id || response.data.id;
       // For Acephone, use the sessionId we generated and passed in metadata
       sessionIdFromProvider = callData.metadata.sessionId || callId;
     } else {
-      providerCallId = response.data.call_id || response.data.id;
       sessionIdFromProvider = callData.sessionId; // Use provided sessionId for other providers
     }
 
     // Update database record with provider response
     await updateCallRecord(callId, {
-      providerCallId,
       sessionId: sessionIdFromProvider || callData.sessionId,
       providerResponse: response.data,
-      startTime: new Date(),
+      callStartTime: new Date(),
     });
 
     Logger.info("✅ Outbound call initiated successfully", {
       callId,
       provider: provider.name,
       customerNumber: callData.customerNumber,
-      providerCallId,
       sessionId: sessionIdFromProvider,
     });
 
@@ -130,7 +125,6 @@ async function makeOutboundCall(callData) {
       success: true,
       callId,
       provider: provider.name,
-      providerCallId,
       sessionId: sessionIdFromProvider,
       data: response.data,
     };

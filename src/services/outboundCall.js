@@ -64,7 +64,7 @@ async function makeOutboundCall(callData) {
     Logger.info("🚀 Making outbound call", {
       callId,
       customerNumber: callData.customerNumber,
-      provider: process.env.OUTBOUND_PROVIDER || "knowlarity",
+      provider: "knowlarity",
     });
 
     // Validate required fields
@@ -85,6 +85,9 @@ async function makeOutboundCall(callData) {
       createdAt: Math.floor(Date.now()),
       updatedAt: Math.floor(Date.now()),
     });
+    if (callData?.metadata?.originalRequestData) {
+      delete callData.metadata.originalRequestData;
+    }
 
     // Create provider-specific payload
     const payload = createProviderPayload(provider, callData);

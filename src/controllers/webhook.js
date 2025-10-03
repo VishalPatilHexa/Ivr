@@ -16,6 +16,7 @@ const {
   mapElevenLabsToWebhook,
 } = require("../services/testWebhook");
 const { updateCallWithElevenLabsData } = require("../services/outboundCall");
+const { getFields } = require("../utils/elevenLabsExtractor");
 const db = require("../models");
 /**
  * Handle ElevenLabs post-call webhook
@@ -55,69 +56,73 @@ async function handlePostCallWebhook(req, res) {
     // Get Knowlarity metadata from stored connection
     const connection = activeConnections.get(sessionId);
 
+    // Prepare ElevenLabs data object (same format regardless of connection)
+    const elevenLabsData = {
+      Timestamp: new Date().toISOString(),
+      SessionID: sessionId,
+      ConversationID: conversationId,
+      TranscriptSummary:
+        elevenLabsCompleteData.analysis?.transcript_summary || "",
+      AllCollectedData: allCollectedData,
+      DataExtractedByAI: allCollectedData,
+    };
+
+    console.log("🔗 ===== ELEVENLABS DATA FOR WEBHOOK =====");
+    console.log(JSON.stringify(elevenLabsData, null, 2));
+
+    // Fetch call record to get metadata.custom_field
+    let callRecord = null;
+    try {
+      callRecord = await db.ivr_calls.findOne({
+        where: { sessionId: sessionId },
+      });
+      console.log(
+        "📋 Call record found:",
+        !!callRecord,
+        "for sessionId:",
+        sessionId
+      );
+    } catch (error) {
+      console.error("❌ Failed to fetch call record", {
+        sessionId,
+        error: error.message,
+      });
+    }
+
+    // Update call record with extracted ElevenLabs data
+    try {
+      console.log("📝 Updating call record with ElevenLabs data...");
+      await updateCallWithElevenLabsData(sessionId, {
+        ...getFields(elevenLabsData, callRecord),
+      });
+      console.log("✅ Call record updated successfully");
+    } catch (error) {
+      console.error("❌ Failed to update call record", {
+        sessionId,
+        error: error.message,
+      });
+    }
+
+    // Map ElevenLabs data to webhook format and call external API
+    try {
+      const webhookPayload = mapElevenLabsToWebhook(elevenLabsData, callRecord);
+      const webhookResult = await callTestWebhook(webhookPayload);
+
+      console.log("🎯 External webhook called successfully", {
+        sessionId,
+        success: webhookResult.success,
+      });
+    } catch (error) {
+      console.error("❌ Failed to call external webhook", {
+        sessionId,
+        error: error.message,
+      });
+    }
+
+    // Handle connection-specific cleanup (only if connection exists)
     if (connection) {
-      // Prepare combined data for webhook
-      const elevenLabsData = {
-        Timestamp: new Date().toISOString(),
-        SessionID: sessionId,
-        ConversationID: conversationId,
-        TranscriptSummary:
-          elevenLabsCompleteData.analysis?.transcript_summary || "",
-        AllCollectedData: allCollectedData,
-        DataExtractedByAI: allCollectedData,
-      };
-
-      console.log("🔗 ===== ELEVENLABS DATA FOR WEBHOOK =====");
-      console.log(JSON.stringify(elevenLabsData, null, 2));
-
-      // Update call record with extracted ElevenLabs data
-      try {
-        console.log("📝 Updating call record with ElevenLabs data...");
-        await updateCallWithElevenLabsData(sessionId, elevenLabsData);
-        console.log("✅ Call record updated successfully");
-      } catch (error) {
-        console.error("❌ Failed to update call record", {
-          sessionId,
-          error: error.message,
-        });
-      }
-
-      // Fetch call record to get metadata.custom_field
-      let callRecord = null;
-      try {
-        callRecord = await db.ivr_calls.findOne({
-          where: { sessionId: sessionId },
-        });
-        console.log("📋 Call record found:", !!callRecord, "for sessionId:", sessionId);
-      } catch (error) {
-        console.error("❌ Failed to fetch call record", {
-          sessionId,
-          error: error.message,
-        });
-      }
-
-      // Map ElevenLabs data to webhook format and call external API
-      try {
-        const webhookPayload = mapElevenLabsToWebhook(
-          elevenLabsData,
-          callRecord
-        );
-        const webhookResult = await callTestWebhook(webhookPayload);
-
-        console.log("🎯 External webhook called successfully", {
-          sessionId,
-          success: webhookResult.success,
-        });
-      } catch (error) {
-        console.error("❌ Failed to call external webhook", {
-          sessionId,
-          error: error.message,
-        });
-      }
-
-      // Close Knowlarity WebSocket if still active (agent ended call but Knowlarity socket still open)
+      // Close Knowlarity WebSocket if still active
       if (connection.websocket && connection.websocket.readyState === 1) {
-        // WebSocket.OPEN = 1
         console.log(
           "🔌 Closing Knowlarity WebSocket - ElevenLabs agent ended the call"
         );
@@ -131,55 +136,6 @@ async function handlePostCallWebhook(req, res) {
     } else {
       console.log("⚠️ No connection found for session:", sessionId);
       console.log("💡 This is normal - cleanup may have already happened");
-
-      // Handle case without Knowlarity metadata
-      const elevenLabsOnlyData = {
-        Timestamp: new Date().toISOString(),
-        SessionID: sessionId,
-        ConversationID: conversationId,
-        TranscriptSummary:
-          elevenLabsCompleteData.analysis?.transcript_summary || "",
-        KnowlarityRawMetadata: "",
-        PhoneCallMetadata: "",
-        AllCollectedData: allCollectedData,
-        DataExtractedByAI: allCollectedData,
-      };
-
-      console.log("📊 ===== ELEVENLABS DATA ONLY =====");
-      console.log(JSON.stringify(elevenLabsOnlyData, null, 2));
-
-      // Fetch call record to get metadata.custom_field
-      let callRecord = null;
-      try {
-        callRecord = await db.ivr_calls.findOne({
-          where: { sessionId: sessionId },
-        });
-        console.log("📋 Call record found (no connection case):", !!callRecord, "for sessionId:", sessionId);
-      } catch (error) {
-        console.error("❌ Failed to fetch call record (no connection case)", {
-          sessionId,
-          error: error.message,
-        });
-      }
-
-      // Map ElevenLabs data to webhook format and call external API
-      try {
-        const webhookPayload = mapElevenLabsToWebhook(
-          elevenLabsOnlyData,
-          callRecord
-        );
-        const webhookResult = await callTestWebhook(webhookPayload);
-
-        console.log("🎯 External webhook called successfully", {
-          sessionId,
-          success: webhookResult.success,
-        });
-      } catch (error) {
-        console.error("❌ Failed to call external webhook", {
-          sessionId,
-          error: error.message,
-        });
-      }
     }
 
     console.log("🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====");

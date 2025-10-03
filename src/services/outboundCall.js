@@ -73,6 +73,22 @@ async function makeOutboundCall(callData) {
     // Determine provider from environment
     const provider = getActiveProvider();
 
+    // Create database record with INITIATED status
+    dbRecord = await createCallRecord({
+      sessionId: callId, // Use callId as sessionId
+      provider: provider.name,
+      callerNumber: callData.callerNumber,
+      customerNumber: callData.customerNumber,
+      isPromotional: callData.isPromotional || false,
+      status: CALL_STATUS.INITIATED,
+      metadata: callData.metadata,
+      createdAt: Math.floor(Date.now()),
+      updatedAt: Math.floor(Date.now()),
+    });
+    if (callData?.metadata?.originalRequestData) {
+      delete callData.metadata.originalRequestData;
+    }
+
     // Create provider-specific payload
     const payload = createProviderPayload(provider, callData);
 
@@ -99,31 +115,17 @@ async function makeOutboundCall(callData) {
     let finalSessionId;
     if (provider.name === "knowlarity") {
       // Add _0 suffix only for Knowlarity to match WebSocket path format
-      finalSessionId = sessionIdFromProvider
-        ? `${sessionIdFromProvider}_0`
-        : null;
+      finalSessionId = sessionIdFromProvider ? `${sessionIdFromProvider}_0` : null;
     } else {
       // For other providers, use sessionId as is
       finalSessionId = sessionIdFromProvider || callData.sessionId;
     }
-
-    // Create database record with INITIATED status
-    dbRecord = await createCallRecord({
-      sessionId: finalSessionId, // Use callId as sessionId
-      provider: provider.name,
-      callerNumber: callData.callerNumber,
-      customerNumber: callData.customerNumber,
-      isPromotional: callData.isPromotional || false,
-      status: CALL_STATUS.INITIATED,
-      metadata: callData.metadata,
+    
+    await updateCallRecord(callId, {
+      sessionId: finalSessionId,
       providerResponse: response.data,
       callStartTime: new Date(),
-      createdAt: Math.floor(Date.now()),
-      updatedAt: Math.floor(Date.now()),
     });
-    if (callData?.metadata?.originalRequestData) {
-      delete callData.metadata.originalRequestData;
-    }
 
     Logger.info("✅ Outbound call initiated successfully", {
       callId,
@@ -364,27 +366,27 @@ async function createCallRecord(callData) {
 /**
  * Update outbound call record in database
  */
-async function updateCallRecord(callId, updateData) {
+async function updateCallRecord(sessionId, updateData) {
   try {
     // Always update the updatedAt timestamp
     updateData.updatedAt = Math.floor(Date.now());
 
     const [updatedRows] = await db.ivr_calls.update(updateData, {
-      where: { sessionId: callId },
+      where: { sessionId: sessionId },
     });
 
     Logger.info("📝 Call record updated", {
-      callId,
+      sessionId,
       updatedRows,
       updates: Object.keys(updateData),
     });
 
     if (updatedRows === 0) {
-      Logger.warn("⚠️ No call record found to update", { sessionId: callId });
+      Logger.warn("⚠️ No call record found to update", { sessionId: sessionId });
     }
   } catch (error) {
     Logger.error("❌ Failed to update call record", {
-      callId,
+      sessionId,
       error: error.message,
       stack: error.stack,
     });
@@ -440,6 +442,9 @@ async function updateCallWithElevenLabsData(sessionId, elevenLabsData) {
       // Raw response for complete data preservation
       rawResponse: elevenLabsData,
     };
+
+    console.log(extractedJson,"extractedJson-----------------------------------------------------------");
+    
 
     // Check if call record exists
     const existingRecord = await db.ivr_calls.findOne({

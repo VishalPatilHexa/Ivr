@@ -106,6 +106,14 @@ async function handlePostCallWebhook(req, res) {
 
     // Map ElevenLabs data to webhook format and call external API
     try {
+      console.log("🔍 Mapping ElevenLabs data to webhook format", {
+        elevenLabsData,
+        callRecordMetadata: callRecord.metadata,
+        id: callRecord.dataValues.id,
+        sessionId
+      });
+      // here i am able to get callRecord details its printable but see logs i showed 
+
       const webhookPayload = await mapElevenLabsToWebhook(elevenLabsData, callRecord);
       console.log("📦 Mapped webhook payload:", webhookPayload);
       

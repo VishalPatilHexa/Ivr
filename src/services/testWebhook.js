@@ -122,30 +122,31 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
 
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
+    let extractedValues = elevenLabsData.ExtractedValues || {};
     // Use the best available values
-    const patientName = elevenLabsData?.extractedValues?.patientName;
-    const cityName = elevenLabsData?.extractedValues?.cityName;
+    const patientName = extractedValues?.patientName;
+    const cityName = extractedValues?.cityName;
     const treatmentType =
-      elevenLabsData?.extractedValues?.treatmentType ||
+      extractedValues?.treatmentType ||
       getField(elevenLabsData, "treatmentType", { source: "dynamic" }) ||
       "NA";
-    const symptoms = elevenLabsData?.extractedValues?.symptoms;
+    const symptoms = extractedValues?.symptoms;
     const consent =
-      elevenLabsData?.extractedValues?.consent !== "N/A"
-        ? elevenLabsData?.extractedValues?.consent
-        : elevenLabsData?.extractedValues?.Consent;
-    const opdConfirmation = elevenLabsData?.extractedValues?.opdConfirmation;
+      extractedValues?.consent !== "N/A"
+        ? extractedValues?.consent
+        : extractedValues?.Consent;
+    const opdConfirmation = extractedValues?.opdConfirmation;
 
     // Use static timestamps for now
     const timestamp = Date.now();
     const startTime = new Date();
-    const callDuration = elevenLabsData?.extractedValues?.callDuration || 60; // Default 60 seconds
+    const callDuration = extractedValues?.callDuration || 60; // Default 60 seconds
     const endTime = new Date(startTime.getTime() + callDuration * 1000);
 
     return {
       agentId:
-        callRecord?.originalRequestData?.agentId ||
-        elevenLabsData?.extractedValues?.agentId ||
+        callRecord?.metdata?.originalRequestData?.agentId ||
+        extractedValues?.agentId ||
         "",
       businessId: "67bff39c63b61e495e90079f", // Default business ID
       callFrom: formatPhoneWithCountryCode(callRecord?.callerNumber),
@@ -163,7 +164,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         "Lead Channel": "Ad - Facebook",
         "Lead Source": "Web Lead Form",
         "Page Source": "None",
-        leadId: "L" + callRecord?.originalRequestData?.leadId,
+        leadId: "L" + callRecord?.metdata?.originalRequestData?.leadId,
         Summary: elevenLabsData.TranscriptSummary || "",
         NAME_PATIENT: patientName,
         CITY_PATIENT: cityName,
@@ -186,7 +187,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         attemptOfTheDay: 1,
         attemptOfTheLifetime: 1,
         campaignId: null,
-        customParam: callRecord?.originalRequestData?.custom_field,
+        customParam: callRecord?.metdata?.originalRequestData?.custom_field,
       },
       timestamp: timestamp,
       transcript: generateTranscriptFromSummary(

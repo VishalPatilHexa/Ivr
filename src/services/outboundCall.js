@@ -73,22 +73,6 @@ async function makeOutboundCall(callData) {
     // Determine provider from environment
     const provider = getActiveProvider();
 
-    // Create database record with INITIATED status
-    dbRecord = await createCallRecord({
-      sessionId: callId, // Use callId as sessionId
-      provider: provider.name,
-      callerNumber: callData.callerNumber,
-      customerNumber: callData.customerNumber,
-      isPromotional: callData.isPromotional || false,
-      status: CALL_STATUS.INITIATED,
-      metadata: callData.metadata,
-      createdAt: Math.floor(Date.now()),
-      updatedAt: Math.floor(Date.now()),
-    });
-    if (callData?.metadata?.originalRequestData) {
-      delete callData.metadata.originalRequestData;
-    }
-
     // Create provider-specific payload
     const payload = createProviderPayload(provider, callData);
 
@@ -115,17 +99,31 @@ async function makeOutboundCall(callData) {
     let finalSessionId;
     if (provider.name === "knowlarity") {
       // Add _0 suffix only for Knowlarity to match WebSocket path format
-      finalSessionId = sessionIdFromProvider ? `${sessionIdFromProvider}_0` : null;
+      finalSessionId = sessionIdFromProvider
+        ? `${sessionIdFromProvider}_0`
+        : null;
     } else {
       // For other providers, use sessionId as is
       finalSessionId = sessionIdFromProvider || callData.sessionId;
     }
-    
-    await updateCallRecord(callId, {
-      sessionId: finalSessionId,
+
+    // Create database record with INITIATED status
+    dbRecord = await createCallRecord({
+      sessionId: finalSessionId, // Use callId as sessionId
+      provider: provider.name,
+      callerNumber: callData.callerNumber,
+      customerNumber: callData.customerNumber,
+      isPromotional: callData.isPromotional || false,
+      status: CALL_STATUS.INITIATED,
+      metadata: callData.metadata,
       providerResponse: response.data,
       callStartTime: new Date(),
+      createdAt: Math.floor(Date.now()),
+      updatedAt: Math.floor(Date.now()),
     });
+    if (callData?.metadata?.originalRequestData) {
+      delete callData.metadata.originalRequestData;
+    }
 
     Logger.info("✅ Outbound call initiated successfully", {
       callId,

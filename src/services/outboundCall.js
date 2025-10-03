@@ -61,7 +61,6 @@ async function makeOutboundCall(callData) {
 
   try {
     Logger.info("🚀 Making outbound call", {
-      callId,
       customerNumber: callData.customerNumber,
       provider: "knowlarity",
     });

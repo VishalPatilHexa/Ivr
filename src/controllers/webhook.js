@@ -15,8 +15,11 @@ const {
   callTestWebhook,
   mapElevenLabsToWebhook,
 } = require("../services/testWebhook");
-const { updateCallWithElevenLabsData } = require("../services/outboundCall");
-const { getFields, extractCleanValues } = require("../utils/elevenLabsExtractor");
+const { updateCallRecord } = require("../services/outboundCall");
+const {
+  getFields,
+  extractCleanValues,
+} = require("../utils/elevenLabsExtractor");
 const db = require("../models");
 /**
  * Handle ElevenLabs post-call webhook
@@ -89,9 +92,10 @@ async function handlePostCallWebhook(req, res) {
 
     // Update call record with extracted ElevenLabs data
     try {
-      console.log("📝 Updating call record with ElevenLabs data...");
-      await updateCallWithElevenLabsData(sessionId, {
-        extractedJSON: extractedValues,
+      await updateCallRecord(sessionId, {
+        extractedJson: extractedValues,
+        status: CALL_STATUS.COMPLETED,
+        callEndTime: new Date(),
       });
       console.log("✅ Call record updated successfully");
     } catch (error) {

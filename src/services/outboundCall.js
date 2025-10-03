@@ -115,12 +115,14 @@ async function makeOutboundCall(callData) {
     let finalSessionId;
     if (provider.name === "knowlarity") {
       // Add _0 suffix only for Knowlarity to match WebSocket path format
-      finalSessionId = sessionIdFromProvider ? `${sessionIdFromProvider}_0` : null;
+      finalSessionId = sessionIdFromProvider
+        ? `${sessionIdFromProvider}_0`
+        : null;
     } else {
       // For other providers, use sessionId as is
       finalSessionId = sessionIdFromProvider || callData.sessionId;
     }
-    
+
     await updateCallRecord(callId, {
       sessionId: finalSessionId,
       providerResponse: response.data,
@@ -382,7 +384,9 @@ async function updateCallRecord(sessionId, updateData) {
     });
 
     if (updatedRows === 0) {
-      Logger.warn("⚠️ No call record found to update", { sessionId: sessionId });
+      Logger.warn("⚠️ No call record found to update", {
+        sessionId: sessionId,
+      });
     }
   } catch (error) {
     Logger.error("❌ Failed to update call record", {
@@ -426,55 +430,6 @@ async function markCallCancelled(callId) {
 }
 
 /**
- * Update call record with ElevenLabs extracted data
- */
-async function updateCallWithElevenLabsData(sessionId, elevenLabsData) {
-  try {
-    Logger.info("📋 Updating call with ElevenLabs data", { sessionId });
-
-    // Create comprehensive extracted JSON from ElevenLabs response
-    const extractedJson = {
-      conversationId: elevenLabsData.ConversationID || "",
-      transcriptSummary: elevenLabsData.TranscriptSummary || "",
-      // Clean extracted values only (without rationale)
-      extractedData: elevenLabsData.ExtractedValues || {},
-      // Raw response for complete data preservation
-      rawResponse: elevenLabsData,
-    };
-
-    console.log(extractedJson,"extractedJson-----------------------------------------------------------");
-    
-
-    // Check if call record exists
-    const existingRecord = await db.ivr_calls.findOne({
-      where: { sessionId: sessionId },
-    });
-
-    if (existingRecord) {
-      // Update existing record
-      await updateCallRecord(sessionId, {
-        extractedJson: extractedJson,
-        status: CALL_STATUS.COMPLETED,
-        callEndTime: new Date(),
-      });
-      Logger.info("✅ Existing call record updated with ElevenLabs data", {
-        sessionId,
-        dataSize: JSON.stringify(extractedJson).length,
-      });
-    }
-
-    return extractedJson;
-  } catch (error) {
-    Logger.error("❌ Failed to update call with ElevenLabs data", {
-      sessionId,
-      error: error.message,
-      stack: error.stack,
-    });
-    throw error;
-  }
-}
-
-/**
  * Get provider status and configuration info
  */
 function getProviderInfo() {
@@ -499,11 +454,11 @@ function getProviderInfo() {
 }
 
 module.exports = {
+  updateCallRecord,
   makeOutboundCall,
   markCallCompleted,
   markCallFailed,
   markCallCancelled,
-  updateCallWithElevenLabsData,
   getProviderInfo,
   normalizePhoneNumber,
   formatPhoneWithCountryCode,

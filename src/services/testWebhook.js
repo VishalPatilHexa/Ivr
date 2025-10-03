@@ -186,7 +186,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         "Lead Channel": "Ad - Facebook",
         "Lead Source": "Web Lead Form",
         "Page Source": "None",
-        leadId: "L" + callData?.originalRequestData?.leadId,
+        leadId: "L" + callRecord?.originalRequestData?.leadId,
         Summary: elevenLabsData.TranscriptSummary || "",
         NAME_PATIENT: patientName,
         CITY_PATIENT: cityName,

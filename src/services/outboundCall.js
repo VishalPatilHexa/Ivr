@@ -112,7 +112,6 @@ async function makeOutboundCall(callData) {
     }
 
     Logger.info("✅ Outbound call initiated successfully", {
-      callId,
       provider: provider.name,
       customerNumber: callData.customerNumber,
       sessionId: sessionId,
@@ -120,31 +119,20 @@ async function makeOutboundCall(callData) {
 
     return {
       success: true,
-      callId,
+      callId: sessionId,
       provider: provider.name,
       sessionId: sessionId,
       data: response.data,
     };
   } catch (error) {
     Logger.error("❌ Failed to make outbound call", {
-      callId,
       error: error.message,
       customerNumber: callData.customerNumber,
       stack: error.stack,
     });
 
-    // Update database record with FAILED status
-    if (dbRecord) {
-      await updateCallRecord(callId, {
-        status: CALL_STATUS.FAILED,
-        errorMessage: error.message,
-        endTime: new Date(),
-      });
-    }
-
     return {
       success: false,
-      callId,
       error: error.message,
       provider: process.env.OUTBOUND_PROVIDER || "unknown",
     };

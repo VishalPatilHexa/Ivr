@@ -78,7 +78,7 @@ async function handlePostCallWebhook(req, res) {
       });
       console.log(
         "📋 Call record found:",
-        !!callRecord,
+        callRecord,
         "for sessionId:",
         sessionId
       );
@@ -106,7 +106,7 @@ async function handlePostCallWebhook(req, res) {
 
     // Map ElevenLabs data to webhook format and call external API
     try {
-      const webhookPayload = mapElevenLabsToWebhook(elevenLabsData, callRecord);
+      const webhookPayload = await mapElevenLabsToWebhook(elevenLabsData, callRecord);
       const webhookResult = await callTestWebhook(webhookPayload);
 
       console.log("🎯 External webhook called successfully", {

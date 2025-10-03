@@ -143,7 +143,6 @@ async function makeWebhookCall(payload) {
  */
 function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
   try {
-
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
     // Use the best available values
@@ -165,60 +164,6 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
     const startTime = new Date();
     const callDuration = elevenLabsData?.extractedValues?.callDuration || 60; // Default 60 seconds
     const endTime = new Date(startTime.getTime() + callDuration * 1000);
-
-
-    console.log("📦 Mapping ElevenLabs data to webhook format----------------------",  {
-      agentId:
-        callRecord?.originalRequestData?.agentId ||
-        elevenLabsData?.extractedValues?.agentId ||
-        "",
-      businessId: "67bff39c63b61e495e90079f", // Default business ID
-      callFrom: formatPhoneWithCountryCode(callRecord?.callerNumber),
-      callHistory: {
-        callDuration: callDuration,
-        callEndTime: 1759473414000,
-        callInitTime: 1759473341861,
-        callStartTime: 1759473358000,
-        callStatus: "ANSWER",
-        id: "68df6ebd2b83d63e2441de9f",
-        provider_0: "1759473341.993096",
-      },
-      callTo: formatPhoneWithCountryCode(callRecord?.customerNumber),
-      customer_crm_data: {
-        "Lead Channel": "Ad - Facebook",
-        "Lead Source": "Web Lead Form",
-        "Page Source": "None",
-        leadId: "L" + callRecord?.originalRequestData?.leadId,
-        Summary: elevenLabsData.TranscriptSummary || "",
-        NAME_PATIENT: patientName,
-        CITY_PATIENT: cityName,
-        DETAIL_TREATMENT: treatmentType,
-        PATIENT_CONFIRMATION: consent,
-        opdConfirmation: opdConfirmation,
-        SYMPTOMS: symptoms,
-        start_time: formatDateTime(startTime),
-        end_time: formatDateTime(endTime),
-        recording_url:
-          elevenLabsData.RecordingURL !== "No recording available"
-            ? elevenLabsData.RecordingURL
-            : "",
-        status: "completed",
-      },
-      event: "CALL_COMPLETED",
-      recording_url:
-        "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
-      scheduleInfo: {
-        attemptOfTheDay: 1,
-        attemptOfTheLifetime: 1,
-        campaignId: null,
-        customParam: callRecord?.originalRequestData?.custom_field,
-      },
-      timestamp: timestamp,
-      transcript: generateTranscriptFromSummary(
-        elevenLabsData.TranscriptSummary
-      ),
-    });
-
 
     return {
       agentId:
@@ -271,8 +216,6 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         elevenLabsData.TranscriptSummary
       ),
     };
-
-
   } catch (error) {
     Logger.error("❌ Failed to map ElevenLabs data to webhook", {
       error: error.message,

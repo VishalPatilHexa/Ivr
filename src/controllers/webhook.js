@@ -151,11 +151,10 @@ async function handlePostCallWebhook(req, res) {
       // Fetch call record to get metadata.custom_field
       let callRecord = null;
       try {
-        const db = require("../models");
         callRecord = await db.ivr_calls.findOne({
           where: { sessionId: sessionId },
         });
-        console.log("📋 Call record found (no connection case):", !!callRecord);
+        console.log("📋 Call record found (no connection case):", callRecord);
       } catch (error) {
         console.error("❌ Failed to fetch call record (no connection case)", {
           sessionId,

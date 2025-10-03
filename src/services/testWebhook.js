@@ -9,31 +9,9 @@
 const axios = require("axios");
 const Logger = require("../utils/logger");
 const { HTTP_STATUS } = require("../constants");
-const {
-  getField,
-  getFields,
-  extractPhoneFromSession,
-  transformers,
-} = require("../utils/elevenLabsExtractor");
+const { getField } = require("../utils/elevenLabsExtractor");
 const { formatPhoneWithCountryCode } = require("./outboundCall");
 
-/**
- * Test webhook call to external API
- *
- * @param {Object} callData - Call completion data
- * @param {string} callData.callTo - Customer phone number
- * @param {string} callData.callFrom - Caller phone number
- * @param {string} callData.agentId - Agent ID used for the call
- * @param {string} callData.recording_url - URL of call recording
- * @param {Array} callData.transcript - Conversation transcript
- * @param {Object} callData.scheduleInfo - Campaign and scheduling information
- * @param {string} callData.businessId - Business identifier
- * @param {Object} callData.customer_crm_data - CRM data for the customer
- * @param {string} callData.event - Event type (e.g., "CALL_COMPLETED")
- * @param {Object} callData.callHistory - Call duration and timing details
- * @param {number} callData.timestamp - Event timestamp
- * @returns {Promise<Object>} Webhook response
- */
 async function callTestWebhook(callData) {
   try {
     Logger.info("🚀 Calling test webhook", {
@@ -134,15 +112,14 @@ async function makeWebhookCall(payload) {
   }
 }
 
-/**
- * Map ElevenLabs data to webhook payload format
- *
- * @param {Object} elevenLabsData - Data from ElevenLabs webhook
- * @param {Object} callRecord - Optional call record from ivr_calls table
- * @returns {Object} Mapped webhook payload
- */
 function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
   try {
+    console.log(
+      "🔍 Mapping ElevenLabs data to webhook format **********************",
+      callRecord,
+      elevenLabsData
+    );
+
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
     // Use the best available values
@@ -223,7 +200,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
     });
 
     // Return basic structure with available data
-    return createSampleWebhookData();
+    return null;
   }
 }
 
@@ -263,88 +240,7 @@ function generateTranscriptFromSummary(summary) {
   ];
 }
 
-/**
- * Create sample test data for webhook testing
- */
-function createSampleWebhookData() {
-  return {
-    callTo: "+919228041668",
-    agentId: "892db09d-9a50-42e7-9f19-0a41053efb6a",
-    recording_url:
-      "https://recordings.xtremegenai.com/Hexahealth/2025/09/30/1759213584.949181_917666006788_00919228041668.wav",
-    transcript: [
-      {
-        role: "assistant",
-        content:
-          "Hello, मैं Bhawna बोल रही हूँ HexaHealth से. Umm…… हमें आपकी query मिली है कि आप Varicose Veins का इलाज ढूंढ रहे हैं?.",
-      },
-      {
-        role: "system",
-        content:
-          "System Asked If User can hear them and the next message will be user ackowledging if they can hear the AI",
-      },
-      {
-        role: "system",
-        content: "User was silent for 6 seconds.",
-      },
-      {
-        role: "assistant",
-        content: "Are you able to hear me?",
-      },
-    ],
-    scheduleInfo: {
-      campaignId: "6833f198e6648b6a72e7e730",
-      attemptOfTheLifetime: 1,
-      attemptOfTheDay: 1,
-      customParam: {
-        "Lead DID": "L265404002803622035",
-        "Created Time": "2025-09-30T11:55:59+05:30",
-        Mobile: "+917666006788",
-        "Page Source": "HexaHealth-Laser Varicose Veins-Mumbai-Display",
-        "Lead Source": "Web Lead Form",
-        "Lead Channel": "Ad - Facebook",
-        "Lead Name": "Amit Kadam",
-        City: "Mumbai",
-        Department: "Vascular",
-        Condition: "Varicose Veins",
-        Procedure: [],
-        retryInfo: null,
-      },
-    },
-    callFrom: "+917666006788",
-    businessId: "67bff39c63b61e495e90079f",
-    customer_crm_data: {
-      "Lead Channel": "Ad - Facebook",
-      "Lead Source": "Web Lead Form",
-      "Page Source": "HexaHealth-Laser Varicose Veins-Mumbai-Display",
-      leadId: "L265404002803622035",
-      Summary: "Customer did not speak during the call.",
-      NAME_PATIENT: "NA",
-      CITY_PATIENT: "NA",
-      DETAIL_TREATMENT: "NA",
-      PATIENT_CONFIRMATION: "NA",
-      start_time: "2025-09-30 06:26:49",
-      end_time: "2025-09-30 06:27:20",
-      recording_url:
-        "https://recordings.xtremegenai.com/Hexahealth/2025/09/30/1759213584.949181_917666006788_00919228041668.wav",
-      status: "completed",
-    },
-    event: "CALL_COMPLETED",
-    callHistory: {
-      callDuration: 31000,
-      callInitTime: 1759213584453,
-      callEndTime: 1759213640000,
-      callStatus: "ANSWER",
-      callStartTime: 1759213609000,
-      provider_0: "1759213584.949181",
-      id: "68db781049449e1b0ff6bf97",
-    },
-    timestamp: 1759213652577,
-  };
-}
-
 module.exports = {
   callTestWebhook,
-  createSampleWebhookData,
   mapElevenLabsToWebhook,
 };

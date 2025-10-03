@@ -106,12 +106,6 @@ async function handlePostCallWebhook(req, res) {
 
     // Map ElevenLabs data to webhook format and call external API
     try {
-      console.log("📦 Mapping ElevenLabs data to webhook format", {
-        elevenLabsData,
-        callRecordMetadata: callRecord.metadata,
-        id: callRecord.dataValues.id,
-        sessionId
-      });
       const webhookPayload = await mapElevenLabsToWebhook(elevenLabsData, callRecord);
       const webhookResult = await callTestWebhook(webhookPayload);
 

@@ -171,7 +171,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         elevenLabsData?.extractedValues?.agentId ||
         "",
       businessId: "67bff39c63b61e495e90079f", // Default business ID
-      callFrom: formatPhoneWithCountryCode(rawCallerNumber),
+      callFrom: formatPhoneWithCountryCode(callRecord?.callerNumber),
       callHistory: {
         callDuration: callDuration,
         callEndTime: 1759473414000,

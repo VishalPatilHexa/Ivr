@@ -57,7 +57,6 @@ const PROVIDERS = {
  * @returns {Promise<Object>} API response
  */
 async function makeOutboundCall(callData) {
-  const callId = uuidv4();
   let dbRecord = null;
 
   try {
@@ -73,22 +72,6 @@ async function makeOutboundCall(callData) {
     // Determine provider from environment
     const provider = getActiveProvider();
 
-    // Create database record with INITIATED status
-    dbRecord = await createCallRecord({
-      sessionId: callId, // Use callId as sessionId
-      provider: provider.name,
-      callerNumber: callData.callerNumber,
-      customerNumber: callData.customerNumber,
-      isPromotional: callData.isPromotional || false,
-      status: CALL_STATUS.INITIATED,
-      metadata: callData.metadata,
-      createdAt: Math.floor(Date.now()),
-      updatedAt: Math.floor(Date.now()),
-    });
-    if (callData?.metadata?.originalRequestData) {
-      delete callData.metadata.originalRequestData;
-    }
-
     // Create provider-specific payload
     const payload = createProviderPayload(provider, callData);
 
@@ -96,39 +79,50 @@ async function makeOutboundCall(callData) {
     const response = await makeApiCall(provider, payload);
 
     // Extract session ID from provider response
-    let sessionIdFromProvider;
+    let sessionId;
 
     if (
       provider.name === "knowlarity" &&
       response.data.data?.call_ids?.[0]?.call_id
     ) {
-      sessionIdFromProvider = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
+      sessionId = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
     } else if (provider.name === "acephone") {
       // For Acephone, use the sessionId we generated and passed in metadata
-      sessionIdFromProvider = callData.metadata.sessionId || callId;
+      sessionId = callData.metadata.sessionId || uuidv4();
     } else {
-      sessionIdFromProvider = callData.sessionId; // Use provided sessionId for other providers
+      sessionId = callData.sessionId; // Use provided sessionId for other providers
     }
 
-    // Update database record with provider response
-    await updateCallRecord(callId, {
-      sessionId: sessionIdFromProvider || callData.sessionId,
+    // Create database record with INITIATED status
+    dbRecord = await createCallRecord({
+      sessionId: sessionId, // Use callId as sessionId
+      provider: provider.name,
+      callerNumber: callData.callerNumber,
+      customerNumber: callData.customerNumber,
+      isPromotional: callData.isPromotional || false,
+      status: CALL_STATUS.INITIATED,
+      metadata: callData.metadata,
       providerResponse: response.data,
       callStartTime: new Date(),
+      createdAt: Math.floor(Date.now()),
+      updatedAt: Math.floor(Date.now()),
     });
+    if (callData?.metadata?.originalRequestData) {
+      delete callData.metadata.originalRequestData;
+    }
 
     Logger.info("✅ Outbound call initiated successfully", {
       callId,
       provider: provider.name,
       customerNumber: callData.customerNumber,
-      sessionId: sessionIdFromProvider,
+      sessionId: sessionId,
     });
 
     return {
       success: true,
       callId,
       provider: provider.name,
-      sessionId: sessionIdFromProvider,
+      sessionId: sessionId,
       data: response.data,
     };
   } catch (error) {
@@ -433,7 +427,7 @@ async function updateCallWithElevenLabsData(sessionId, elevenLabsData) {
       rawResponse: elevenLabsData,
     };
 
-    // Check if call record exists
+    // Check if call record exists using exact sessionId
     const existingRecord = await db.ivr_calls.findOne({
       where: { sessionId: sessionId },
     });

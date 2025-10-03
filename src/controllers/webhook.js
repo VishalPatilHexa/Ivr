@@ -88,7 +88,7 @@ async function handlePostCallWebhook(req, res) {
         callRecord = await db.ivr_calls.findOne({
           where: { sessionId: sessionId },
         });
-        console.log("📋 Call record found:", !!callRecord);
+        console.log("📋 Call record found:", !!callRecord, "for sessionId:", sessionId);
       } catch (error) {
         console.error("❌ Failed to fetch call record", {
           sessionId,
@@ -154,7 +154,7 @@ async function handlePostCallWebhook(req, res) {
         callRecord = await db.ivr_calls.findOne({
           where: { sessionId: sessionId },
         });
-        console.log("📋 Call record found (no connection case):", callRecord);
+        console.log("📋 Call record found (no connection case):", !!callRecord, "for sessionId:", sessionId);
       } catch (error) {
         console.error("❌ Failed to fetch call record (no connection case)", {
           sessionId,

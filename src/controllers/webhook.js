@@ -108,7 +108,8 @@ async function handlePostCallWebhook(req, res) {
     try {
       console.log("📦 Mapping ElevenLabs data to webhook format", {
         elevenLabsData,
-        callRecord,
+        callRecordMetadata: callRecord.metadata,
+        id: callRecord.dataValues.id,
         sessionId
       });
       const webhookPayload = await mapElevenLabsToWebhook(elevenLabsData, callRecord);

@@ -114,28 +114,10 @@ async function makeWebhookCall(payload) {
 
 function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
   try {
-    console.log(
-      "🔍 Mapping ElevenLabs data to webhook format **********************",
-      callRecord,
-      elevenLabsData
-    );
-
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
     let extractedValues = elevenLabsData.ExtractedValues || {};
     // Use the best available values
-    const patientName = extractedValues?.patientName;
-    const cityName = extractedValues?.cityName;
-    const treatmentType =
-      extractedValues?.treatmentType ||
-      getField(elevenLabsData, "treatmentType", { source: "dynamic" }) ||
-      "NA";
-    const symptoms = extractedValues?.symptoms;
-    const consent =
-      extractedValues?.consent !== "N/A"
-        ? extractedValues?.consent
-        : extractedValues?.Consent;
-    const opdConfirmation = extractedValues?.opdConfirmation;
 
     // Use static timestamps for now
     const timestamp = Date.now();
@@ -166,12 +148,17 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         "Page Source": "None",
         leadId: "L" + callRecord?.metdata?.originalRequestData?.leadId,
         Summary: elevenLabsData.TranscriptSummary || "",
-        NAME_PATIENT: patientName,
-        CITY_PATIENT: cityName,
-        DETAIL_TREATMENT: treatmentType,
-        PATIENT_CONFIRMATION: consent,
-        opdConfirmation: opdConfirmation,
-        SYMPTOMS: symptoms,
+        NAME_PATIENT: extractedValues?.patientName,
+        CITY_PATIENT: extractedValues?.cityName || "N/A",
+        DETAIL_TREATMENT: extractedValues?.treatmentType || "N/A",
+        PATIENT_CONFIRMATION: extractedValues?.consent?.consent
+          ? "Yes"
+          : !extractedValues?.consent?.consent
+          ? "No"
+          : "N/A",
+        relationship: extractedValues?.consent?.relationship || "N/A",
+        opdConfirmation: extractedValues?.opdConfirmation,
+        SYMPTOMS: extractedValues?.symptoms || "N/A",
         start_time: formatDateTime(startTime),
         end_time: formatDateTime(endTime),
         recording_url:

@@ -57,12 +57,10 @@ const PROVIDERS = {
  * @returns {Promise<Object>} API response
  */
 async function makeOutboundCall(callData) {
-  const callId = uuidv4();
   let dbRecord = null;
 
   try {
     Logger.info("🚀 Making outbound call", {
-      callId,
       customerNumber: callData.customerNumber,
       provider: "knowlarity",
     });
@@ -73,22 +71,6 @@ async function makeOutboundCall(callData) {
     // Determine provider from environment
     const provider = getActiveProvider();
 
-    // Create database record with INITIATED status
-    dbRecord = await createCallRecord({
-      sessionId: callId, // Use callId as sessionId
-      provider: provider.name,
-      callerNumber: callData.callerNumber,
-      customerNumber: callData.customerNumber,
-      isPromotional: callData.isPromotional || false,
-      status: CALL_STATUS.INITIATED,
-      metadata: callData.metadata,
-      createdAt: Math.floor(Date.now()),
-      updatedAt: Math.floor(Date.now()),
-    });
-    if (callData?.metadata?.originalRequestData) {
-      delete callData.metadata.originalRequestData;
-    }
-
     // Create provider-specific payload
     const payload = createProviderPayload(provider, callData);
 
@@ -96,61 +78,64 @@ async function makeOutboundCall(callData) {
     const response = await makeApiCall(provider, payload);
 
     // Extract session ID from provider response
-    let sessionIdFromProvider;
+    let sessionId;
 
     if (
       provider.name === "knowlarity" &&
       response.data.data?.call_ids?.[0]?.call_id
     ) {
-      sessionIdFromProvider = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
+      sessionId = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
     } else if (provider.name === "acephone") {
       // For Acephone, use the sessionId we generated and passed in metadata
-      sessionIdFromProvider = callData.metadata.sessionId || callId;
+      sessionId = callData.metadata.sessionId || callId;
     } else {
-      sessionIdFromProvider = callData.sessionId; // Use provided sessionId for other providers
+      sessionId = callData.sessionId; // Use provided sessionId for other providers
     }
 
-    // Update database record with provider response
-    await updateCallRecord(callId, {
-      sessionId: sessionIdFromProvider || callData.sessionId,
+
+        // Create database record with INITIATED status
+    dbRecord = await createCallRecord({
+      sessionId: sessionId, // Use sessionId
+      provider: provider.name,
+      callerNumber: callData.callerNumber,
+      customerNumber: callData.customerNumber,
+      isPromotional: callData.isPromotional || false,
+      status: CALL_STATUS.INITIATED,
+      metadata: callData.metadata,
       providerResponse: response.data,
-      callStartTime: new Date(),
+       callStartTime: new Date(),
+      createdAt: Math.floor(Date.now()),
+      updatedAt: Math.floor(Date.now()),
     });
+    if (callData?.metadata?.originalRequestData) {
+      delete callData.metadata.originalRequestData;
+    }
 
     Logger.info("✅ Outbound call initiated successfully", {
-      callId,
+      callId: sessionId,
       provider: provider.name,
       customerNumber: callData.customerNumber,
-      sessionId: sessionIdFromProvider,
+      sessionId: sessionId,
     });
 
     return {
       success: true,
-      callId,
+      callId: sessionId,
       provider: provider.name,
-      sessionId: sessionIdFromProvider,
+      sessionId: sessionId,
       data: response.data,
     };
   } catch (error) {
     Logger.error("❌ Failed to make outbound call", {
-      callId,
+      callId:null,
       error: error.message,
       customerNumber: callData.customerNumber,
       stack: error.stack,
     });
 
-    // Update database record with FAILED status
-    if (dbRecord) {
-      await updateCallRecord(callId, {
-        status: CALL_STATUS.FAILED,
-        errorMessage: error.message,
-        endTime: new Date(),
-      });
-    }
-
     return {
       success: false,
-      callId,
+      callId: null,
       error: error.message,
       provider: process.env.OUTBOUND_PROVIDER || "unknown",
     };

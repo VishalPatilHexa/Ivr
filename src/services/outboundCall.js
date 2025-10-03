@@ -102,17 +102,27 @@ async function makeOutboundCall(callData) {
       provider.name === "knowlarity" &&
       response.data.data?.call_ids?.[0]?.call_id
     ) {
-      sessionIdFromProvider = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
+      // For Knowlarity: Use call_id from response as is, then add _0 suffix for WebSocket path matching
+      sessionIdFromProvider = response.data.data.call_ids[0].call_id;
     } else if (provider.name === "acephone") {
-      // For Acephone, use the sessionId we generated and passed in metadata
+      // For Acephone: Use sessionId from metadata or fallback to our generated callId
       sessionIdFromProvider = callData.metadata.sessionId || callId;
     } else {
       sessionIdFromProvider = callData.sessionId; // Use provided sessionId for other providers
     }
 
-    // Update database record with provider response
+    // Prepare final sessionId for database storage
+    let finalSessionId;
+    if (provider.name === "knowlarity") {
+      // Add _0 suffix only for Knowlarity to match WebSocket path format
+      finalSessionId = sessionIdFromProvider ? `${sessionIdFromProvider}_0` : null;
+    } else {
+      // For other providers, use sessionId as is
+      finalSessionId = sessionIdFromProvider || callData.sessionId;
+    }
+    
     await updateCallRecord(callId, {
-      sessionId: sessionIdFromProvider || callData.sessionId,
+      sessionId: finalSessionId,
       providerResponse: response.data,
       callStartTime: new Date(),
     });
@@ -121,14 +131,14 @@ async function makeOutboundCall(callData) {
       callId,
       provider: provider.name,
       customerNumber: callData.customerNumber,
-      sessionId: sessionIdFromProvider,
+      sessionId: finalSessionId,
     });
 
     return {
       success: true,
       callId,
       provider: provider.name,
-      sessionId: sessionIdFromProvider,
+      sessionId: finalSessionId,
       data: response.data,
     };
   } catch (error) {

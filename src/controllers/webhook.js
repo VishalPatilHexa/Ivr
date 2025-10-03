@@ -6,7 +6,7 @@
  * Handles post-call webhooks from ElevenLabs and manages session cleanup
  * Maps ElevenLabs conversation data with Knowlarity metadata
  */
-
+const { CALL_STATUS } = require("../constants");
 const {
   activeConnections,
   cleanupSession,
@@ -17,7 +17,6 @@ const {
 } = require("../services/testWebhook");
 const { updateCallRecord } = require("../services/outboundCall");
 const {
-  getFields,
   extractCleanValues,
 } = require("../utils/elevenLabsExtractor");
 const db = require("../models");

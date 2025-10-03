@@ -436,9 +436,8 @@ async function updateCallWithElevenLabsData(sessionId, elevenLabsData) {
     const extractedJson = {
       conversationId: elevenLabsData.ConversationID || "",
       transcriptSummary: elevenLabsData.TranscriptSummary || "",
-      // All collected data from the conversation
-      collectedData: elevenLabsData.AllCollectedData || {},
-
+      // Clean extracted values only (without rationale)
+      extractedData: elevenLabsData.ExtractedValues || {},
       // Raw response for complete data preservation
       rawResponse: elevenLabsData,
     };

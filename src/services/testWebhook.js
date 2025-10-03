@@ -15,9 +15,7 @@ const {
   extractPhoneFromSession,
   transformers,
 } = require("../utils/elevenLabsExtractor");
-const {
-  formatPhoneWithCountryCode,
-} = require("./outboundCall");
+const { formatPhoneWithCountryCode } = require("./outboundCall");
 
 /**
  * Test webhook call to external API
@@ -44,11 +42,8 @@ async function callTestWebhook(callData) {
       timestamp: callData.timestamp,
     });
 
-    // Prepare standardized payload
-    const payload = createWebhookPayload(callData);
-
     // Make webhook call
-    const response = await makeWebhookCall(payload);
+    const response = await makeWebhookCall(callData);
 
     Logger.info("✅ Test webhook call successful", {
       status: response.status,
@@ -72,102 +67,6 @@ async function callTestWebhook(callData) {
       error: error.message,
     };
   }
-}
-
-/**
- * Create flexible webhook payload with dynamic field handling
- */
-function createWebhookPayload(callData) {
-  // Helper function to merge objects with fallbacks
-  const safeAssign = (target, source, fallback = {}) => {
-    if (!source || typeof source !== "object")
-      return { ...target, ...fallback };
-    return { ...target, ...source };
-  };
-
-  // Helper function to get value with fallback
-  const getValue = (obj, path, fallback = "") => {
-    return obj?.[path] !== undefined ? obj[path] : fallback;
-  };
-
-  return {
-    // Core fields
-    event: getValue(callData, "event", "CALL_COMPLETED"),
-    callTo: getValue(callData, "callTo"),
-    agentId: getValue(callData, "agentId"),
-    callFrom: getValue(callData, "callFrom"),
-    timestamp: getValue(callData, "timestamp", Date.now()),
-    businessId: getValue(callData, "businessId", "67bff39c63b61e495e90079f"),
-
-    // Transcript - pass through as-is
-    transcript: Array.isArray(callData.transcript) ? callData.transcript : [],
-
-    // Recording URL
-    recording_url: getValue(callData, "recording_url"),
-
-    // Call History - flexible object merge
-    callHistory: safeAssign(
-      {
-        callDuration: 0,
-        callInitTime: 0,
-        callEndTime: 0,
-        callStatus: "",
-        callStartTime: 0,
-        provider_0: "",
-        id: "",
-      },
-      callData.callHistory
-    ),
-
-    // Schedule Info - flexible with custom params
-    scheduleInfo: {
-      campaignId: getValue(callData.scheduleInfo, "campaignId"),
-      attemptOfTheLifetime: getValue(
-        callData.scheduleInfo,
-        "attemptOfTheLifetime",
-        1
-      ),
-      attemptOfTheDay: getValue(callData.scheduleInfo, "attemptOfTheDay", 1),
-      // Pass through all customParam fields dynamically
-      customParam: safeAssign(
-        {
-          "Lead DID": "",
-          "Created Time": "",
-          Mobile: "",
-          "Page Source": "HexaHealth-IVR-Call",
-          "Lead Source": "Voice Call",
-          "Lead Channel": "IVR",
-          "Lead Name": "NA",
-          City: "NA",
-          Department: "",
-          Condition: "NA",
-          Procedure: [],
-          retryInfo: null,
-        },
-        callData.scheduleInfo?.customParam
-      ),
-    },
-
-    // Customer CRM Data - flexible with dynamic fields
-    customer_crm_data: safeAssign(
-      {
-        "Lead Channel": "IVR",
-        "Lead Source": "Voice Call",
-        "Page Source": "HexaHealth-IVR-Call",
-        leadId: "",
-        Summary: "",
-        NAME_PATIENT: "NA",
-        CITY_PATIENT: "NA",
-        DETAIL_TREATMENT: "NA",
-        PATIENT_CONFIRMATION: "NA",
-        start_time: "",
-        end_time: "",
-        recording_url: "",
-        status: "completed",
-      },
-      callData.customer_crm_data
-    ),
-  };
 }
 
 /**
@@ -246,87 +145,48 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
   try {
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
-
-    // Extract phone numbers using the generic utility
-    const rawCallerNumber =
-      getField(elevenLabsData, "system__caller_id") ||
-      extractPhoneFromSession(sessionId) ||
-      "";
-    const rawCalledNumber =
-      getField(elevenLabsData, "system__called_number") || "";
-    const rawCustomerNumber =
-      rawCalledNumber || extractPhoneFromSession(sessionId) || "";
-
-    // Note: Phone numbers are normalized in the database layer
-
-    // Extract all patient/call information using the generic utility
-    const extractedData = getFields(elevenLabsData, {
-      patientName: { fallback: "NA" },
-      cityName: { transform: transformers.city, fallback: "NA" },
-      treatmentType: { fallback: "NA" },
-      symptoms: { fallback: "NA" },
-      consent: { transform: transformers.consent, fallback: "N/A" },
-      Consent: { transform: transformers.consent, fallback: "N/A" }, // Alternative spelling
-      opdConfirmation: { fallback: "NA" },
-      agentId: "system__agent_id",
-      callDuration: "system__call_duration_secs",
-      timeUtc: "system__time_utc",
-    });
-
     // Use the best available values
-    const patientName = extractedData.patientName;
-    const cityName = extractedData.cityName;
+    const patientName = elevenLabsData?.extractedValues?.patientName;
+    const cityName = elevenLabsData?.extractedValues?.cityName;
     const treatmentType =
-      extractedData.treatmentType ||
+      elevenLabsData?.extractedValues?.treatmentType ||
       getField(elevenLabsData, "treatmentType", { source: "dynamic" }) ||
       "NA";
-    const symptoms = extractedData.symptoms;
+    const symptoms = elevenLabsData?.extractedValues?.symptoms;
     const consent =
-      extractedData.consent !== "N/A"
-        ? extractedData.consent
-        : extractedData.Consent;
-    const opdConfirmation = extractedData.opdConfirmation;
+      elevenLabsData?.extractedValues?.consent !== "N/A"
+        ? elevenLabsData?.extractedValues?.consent
+        : elevenLabsData?.extractedValues?.Consent;
+    const opdConfirmation = elevenLabsData?.extractedValues?.opdConfirmation;
 
     // Use static timestamps for now
     const timestamp = Date.now();
     const startTime = new Date();
-    const callDuration = extractedData.callDuration || 60; // Default 60 seconds
+    const callDuration = elevenLabsData?.extractedValues?.callDuration || 60; // Default 60 seconds
     const endTime = new Date(startTime.getTime() + callDuration * 1000);
 
     return {
-      callTo: formatPhoneWithCountryCode(rawCustomerNumber),
-      agentId: extractedData.agentId || "",
-      recording_url:
-        "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
-      transcript: generateTranscriptFromSummary(
-        elevenLabsData.TranscriptSummary
-      ),
-      scheduleInfo: {
-        campaignId: "", // Not available in ElevenLabs data
-        attemptOfTheLifetime: 1,
-        attemptOfTheDay: 1,
-        customParam: callRecord?.metadata?.custom_field || {
-          "Lead DID": "265404001082342921",
-          "Created Time": startTime.toISOString(),
-          Mobile: formatPhoneWithCountryCode(rawCallerNumber),
-          "Page Source": "HexaHealth-IVR-Call",
-          "Lead Source": "Voice Call",
-          "Lead Channel": "IVR",
-          "Lead Name": patientName,
-          City: cityName,
-          Department: "",
-          Condition: treatmentType,
-          Procedure: [],
-          retryInfo: null,
-        },
-      },
-      callFrom: formatPhoneWithCountryCode(rawCallerNumber),
+      agentId:
+        callRecord?.originalRequestData?.agentId ||
+        elevenLabsData?.extractedValues?.agentId ||
+        "",
       businessId: "67bff39c63b61e495e90079f", // Default business ID
+      callFrom: formatPhoneWithCountryCode(rawCallerNumber),
+      callHistory: {
+        callDuration: callDuration,
+        callEndTime: 1759473414000,
+        callInitTime: 1759473341861,
+        callStartTime: 1759473358000,
+        callStatus: "ANSWER",
+        id: "68df6ebd2b83d63e2441de9f",
+        provider_0: "1759473341.993096",
+      },
+      callTo: formatPhoneWithCountryCode(callRecord?.customerNumber),
       customer_crm_data: {
-        "Lead Channel": "IVR",
-        "Lead Source": "Voice Call",
-        "Page Source": "HexaHealth-IVR-Call",
-        leadId: "265404001082342921",
+        "Lead Channel": "Ad - Facebook",
+        "Lead Source": "Web Lead Form",
+        "Page Source": "None",
+        leadId: "L" + callData?.originalRequestData?.leadId,
         Summary: elevenLabsData.TranscriptSummary || "",
         NAME_PATIENT: patientName,
         CITY_PATIENT: cityName,
@@ -343,16 +203,18 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         status: "completed",
       },
       event: "CALL_COMPLETED",
-      callHistory: {
-        callDuration: callDuration * 1000, // Convert to milliseconds
-        callInitTime: timestamp,
-        callEndTime: endTime.getTime(),
-        callStatus: "ANSWER",
-        callStartTime: startTime.getTime(),
-        provider_0: sessionId,
-        id: elevenLabsData.ConversationID || sessionId,
+      recording_url:
+        "https://sr.knowlarity.com/vr/fetchsound/?callid=" + sessionId,
+      scheduleInfo: {
+        attemptOfTheDay: 1,
+        attemptOfTheLifetime: 1,
+        campaignId: null,
+        customParam: callRecord?.originalRequestData?.custom_field,
       },
       timestamp: timestamp,
+      transcript: generateTranscriptFromSummary(
+        elevenLabsData.TranscriptSummary
+      ),
     };
   } catch (error) {
     Logger.error("❌ Failed to map ElevenLabs data to webhook", {
@@ -364,7 +226,6 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
     return createSampleWebhookData();
   }
 }
-
 
 /**
  * Format date time for CRM

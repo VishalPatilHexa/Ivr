@@ -283,6 +283,27 @@ function extractPhoneFromSession(sessionId) {
   return phoneMatch ? `+91${phoneMatch[1]}` : null;
 }
 
+/**
+ * Extract only clean values from ElevenLabs analysis data
+ * Parses complex Python-style dictionaries into JavaScript objects
+ * 
+ * @param {Object} elevenLabsCompleteData - Complete ElevenLabs webhook data
+ * @returns {Object} Clean extracted values without rationale
+ */
+function extractCleanValues(elevenLabsCompleteData) {
+  const extractedValues = {};
+  
+  if (elevenLabsCompleteData.analysis?.data_collection_results) {
+    Object.keys(elevenLabsCompleteData.analysis.data_collection_results).forEach((key) => {
+      const result = elevenLabsCompleteData.analysis.data_collection_results[key];
+      // Parse complex values (Python-style dicts) and store clean values only
+      extractedValues[key] = parseComplexValue(result.value);
+    });
+  }
+  
+  return extractedValues;
+}
+
 module.exports = {
   extractAllData,
   getField,
@@ -290,5 +311,6 @@ module.exports = {
   parseComplexValue,
   searchFields,
   transformers,
-  extractPhoneFromSession
+  extractPhoneFromSession,
+  extractCleanValues
 };

@@ -16,7 +16,7 @@ const {
   mapElevenLabsToWebhook,
 } = require("../services/testWebhook");
 const { updateCallWithElevenLabsData } = require("../services/outboundCall");
-const { getFields } = require("../utils/elevenLabsExtractor");
+const { getFields, extractCleanValues } = require("../utils/elevenLabsExtractor");
 const db = require("../models");
 /**
  * Handle ElevenLabs post-call webhook
@@ -53,6 +53,9 @@ async function handlePostCallWebhook(req, res) {
       });
     }
 
+    // Extract only clean values from DataExtractedByAI for storage
+    const extractedValues = extractCleanValues(elevenLabsCompleteData);
+
     // Get Knowlarity metadata from stored connection
     const connection = activeConnections.get(sessionId);
 
@@ -63,13 +66,8 @@ async function handlePostCallWebhook(req, res) {
       ConversationID: conversationId,
       TranscriptSummary:
         elevenLabsCompleteData.analysis?.transcript_summary || "",
-      AllCollectedData: allCollectedData,
-      DataExtractedByAI: allCollectedData,
+      ExtractedValues: extractedValues, // Clean values only for database storage
     };
-
-    console.log("🔗 ===== ELEVENLABS DATA FOR WEBHOOK =====");
-    console.log(JSON.stringify(elevenLabsData, null, 2));
-
     // Fetch call record to get metadata.custom_field
     let callRecord = null;
     try {
@@ -93,7 +91,7 @@ async function handlePostCallWebhook(req, res) {
     try {
       console.log("📝 Updating call record with ElevenLabs data...");
       await updateCallWithElevenLabsData(sessionId, {
-        ...getFields(elevenLabsData, callRecord),
+        extractedJSON: extractedValues,
       });
       console.log("✅ Call record updated successfully");
     } catch (error) {

@@ -127,7 +127,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
 
     return {
       agentId:
-        callRecord?.metdata?.agentId ||
+        callRecord?.metadata?.agentId ||
         extractedValues?.agentId ||
         "",
       businessId: "67bff39c63b61e495e90079f", // Default business ID
@@ -146,7 +146,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         "Lead Channel": "Ad - Facebook",
         "Lead Source": "Web Lead Form",
         "Page Source": "None",
-        leadId: callRecord?.metdata?.originalRequestData['Lead DID'],
+        leadId: callRecord?.metadata?.originalRequestData['Lead DID'],
         Summary: elevenLabsData.TranscriptSummary || "",
         NAME_PATIENT: extractedValues?.patientName,
         CITY_PATIENT: extractedValues?.cityName || "N/A",
@@ -174,7 +174,7 @@ function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
         attemptOfTheDay: 1,
         attemptOfTheLifetime: 1,
         campaignId: null,
-        customParam: callRecord?.metdata?.originalRequestData,
+        customParam: callRecord?.metadata?.originalRequestData,
       },
       timestamp: timestamp,
       transcript: generateTranscriptFromSummary(

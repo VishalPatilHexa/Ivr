@@ -57,10 +57,12 @@ const PROVIDERS = {
  * @returns {Promise<Object>} API response
  */
 async function makeOutboundCall(callData) {
+  const callId = uuidv4();
   let dbRecord = null;
 
   try {
     Logger.info("🚀 Making outbound call", {
+      callId,
       customerNumber: callData.customerNumber,
       provider: "knowlarity",
     });
@@ -71,38 +73,15 @@ async function makeOutboundCall(callData) {
     // Determine provider from environment
     const provider = getActiveProvider();
 
-    // Create provider-specific payload
-    const payload = createProviderPayload(provider, callData);
-
-    // Make API call
-    const response = await makeApiCall(provider, payload);
-
-    // Extract session ID from provider response
-    let sessionId;
-
-    if (
-      provider.name === "knowlarity" &&
-      response.data.data?.call_ids?.[0]?.call_id
-    ) {
-      sessionId = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
-    } else if (provider.name === "acephone") {
-      // For Acephone, use the sessionId we generated and passed in metadata
-      sessionId = callData.metadata.sessionId || uuidv4();
-    } else {
-      sessionId = callData.sessionId; // Use provided sessionId for other providers
-    }
-
     // Create database record with INITIATED status
     dbRecord = await createCallRecord({
-      sessionId: sessionId, // Use callId as sessionId
+      sessionId: callId, // Use callId as sessionId
       provider: provider.name,
       callerNumber: callData.callerNumber,
       customerNumber: callData.customerNumber,
       isPromotional: callData.isPromotional || false,
       status: CALL_STATUS.INITIATED,
       metadata: callData.metadata,
-      providerResponse: response.data,
-      callStartTime: new Date(),
       createdAt: Math.floor(Date.now()),
       updatedAt: Math.floor(Date.now()),
     });
@@ -110,28 +89,68 @@ async function makeOutboundCall(callData) {
       delete callData.metadata.originalRequestData;
     }
 
+    // Create provider-specific payload
+    const payload = createProviderPayload(provider, callData);
+
+    // Make API call
+    const response = await makeApiCall(provider, payload);
+
+    // Extract session ID from provider response
+    let sessionIdFromProvider;
+
+    if (
+      provider.name === "knowlarity" &&
+      response.data.data?.call_ids?.[0]?.call_id
+    ) {
+      sessionIdFromProvider = response.data.data.call_ids[0].call_id; // Use call_id as sessionId for Knowlarity
+    } else if (provider.name === "acephone") {
+      // For Acephone, use the sessionId we generated and passed in metadata
+      sessionIdFromProvider = callData.metadata.sessionId || callId;
+    } else {
+      sessionIdFromProvider = callData.sessionId; // Use provided sessionId for other providers
+    }
+
+    // Update database record with provider response
+    await updateCallRecord(callId, {
+      sessionId: sessionIdFromProvider || callData.sessionId,
+      providerResponse: response.data,
+      callStartTime: new Date(),
+    });
+
     Logger.info("✅ Outbound call initiated successfully", {
+      callId,
       provider: provider.name,
       customerNumber: callData.customerNumber,
-      sessionId: sessionId,
+      sessionId: sessionIdFromProvider,
     });
 
     return {
       success: true,
-      callId: sessionId,
+      callId,
       provider: provider.name,
-      sessionId: sessionId,
+      sessionId: sessionIdFromProvider,
       data: response.data,
     };
   } catch (error) {
     Logger.error("❌ Failed to make outbound call", {
+      callId,
       error: error.message,
       customerNumber: callData.customerNumber,
       stack: error.stack,
     });
 
+    // Update database record with FAILED status
+    if (dbRecord) {
+      await updateCallRecord(callId, {
+        status: CALL_STATUS.FAILED,
+        errorMessage: error.message,
+        endTime: new Date(),
+      });
+    }
+
     return {
       success: false,
+      callId,
       error: error.message,
       provider: process.env.OUTBOUND_PROVIDER || "unknown",
     };
@@ -345,13 +364,13 @@ async function updateCallRecord(callId, updateData) {
     const [updatedRows] = await db.ivr_calls.update(updateData, {
       where: { sessionId: callId },
     });
-
+    
     Logger.info("📝 Call record updated", {
       callId,
       updatedRows,
       updates: Object.keys(updateData),
     });
-
+    
     if (updatedRows === 0) {
       Logger.warn("⚠️ No call record found to update", { sessionId: callId });
     }
@@ -359,7 +378,7 @@ async function updateCallRecord(callId, updateData) {
     Logger.error("❌ Failed to update call record", {
       callId,
       error: error.message,
-      stack: error.stack,
+      stack: error.stack
     });
   }
 }
@@ -414,9 +433,9 @@ async function updateCallWithElevenLabsData(sessionId, elevenLabsData) {
       rawResponse: elevenLabsData,
     };
 
-    // Check if call record exists using exact sessionId
+    // Check if call record exists
     const existingRecord = await db.ivr_calls.findOne({
-      where: { sessionId: sessionId },
+      where: { sessionId: sessionId }
     });
 
     if (existingRecord) {

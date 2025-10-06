@@ -11,15 +11,14 @@ const {
   activeConnections,
   cleanupSession,
 } = require("../websockets/events/stream");
-const {
-  callTestWebhook,
-  mapElevenLabsToWebhook,
-} = require("../services/testWebhook");
 const { updateCallRecord } = require("../services/outboundCall");
-const {
-  extractCleanValues,
-} = require("../utils/elevenLabsExtractor");
 const db = require("../models");
+
+// Webhook utilities
+const dataExtractor = require("../webhooks/utils/dataExtractor");
+const payloadMapper = require("../webhooks/utils/payloadMapper");
+const httpClient = require("../webhooks/utils/httpClient");
+const sessionCleanup = require("../webhooks/utils/sessionCleanup");
 /**
  * Handle ElevenLabs post-call webhook
  */
@@ -29,79 +28,41 @@ async function handlePostCallWebhook(req, res) {
 
     console.log("🎯 ===== ELEVENLABS POST-CALL WEBHOOK RECEIVED =====");
 
-    // Extract session information from webhook
-    const conversationId = webhookData.data?.conversation_id;
-    const sessionId =
-      webhookData.data?.conversation_initiation_client_data?.dynamic_variables
-        ?.user_id || conversationId;
+    // Extract session information using utility
+    const { sessionId, conversationId } =
+      dataExtractor.extractSessionInfo(webhookData);
 
     console.log("🔍 Processing webhook for session:", sessionId);
 
-    // Extract ALL ElevenLabs data (complete webhook data)
-    const elevenLabsCompleteData = webhookData.data || {};
+    // Extract ElevenLabs data using utility
+    const elevenLabsExtracted =
+      dataExtractor.extractElevenLabsData(webhookData);
 
-    // Extract all collected data from analysis
-    const allCollectedData = {};
-    if (elevenLabsCompleteData.analysis?.data_collection_results) {
-      Object.keys(
-        elevenLabsCompleteData.analysis.data_collection_results
-      ).forEach((key) => {
-        const result =
-          elevenLabsCompleteData.analysis.data_collection_results[key];
-        allCollectedData[key] = {
-          value: result.value,
-          rationale: result.rationale,
-        };
-      });
-    }
+    // Get active connection using utility
+    const connection = dataExtractor.getActiveConnection(
+      sessionId,
+      activeConnections
+    );
 
-    // Extract only clean values from DataExtractedByAI for storage
-    const extractedValues = extractCleanValues(elevenLabsCompleteData);
+    // Build standardized ElevenLabs data object using utility
+    const elevenLabsData = dataExtractor.buildElevenLabsDataObject(
+      sessionId,
+      conversationId,
+      elevenLabsExtracted
+    );
+    // Fetch call record using utility
+    const callRecord = await dataExtractor.getCallRecordMetadata(
+      sessionId,
+      db.ivr_calls
+    );
 
-    // Get Knowlarity metadata from stored connection
-    const connection = activeConnections.get(sessionId);
-
-    // Prepare ElevenLabs data object (same format regardless of connection)
-    const elevenLabsData = {
-      Timestamp: new Date().toISOString(),
-      SessionID: sessionId,
-      ConversationID: conversationId,
-      TranscriptSummary:
-        elevenLabsCompleteData.analysis?.transcript_summary || "",
-      ExtractedValues: extractedValues, // Clean values only for database storage
-    };
-    // Fetch call record to get metadata.custom_field
-    let callRecord = null;
-    try {
-      callRecord = await db.ivr_calls.findOne({
-        where: { sessionId: sessionId },
-      });
-      console.log(
-        "📋 Call record found:",
-        callRecord,
-        "for sessionId:",
-        sessionId
-      );
-    } catch (error) {
-      console.error("❌ Failed to fetch call record", {
-        sessionId,
-        error: error.message,
-      });
-    }
-
-    // Update call record with extracted ElevenLabs data
-    try {
-      await updateCallRecord(sessionId, {
-        extractedJson: extractedValues,
-        status: CALL_STATUS.COMPLETED,
-      });
-      console.log("✅ Call record updated successfully");
-    } catch (error) {
-      console.error("❌ Failed to update call record", {
-        sessionId,
-        error: error.message,
-      });
-    }
+    // Update call record with extracted data using utility
+    await sessionCleanup.updateCallRecordWithData(
+      sessionId,
+      elevenLabsExtracted.cleanValues,
+      updateCallRecord,
+      CALL_STATUS.COMPLETED
+    );
 
     // Map ElevenLabs data to webhook format and call external API
     try {
@@ -109,14 +70,21 @@ async function handlePostCallWebhook(req, res) {
         elevenLabsData,
         callRecordMetadata: callRecord.metadata,
         id: callRecord.dataValues.id,
-        sessionId
+        sessionId,
       });
-      // here i am able to get callRecord details its printable but see logs i showed 
+      // here i am able to get callRecord details its printable but see logs i showed
 
-      const webhookPayload = await mapElevenLabsToWebhook(elevenLabsData, callRecord);
+      // Map to webhook payload using utility
+      const webhookPayload = payloadMapper.mapElevenLabsToWebhook(
+        elevenLabsData,
+        callRecord
+      );
       console.log("📦 Mapped webhook payload:", webhookPayload);
-      
-      const webhookResult = await callTestWebhook(webhookPayload);
+
+      // Call external webhook using utility
+      const webhookResult = await httpClient.callHexaHealthWebhook(
+        webhookPayload
+      );
 
       console.log("🎯 External webhook called successfully", {
         sessionId,
@@ -129,24 +97,13 @@ async function handlePostCallWebhook(req, res) {
       });
     }
 
-    // Handle connection-specific cleanup (only if connection exists)
-    if (connection) {
-      // Close Knowlarity WebSocket if still active
-      if (connection.websocket && connection.websocket.readyState === 1) {
-        console.log(
-          "🔌 Closing Knowlarity WebSocket - ElevenLabs agent ended the call"
-        );
-        connection.websocket.close(1000, "Call ended by ElevenLabs agent");
-      }
-
-      // Perform cleanup after processing
-      console.log("🧹 Performing session cleanup after webhook processing");
-      const agentConversation = connection.agentConversation;
-      cleanupSession(sessionId, agentConversation);
-    } else {
-      console.log("⚠️ No connection found for session:", sessionId);
-      console.log("💡 This is normal - cleanup may have already happened");
-    }
+    // Handle connection cleanup using utility
+    console.log("🧹 Performing session cleanup after webhook processing");
+    sessionCleanup.handleConnectionCleanup(
+      connection,
+      sessionId,
+      cleanupSession
+    );
 
     console.log("🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====");
 

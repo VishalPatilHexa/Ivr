@@ -91,7 +91,7 @@ async function makeOutboundCall(callData) {
     }
 
     // Create provider-specific payload
-    const payload = createProviderPayload(provider, callData);
+    const payload = createProviderPayload(provider, callData, dbRecord);
 
     // Make API call
     const response = await makeApiCall(provider, payload);
@@ -124,16 +124,9 @@ async function makeOutboundCall(callData) {
       finalSessionId = sessionIdFromProvider || callData.sessionId;
     }
 
-    // Add ivr_calls id to metadata for WebSocket connection tracking
-    const updatedMetadata = {
-      ...callData.metadata,
-      ivrCallId: dbRecord.id, // Pass database record ID for tracking
-    };
-
     await updateCallRecord(callId, {
       sessionId: finalSessionId,
-      providerResponse: response.data,
-      metadata: updatedMetadata, // Update metadata with ivrCallId
+      providerResponse: response.data
     });
 
     Logger.info("✅ Outbound call initiated successfully", {
@@ -215,13 +208,13 @@ function getActiveProvider() {
 /**
  * Create provider-specific payload
  */
-function createProviderPayload(provider, callData) {
+function createProviderPayload(provider, callData, dbRecord) {
   switch (provider.name) {
     case "knowlarity":
-      return createKnowlarityPayload(callData);
+      return createKnowlarityPayload(callData, dbRecord);
 
     case "acephone":
-      return createAcephonePayload(callData);
+      return createAcephonePayload(callData, dbRecord);
 
     default:
       throw new Error(
@@ -233,7 +226,7 @@ function createProviderPayload(provider, callData) {
 /**
  * Create Knowlarity-specific payload
  */
-function createKnowlarityPayload(callData) {
+function createKnowlarityPayload(callData, dbRecord) {
   return {
     ivr_id: process.env.KNOWLARITY_IVR_ID,
     k_number: process.env.KNOWLARITY_VIRTUAL_NUMBER,
@@ -242,6 +235,7 @@ function createKnowlarityPayload(callData) {
     is_promotional: callData.isPromotional ? "true" : "false",
     metadata: {
       ...callData.metadata, // Include any additional metadata
+      ivrCallId: dbRecord.id, // Pass database record ID for tracking
     },
   };
 }
@@ -465,12 +459,13 @@ function getProviderInfo() {
  */
 async function updateCallStartTime(ivrCallId) {
   try {
-    Logger.info("📞 Updating callStartTime for WebSocket connection", { ivrCallId });
+    const startTime = Math.floor(Date.now());
+    Logger.info("📞 Updating callStartTime for WebSocket connection", { ivrCallId, startTime });
 
     const [updatedRows] = await db.ivr_calls.update(
       { 
-        callStartTime: Math.floor(Date.now()),
-        updatedAt: Math.floor(Date.now())
+        callStartTime: startTime,
+        updatedAt: startTime
       },
       { where: { id: ivrCallId } }
     );
@@ -478,7 +473,7 @@ async function updateCallStartTime(ivrCallId) {
     if (updatedRows === 0) {
       Logger.warn("⚠️ No call record found to update callStartTime", { ivrCallId });
     } else {
-      Logger.info("✅ CallStartTime updated successfully", { ivrCallId });
+      Logger.info("✅ CallStartTime updated successfully", { ivrCallId, startTime });
     }
   } catch (error) {
     Logger.error("❌ Failed to update callStartTime", {
@@ -493,13 +488,14 @@ async function updateCallStartTime(ivrCallId) {
  */
 async function updateCallEndTime(ivrCallId) {
   try {
-    Logger.info("📞 Updating callEndTime for call completion", { ivrCallId });
+    const endTime = Math.floor(Date.now());
+    Logger.info("📞 Updating callEndTime for call completion", { ivrCallId, endTime });
 
     const [updatedRows] = await db.ivr_calls.update(
       { 
-        callEndTime: Math.floor(Date.now()),
+        callEndTime: endTime,
         status: CALL_STATUS.COMPLETED,
-        updatedAt: Math.floor(Date.now())
+        updatedAt: endTime
       },
       { where: { id: ivrCallId } }
     );
@@ -507,7 +503,7 @@ async function updateCallEndTime(ivrCallId) {
     if (updatedRows === 0) {
       Logger.warn("⚠️ No call record found to update callEndTime", { ivrCallId });
     } else {
-      Logger.info("✅ CallEndTime updated successfully", { ivrCallId });
+      Logger.info("✅ CallEndTime updated successfully", { ivrCallId, endTime });
     }
   } catch (error) {
     Logger.error("❌ Failed to update callEndTime", {

@@ -114,6 +114,8 @@ async function makeWebhookCall(payload) {
 
 function mapElevenLabsToWebhook(elevenLabsData, callRecord = null) {
   try {
+    console.log('Mapping ElevenLabs data to webhook format:********************************', callRecord?.metadata?.originalRequestData);
+    
     // Extract basic session info
     const sessionId = elevenLabsData.SessionID || "";
     let extractedValues = elevenLabsData.ExtractedValues || {};

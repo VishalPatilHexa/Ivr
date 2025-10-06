@@ -15,6 +15,8 @@ const wss = new WebSocket.Server({ server });
 
 // WebSocket connection handling
 wss.on("connection", (ws, req) => {
+  console.log("New WebSocket connection requested");
+  
   handleConnection(ws, req);
 });
 

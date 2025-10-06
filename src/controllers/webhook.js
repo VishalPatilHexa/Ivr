@@ -94,7 +94,6 @@ async function handlePostCallWebhook(req, res) {
       await updateCallRecord(sessionId, {
         extractedJson: extractedValues,
         status: CALL_STATUS.COMPLETED,
-        callEndTime: new Date(),
       });
       console.log("✅ Call record updated successfully");
     } catch (error) {

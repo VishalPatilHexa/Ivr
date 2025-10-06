@@ -73,7 +73,8 @@ async function makeOutboundCall(callData) {
     // Determine provider from environment
     const provider = getActiveProvider();
 
-    // Create database record with INITIATED status
+    // Create database record with INITIATED status  
+    // Note: createdAt serves as call initiation time
     dbRecord = await createCallRecord({
       sessionId: callId, // Use callId as sessionId
       provider: provider.name,
@@ -123,10 +124,16 @@ async function makeOutboundCall(callData) {
       finalSessionId = sessionIdFromProvider || callData.sessionId;
     }
 
+    // Add ivr_calls id to metadata for WebSocket connection tracking
+    const updatedMetadata = {
+      ...callData.metadata,
+      ivrCallId: dbRecord.id, // Pass database record ID for tracking
+    };
+
     await updateCallRecord(callId, {
       sessionId: finalSessionId,
       providerResponse: response.data,
-      callStartTime: new Date(),
+      metadata: updatedMetadata, // Update metadata with ivrCallId
     });
 
     Logger.info("✅ Outbound call initiated successfully", {
@@ -453,12 +460,71 @@ function getProviderInfo() {
   };
 }
 
+/**
+ * Update callStartTime when WebSocket connection is established
+ */
+async function updateCallStartTime(ivrCallId) {
+  try {
+    Logger.info("📞 Updating callStartTime for WebSocket connection", { ivrCallId });
+
+    const [updatedRows] = await db.ivr_calls.update(
+      { 
+        callStartTime: Math.floor(Date.now()),
+        updatedAt: Math.floor(Date.now())
+      },
+      { where: { id: ivrCallId } }
+    );
+
+    if (updatedRows === 0) {
+      Logger.warn("⚠️ No call record found to update callStartTime", { ivrCallId });
+    } else {
+      Logger.info("✅ CallStartTime updated successfully", { ivrCallId });
+    }
+  } catch (error) {
+    Logger.error("❌ Failed to update callStartTime", {
+      ivrCallId,
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Update callEndTime when call ends
+ */
+async function updateCallEndTime(ivrCallId) {
+  try {
+    Logger.info("📞 Updating callEndTime for call completion", { ivrCallId });
+
+    const [updatedRows] = await db.ivr_calls.update(
+      { 
+        callEndTime: Math.floor(Date.now()),
+        status: CALL_STATUS.COMPLETED,
+        updatedAt: Math.floor(Date.now())
+      },
+      { where: { id: ivrCallId } }
+    );
+
+    if (updatedRows === 0) {
+      Logger.warn("⚠️ No call record found to update callEndTime", { ivrCallId });
+    } else {
+      Logger.info("✅ CallEndTime updated successfully", { ivrCallId });
+    }
+  } catch (error) {
+    Logger.error("❌ Failed to update callEndTime", {
+      ivrCallId,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   updateCallRecord,
   makeOutboundCall,
   markCallCompleted,
   markCallFailed,
   markCallCancelled,
+  updateCallStartTime,
+  updateCallEndTime,
   getProviderInfo,
   normalizePhoneNumber,
   formatPhoneWithCountryCode,

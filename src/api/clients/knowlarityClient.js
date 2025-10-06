@@ -10,6 +10,7 @@
 const { createRetryClient } = require("../baseClient");
 const Logger = require("../../utils/logger");
 const { APPLICATION, API_ENDPOINTS, ERRORS } = require("../../constants");
+const crypto = require("crypto");
 
 class KnowlarityClient {
   constructor() {
@@ -253,7 +254,6 @@ class KnowlarityClient {
    */
   validateWebhookSignature(payload, signature, secret = null) {
     try {
-      const crypto = require("crypto");
       const webhookSecret = secret || process.env.KNOWLARITY_WEBHOOK_SECRET;
 
       if (!webhookSecret) {

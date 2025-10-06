@@ -31,7 +31,6 @@ async function createConversation(agentId, sessionId, metadata) {
     activeConversations.set(sessionId, conversationSession);
 
     // Establish WebSocket connection to ElevenLabs
-    const websocketManager = require("./websocket");
     const agentWebSocket = await websocketManager.createElevenLabsWebSocket(
       agentId,
       sessionId,

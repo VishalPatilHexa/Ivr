@@ -66,16 +66,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER, // Duration in seconds
         allowNull: true,
       },
-      callInitTime: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
       callStartTime: {
-        type: DataTypes.DATE,
+        type: DataTypes.BIGINT,
         allowNull: true,
       },
       callEndTime: {
-        type: DataTypes.DATE,
+        type: DataTypes.BIGINT,
         allowNull: true,
       },
       errorMessage: {

@@ -8,86 +8,107 @@
  */
 
 const Logger = require("../../../utils/logger");
+const sessionUtils = require("../shared/session");
+const messageHandlers = require("../shared/messageHandlers");
 
 /**
  * Handle Acephone WebSocket connection
  */
 function handleConnection(websocket, urlPath, activeConnections) {
-  Logger.info("🚀 Acephone handler called (basic implementation)");
+  // Extract sessionId from URL (adjust based on Acephone URL format)
+  const sessionId = urlPath.split("/")[2] || `acephone_${Date.now()}`;
+  const clientType = "acephone";
 
-    // Store basic connection info
-  activeConnections.set(sessionId, {
-    websocket,
-    clientType: "acephone",
-    connectedAt: new Date(),
-    // sessionId: sessionId, need to extract from metadata
-  });
+  Logger.info("🚀 Acephone handler called (basic implementation)", { sessionId });
 
-  // Basic message handling
-  websocket.on("message", (message) => {
+  try {
+    // Store connection using reusable utility
+    sessionUtils.storeConnection(sessionId, websocket, clientType, activeConnections);
+
+    // Setup message handling
+    setupMessageHandling(websocket, sessionId, activeConnections);
+
+    // Setup error and close handlers using reusable utilities
+    messageHandlers.setupErrorHandler(websocket, sessionId, "Acephone");
+    messageHandlers.setupCloseHandler(websocket, sessionId, activeConnections);
+
+    Logger.info("✅ Acephone handler setup complete", { sessionId });
+  } catch (error) {
+    Logger.error("❌ Failed to setup Acephone connection", {
+      sessionId,
+      error,
+    });
+    websocket.close(1011, "Failed to initialize connection");
+  }
+}
+
+/**
+ * Setup message handling for Acephone connection
+ */
+function setupMessageHandling(websocket, sessionId, activeConnections) {
+  websocket.on("message", async (message) => {
     try {
-      const data = JSON.parse(message.toString());
-      Logger.info("📨 Acephone message", { 
-        sessionId, 
-        event: data.event 
-      });
+      // Parse message using reusable utility
+      const parsed = messageHandlers.parseMessage(message);
 
-      // Basic event responses
-      switch (data.event) {
-        case "connected":
-          Logger.info("✅ Acephone handshake complete", { sessionId });
-          break;
+      if (parsed.type === "json" || parsed.type === "text") {
+        const data = parsed.type === "json" ? parsed.data : JSON.parse(parsed.data);
 
-        case "start":
-          Logger.info("🎬 Acephone call started", { sessionId });
-          break;
+        Logger.info("📨 Acephone message", {
+          sessionId,
+          event: data.event
+        });
 
-        case "stop":
-          Logger.info("🛑 Acephone call stopped", { sessionId });
-          handleCallEnd(sessionId, activeConnections);
-          break;
+        // Define custom handlers for Acephone events
+        const handlers = {
+          connected: async (data, sid) => {
+            Logger.info("✅ Acephone handshake complete", { sessionId: sid });
+          },
 
-        default:
-          Logger.debug("❓ Unknown Acephone event", { 
-            sessionId, 
-            event: data.event 
+          start: async (data, sid) => {
+            Logger.info("🎬 Acephone call started", { sessionId: sid });
+          },
+
+          stop: async (data, sid) => {
+            Logger.info("🛑 Acephone call stopped", { sessionId: sid });
+            handleCallEnd(sid, activeConnections);
+          },
+        };
+
+        // Handle based on event field
+        if (data.event && handlers[data.event]) {
+          await handlers[data.event](data, sessionId);
+        } else {
+          Logger.debug("❓ Unknown Acephone event", {
+            sessionId,
+            event: data.event
           });
+        }
+      } else if (parsed.type === "binary") {
+        // Handle binary audio data when Acephone audio streaming is implemented
+        Logger.debug("🎵 Acephone binary audio received", { sessionId });
+        // TODO: Implement audio handling when needed
       }
     } catch (error) {
-      Logger.error("❌ Error processing Acephone message", { 
-        sessionId, 
-        error: error.message 
+      Logger.error("❌ Error processing Acephone message", {
+        sessionId,
+        error: error.message
       });
     }
   });
-
-  websocket.on("close", () => {
-    Logger.info("🔌 Acephone connection closed", { sessionId });
-    activeConnections.delete(sessionId);
-  });
-
-  websocket.on("error", (error) => {
-    Logger.error("❌ Acephone WebSocket error", { 
-      sessionId, 
-      error: error.message 
-    });
-    activeConnections.delete(sessionId);
-  });
-
-  Logger.info("✅ Basic Acephone handler setup complete", { sessionId });
 }
 
 /**
  * Handle call end
  */
 function handleCallEnd(sessionId, activeConnections) {
-  const connection = activeConnections.get(sessionId);
-  
-  if (connection) {
-    connection.callEnded = true;
-    activeConnections.delete(sessionId);
-    Logger.info("📞 Acephone call ended", { sessionId });
-  }
+  // Mark call as ended using reusable utility
+  sessionUtils.markCallEnded(sessionId, activeConnections);
+
+  // Remove connection using reusable utility
+  sessionUtils.removeConnection(sessionId, activeConnections);
+
+  Logger.info("📞 Acephone call ended", { sessionId });
 }
 
 module.exports = {

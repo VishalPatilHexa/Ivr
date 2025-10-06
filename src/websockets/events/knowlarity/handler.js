@@ -6,44 +6,32 @@
  * Handles Knowlarity WebSocket connections and audio streaming
  */
 
-const WebSocket = require("ws");
 const Logger = require("../../../utils/logger");
-const { SessionManager } = require("../../../core/managers");
-const audioUtils = require("../shared/audio");
+const sessionUtils = require("../shared/session");
+const messageHandlers = require("../shared/messageHandlers");
+const agentInitializer = require("../shared/agentInitializer");
 const streamingUtils = require("../shared/streaming");
 const metadataProcessor = require("./metadata");
 const lifecycleManager = require("./lifecycle");
-const elevenLabsAgentService = require("../../../streaming/adapters/elevenlabs");
 const {
-  updateCallStartTime,
   updateCallEndTime,
 } = require("../../../services/outboundCall");
-
-// Initialize SessionManager
-const sessionManager = new SessionManager();
-sessionManager.initialize();
 
 /**
  * Handle Knowlarity WebSocket connection
  */
 async function handleConnection(websocket, urlPath, activeConnections) {
   const sessionId = urlPath.split("/")[2];
+  const clientType = "knowlarity";
 
   Logger.info("📞 New Knowlarity call", { sessionId });
 
   try {
-    // Store connection info
-    const clientType = "knowlarity";
+    // Store connection info using reusable utility
+    sessionUtils.storeConnection(sessionId, websocket, clientType, activeConnections);
 
-    activeConnections.set(sessionId, {
-      websocket,
-      clientType,
-      connectedAt: new Date(),
-      agentConversation: null,
-    });
-
-    // Create session in Redis
-    await createSession(sessionId, clientType);
+    // Create session in Redis using reusable utility
+    await sessionUtils.createSession(sessionId, clientType);
 
     // Setup message handling
     setupMessageHandling(websocket, sessionId, activeConnections);
@@ -53,7 +41,7 @@ async function handleConnection(websocket, urlPath, activeConnections) {
       websocket,
       sessionId,
       activeConnections,
-      sessionManager
+      sessionUtils.getSessionManager()
     );
 
     Logger.info("✅ Knowlarity connection established", { sessionId });
@@ -66,32 +54,6 @@ async function handleConnection(websocket, urlPath, activeConnections) {
   }
 }
 
-/**
- * Create session in Redis
- */
-async function createSession(sessionId, clientType) {
-  try {
-    const session = await sessionManager.createSession({
-      sessionId: sessionId,
-      clientInfo: {
-        type: clientType,
-        userAgent: "knowlarity-websocket",
-        ipAddress: "knowlarity-gateway",
-      },
-      metadata: {
-        callType: "inbound",
-        source: "knowlarity",
-        isExternal: true,
-      },
-    });
-
-    Logger.info("✅ Session created in Redis", { sessionId });
-    return session;
-  } catch (error) {
-    Logger.error("❌ Failed to create session", { sessionId, error });
-    throw error;
-  }
-}
 
 /**
  * Setup message handling for Knowlarity connection
@@ -104,9 +66,8 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
     try {
       messageCount++;
 
-      // Check if call has ended
-      const connection = activeConnections.get(sessionId);
-      if (connection?.callEnded) {
+      // Check if call has ended using reusable utility
+      if (sessionUtils.isCallEnded(sessionId, activeConnections)) {
         return;
       }
 
@@ -117,15 +78,15 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
         const metadata = await metadataProcessor.processInitialMessage(
           incomingMessage,
           sessionId,
-          sessionManager
+          sessionUtils.getSessionManager()
         );
 
         if (metadata) {
-          await initializeAgent(sessionId, metadata, activeConnections);
+          await initializeAgentForKnowlarity(sessionId, metadata, activeConnections);
           return;
         } else {
           // No metadata found, initialize with defaults
-          await initializeAgent(sessionId, null, activeConnections);
+          await initializeAgentForKnowlarity(sessionId, null, activeConnections);
           // Continue processing this message as audio - don't return
         }
       }
@@ -144,12 +105,8 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
     }
   });
 
-  websocket.on("error", (error) => {
-    Logger.error("❌ Knowlarity WebSocket error", {
-      sessionId,
-      error: error.message,
-    });
-  });
+  // Setup error handler using reusable utility
+  messageHandlers.setupErrorHandler(websocket, sessionId, "Knowlarity");
 }
 
 /**
@@ -160,36 +117,36 @@ async function handleIncomingMessage(
   sessionId,
   activeConnections
 ) {
-  const connection = activeConnections.get(sessionId);
+  const connection = sessionUtils.getConnection(sessionId, activeConnections);
   const agentConversation = connection?.agentConversation;
 
-  if (incomingMessage instanceof Buffer) {
-    // Try to parse as JSON first
-    try {
-      const messageStr = incomingMessage.toString();
-      const parsedMessage = JSON.parse(messageStr);
+  // Parse message using reusable utility
+  const parsed = messageHandlers.parseMessage(incomingMessage);
 
-      if (parsedMessage.type === "audio-chunk" && parsedMessage.audio) {
-        // Handle client audio message
-        const audioBuffer = Buffer.from(parsedMessage.audio, "base64");
-        await handleIncomingAudio(audioBuffer, sessionId, agentConversation);
-      } else {
-        // Handle control messages
-        await handleControlMessages(
-          messageStr,
-          sessionId,
-          agentConversation,
-          activeConnections
-        );
-      }
-    } catch (parseError) {
-      // Not JSON, treat as binary audio
-      await handleIncomingAudio(incomingMessage, sessionId, agentConversation);
+  if (parsed.type === "json") {
+    // Try to handle as audio chunk
+    const handled = await messageHandlers.handleAudioChunk(
+      parsed.data,
+      sessionId,
+      agentConversation
+    );
+
+    if (!handled) {
+      // Handle as control message
+      await handleControlMessages(
+        parsed.raw,
+        sessionId,
+        agentConversation,
+        activeConnections
+      );
     }
+  } else if (parsed.type === "binary") {
+    // Binary audio data
+    await messageHandlers.handleIncomingAudio(parsed.data, sessionId, agentConversation);
   } else {
-    // Handle text-based control messages
+    // Text-based control messages
     await handleControlMessages(
-      incomingMessage,
+      parsed.data,
       sessionId,
       agentConversation,
       activeConnections
@@ -197,28 +154,6 @@ async function handleIncomingMessage(
   }
 }
 
-/**
- * Handle incoming audio from caller
- */
-async function handleIncomingAudio(audioBuffer, sessionId, agentConversation) {
-  try {
-    // Amplify audio volume
-    const amplifiedAudioBuffer = audioUtils.amplifyAudioVolume(
-      audioBuffer,
-      2.5
-    );
-    const audioBase64Data = amplifiedAudioBuffer.toString("base64");
-
-    // Send to ElevenLabs agent
-    if (agentConversation) {
-      await streamingUtils.sendAudioToAgent(sessionId, audioBase64Data);
-    } else {
-      Logger.debug("⏳ Agent not ready, dropping audio", { sessionId });
-    }
-  } catch (error) {
-    Logger.error("❌ Failed to process incoming audio", { sessionId, error });
-  }
-}
 
 /**
  * Handle control messages
@@ -229,141 +164,74 @@ async function handleControlMessages(
   agentConversation,
   activeConnections
 ) {
-  try {
-    const controlData = JSON.parse(controlMessage);
+  // Define custom handlers for Knowlarity-specific control messages
+  const handlers = {
+    call_start: async (data, sid) => {
+      Logger.info("📞 Call started", { sessionId: sid });
+    },
 
-    switch (controlData.type) {
-      case "call_start":
-        Logger.info("📞 Call started", { sessionId });
-        break;
+    call_end: async (data, sid) => {
+      Logger.info("📞 Call ended by client", { sessionId: sid });
 
-      case "call_end":
-        Logger.info("📞 Call ended by client", { sessionId });
+      // Update callEndTime when call ends
+      const connection = sessionUtils.getConnection(sid, activeConnections);
+      if (connection?.ivrCallId) {
+        await updateCallEndTime(connection.ivrCallId);
+      }
 
-        // Update callEndTime when call ends
-        const connection = activeConnections.get(sessionId);
-        if (connection && connection.ivrCallId) {
-          await updateCallEndTime(connection.ivrCallId);
-        }
+      if (agentConversation) {
+        streamingUtils.endConversation(sid);
+      }
+    },
 
-        if (agentConversation) {
-          streamingUtils.endConversation(sessionId);
-        }
-        break;
+    dtmf: async (data, sid) => {
+      Logger.info("📟 DTMF received", {
+        sessionId: sid,
+        digit: data.digit,
+      });
+    },
+  };
 
-      case "dtmf":
-        Logger.info("📟 DTMF received", {
-          sessionId,
-          digit: controlData.digit,
-        });
-        break;
-
-      default:
-        Logger.debug("❓ Unknown control message", {
-          sessionId,
-          type: controlData.type,
-        });
-    }
-  } catch (jsonError) {
-    Logger.debug("📝 Non-JSON control message", { sessionId });
-  }
+  // Use reusable control message handler
+  await messageHandlers.handleControlMessage(controlMessage, sessionId, handlers);
 }
 
 /**
- * Initialize ElevenLabs agent conversation
+ * Initialize ElevenLabs agent conversation for Knowlarity
+ * Uses custom metadata extraction via metadataProcessor.safeExtract
  */
-async function initializeAgent(sessionId, metadata, activeConnections) {
-  try {
-    Logger.info("🤖 Initializing ElevenLabs agent", { sessionId });
+async function initializeAgentForKnowlarity(sessionId, metadata, activeConnections) {
+  // Custom agentId extractor for Knowlarity metadata structure
+  const extractAgentId = (meta) => {
+    return metadataProcessor.safeExtract(
+      meta,
+      "metadata.metadata.agentId",
+      "metadata.agentId",
+      "agentId",
+      "agent_id"
+    ) || "default_agent_id";
+  };
 
-    // Extract only agentId for ElevenLabs connection, pass full metadata for processing there
-    const agentId =
-      metadataProcessor.safeExtract(
-        metadata,
-        "metadata.metadata.agentId",
-        "metadata.agentId",
-        "agentId",
-        "agent_id"
-      ) || "default_agent_id";
-
-    // Log the agentId status
-    if (agentId === "default_agent_id") {
-      Logger.warn("⚠️ Using default agentId", { sessionId });
-    } else {
-      Logger.info("✅ Valid agentId extracted from metadata", {
-        sessionId,
-        agentId,
-      });
-    }
-
-    // Create ElevenLabs conversation - pass full metadata for destructuring there
-    const agentConversation = await elevenLabsAgentService.createConversation(
-      agentId,
-      sessionId,
-      metadata // Pass full metadata object for ElevenLabs to destructure
-    );
-
-    // Extract ivrCallId and update callStartTime
-    const ivrCallId = metadataProcessor.safeExtract(
-      metadata,
+  // Custom ivrCallId extractor for Knowlarity metadata structure
+  const extractCallId = (meta) => {
+    return metadataProcessor.safeExtract(
+      meta,
       "metadata.metadata.ivrCallId",
       "metadata.ivrCallId",
       "ivrCallId"
     );
+  };
 
-    if (ivrCallId) {
-      await updateCallStartTime(ivrCallId);
-    }
-
-    // Store agent conversation and ivrCallId
-    const connection = activeConnections.get(sessionId);
-    if (connection) {
-      connection.agentConversation = agentConversation;
-      connection.ivrCallId = ivrCallId; // Store only ivrCallId for later access
-    }
-
-    // Setup bidirectional audio streaming
-    streamingUtils.setupAudioStreaming(sessionId, activeConnections);
-
-    // Send acknowledgment to Knowlarity
-    await sendSuccessResponse(connection);
-
-    // Notify client that agent is ready
-    if (connection?.websocket?.readyState === WebSocket.OPEN) {
-      connection.websocket.send(
-        JSON.stringify({
-          type: "agent_ready",
-          message: "ElevenLabs agent is ready for conversation",
-        })
-      );
-    }
-
-    Logger.info("✅ Agent initialized successfully", { sessionId });
-  } catch (error) {
-    Logger.error("❌ Failed to initialize agent", { sessionId, error });
-
-    // Close connection on initialization failure
-    const connection = activeConnections.get(sessionId);
-    if (connection?.websocket?.readyState === WebSocket.OPEN) {
-      connection.websocket.close(1011, "Failed to initialize conversation");
-    }
-  }
+  // Use reusable agent initializer with custom extractors
+  await agentInitializer.initializeAgent(
+    sessionId,
+    metadata,
+    activeConnections,
+    extractAgentId,
+    extractCallId
+  );
 }
 
-/**
- * Send success response to Knowlarity
- */
-async function sendSuccessResponse(connection) {
-  if (connection?.websocket?.readyState === WebSocket.OPEN) {
-    const ackMessage = JSON.stringify({
-      type: "metadata_received",
-      status: "success",
-      message: "Metadata processed successfully",
-    });
-
-    connection.websocket.send(ackMessage);
-  }
-}
 
 module.exports = {
   handleConnection,

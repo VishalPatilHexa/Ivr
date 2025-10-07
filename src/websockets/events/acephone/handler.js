@@ -59,7 +59,8 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
           sessionId,
           event: data.event,
           metadata: data.metadata,
-          fullData: data
+          fullData: JSON.stringify(data, null, 2),
+          customParameters: data.start?.customParameters
         });
 
         // Define custom handlers for Acephone events

@@ -6,20 +6,24 @@
  * API endpoints for making outbound calls through different providers
  */
 
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const outboundCallService = require('../../services/outboundCall');
-const Logger = require('../../utils/logger');
-const { HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } = require('../../constants');
+const outboundCallService = require("../../services/outboundCall");
+const Logger = require("../../utils/logger");
+const {
+  HTTP_STATUS,
+  ERROR_MESSAGES,
+  SUCCESS_MESSAGES,
+} = require("../../constants");
 
 /**
  * POST /api/v1/outbound/call
  * Make an outbound call using configured provider
- * 
+ *
  * Body:
  * {
  *   "customerNumber": "+917972318018",
- *   "callerNumber": "+918047224660", 
+ *   "callerNumber": "+918047224660",
  *   "virtualNumber": "+919513439773", // optional
  *   "isPromotional": false, // optional, default false
  *   "ivrId": "1000129909", // optional, for Knowlarity
@@ -33,19 +37,19 @@ const { HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } = require('../../constan
  *   }
  * }
  */
-router.post('/call', async (req, res) => {
+router.post("/call", async (req, res) => {
   try {
-    Logger.info('📞 Outbound call request received', {
+    Logger.info("📞 Outbound call request received", {
       customerNumber: req.body.customerNumber,
       ip: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get("User-Agent"),
     });
 
     // Validate request body
     if (!req.body) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: ERROR_MESSAGES.VALIDATION.INVALID_REQUEST_BODY
+        error: ERROR_MESSAGES.VALIDATION.INVALID_REQUEST_BODY,
       });
     }
 
@@ -56,7 +60,7 @@ router.post('/call', async (req, res) => {
       isPromotional: req.body.isPromotional || false,
       ivrId: req.body.ivrId,
       metadata: req.body.metadata || {},
-      provider: req.body.provider // optional override
+      provider: req.body.provider || process.env.OUTBOUND_PROVIDER,
     };
 
     // Make outbound call
@@ -69,28 +73,27 @@ router.post('/call', async (req, res) => {
         data: {
           callId: result.callId,
           provider: result.provider,
-          customerNumber: callData.customerNumber
-        }
+          customerNumber: callData.customerNumber,
+        },
       });
     } else {
       res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         error: result.error,
-        provider: result.provider
+        provider: result.provider,
       });
     }
-
   } catch (error) {
-    Logger.error('❌ Outbound call endpoint error', {
+    Logger.error("❌ Outbound call endpoint error", {
       error: error.message,
       stack: error.stack,
-      body: req.body
+      body: req.body,
     });
 
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: ERROR_MESSAGES.SERVER.INTERNAL_ERROR,
-      message: error.message
+      message: error.message,
     });
   }
 });
@@ -99,23 +102,22 @@ router.post('/call', async (req, res) => {
  * GET /api/v1/outbound/provider-info
  * Get current provider configuration and status
  */
-router.get('/provider-info', (req, res) => {
+router.get("/provider-info", (req, res) => {
   try {
     const providerInfo = outboundCallService.getProviderInfo();
-    
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: SUCCESS_MESSAGES.OUTBOUND.PROVIDER_INFO_RETRIEVED,
-      data: providerInfo
+      data: providerInfo,
     });
-    
   } catch (error) {
-    Logger.error('❌ Provider info endpoint error', error);
-    
+    Logger.error("❌ Provider info endpoint error", error);
+
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: ERROR_MESSAGES.SERVER.INTERNAL_ERROR,
-      message: error.message
+      message: error.message,
     });
   }
 });
@@ -124,32 +126,31 @@ router.get('/provider-info', (req, res) => {
  * POST /api/v1/outbound/test
  * Test endpoint for outbound call functionality (logs only, no actual call)
  */
-router.post('/test', (req, res) => {
+router.post("/test", (req, res) => {
   try {
-    Logger.info('🧪 Outbound call test request', {
+    Logger.info("🧪 Outbound call test request", {
       body: req.body,
-      provider: process.env.OUTBOUND_PROVIDER || 'knowlarity'
+      provider: process.env.OUTBOUND_PROVIDER || "knowlarity",
     });
 
     const providerInfo = outboundCallService.getProviderInfo();
-    
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: SUCCESS_MESSAGES.OUTBOUND.TEST_COMPLETED,
       data: {
         receivedPayload: req.body,
         providerInfo: providerInfo,
-        wouldCallProvider: providerInfo.activeProvider
-      }
+        wouldCallProvider: providerInfo.activeProvider,
+      },
     });
-    
   } catch (error) {
-    Logger.error('❌ Outbound call test error', error);
-    
+    Logger.error("❌ Outbound call test error", error);
+
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: ERROR_MESSAGES.SERVER.INTERNAL_ERROR,
-      message: error.message
+      message: error.message,
     });
   }
 });

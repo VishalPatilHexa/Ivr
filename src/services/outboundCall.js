@@ -181,13 +181,8 @@ function validateCallData(callData) {
 /**
  * Get active provider configuration
  */
-function getActiveProvider(providerName) {
-  if (!providerName) {
-    providerName = (
-      process.env.OUTBOUND_PROVIDER || "knowlarity"
-    ).toUpperCase();
-  }
-  const provider = PROVIDERS[providerName];
+function getActiveProvider(providerName = process.env.OUTBOUND_PROVIDER) {
+  const provider = PROVIDERS[providerName.toUpperCase()];
 
   if (!provider) {
     throw new Error(

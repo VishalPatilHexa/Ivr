@@ -54,9 +54,12 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
       if (parsed.type === "json" || parsed.type === "text") {
         const data = parsed.type === "json" ? parsed.data : JSON.parse(parsed.data);
 
-        Logger.info("📨 Acephone message", {
+        // Print full metadata to inspect what sessionId and other info is received
+        Logger.info("📨 Acephone message - FULL METADATA", {
           sessionId,
-          event: data.event
+          event: data.event,
+          metadata: data.metadata,
+          fullData: data
         });
 
         // Define custom handlers for Acephone events

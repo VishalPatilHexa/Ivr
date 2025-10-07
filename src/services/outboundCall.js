@@ -61,17 +61,8 @@ async function makeOutboundCall(callData) {
   let dbRecord = null;
 
   try {
-    Logger.info("🚀 Making outbound call", {
-      callId,
-      customerNumber: callData.customerNumber,
-      provider: "knowlarity",
-    });
-
-    // Validate required fields
-    validateCallData(callData);
-
     // Determine provider from environment
-    const provider = getActiveProvider();
+    const provider = getActiveProvider(callData.provider);
 
     // Create database record with INITIATED status
     // Note: createdAt serves as call initiation time
@@ -190,10 +181,12 @@ function validateCallData(callData) {
 /**
  * Get active provider configuration
  */
-function getActiveProvider() {
-  const providerName = (
-    process.env.OUTBOUND_PROVIDER || "knowlarity"
-  ).toUpperCase();
+function getActiveProvider(providerName) {
+  if (!providerName) {
+    providerName = (
+      process.env.OUTBOUND_PROVIDER || "knowlarity"
+    ).toUpperCase();
+  }
   const provider = PROVIDERS[providerName];
 
   if (!provider) {
@@ -243,19 +236,15 @@ function createKnowlarityPayload(callData, dbRecord) {
 /**
  * Create Acephone-specific payload
  */
-function createAcephonePayload(callData) {
+function createAcephonePayload(callData, dbRecord) {
   // Remove + prefix and country code for Acephone (they expect 10-digit numbers)
   const cleanCustomerNumber = callData.customerNumber.replace(/^\+?91/, "");
-
-  // Generate sessionId for Acephone if not provided
-  const sessionId = callData.sessionId || uuidv4();
-
   return {
     customer_number: cleanCustomerNumber,
     api_key: process.env.ACEPHONE_API_KEY,
     metadata: {
       ...callData.metadata, // Include any additional metadata
-      sessionId, // Add sessionId to metadata for WebSocket connection
+      sessionId: dbRecord.sessionId, // Add sessionId to metadata for WebSocket connection
     },
     async: 1, // Acephone async flag
   };

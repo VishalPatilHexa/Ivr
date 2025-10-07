@@ -15,27 +15,27 @@ const messageHandlers = require("../shared/messageHandlers");
  * Handle Acephone WebSocket connection
  */
 function handleConnection(websocket, urlPath, activeConnections) {
-  // Extract sessionId from URL (adjust based on Acephone URL format)
-  const sessionId = urlPath.split("/")[2] || `acephone_${Date.now()}`;
+  // Use temporary sessionId until we get the real one from customParameters
+  const tempSessionId = `acephone_temp_${Date.now()}`;
   const clientType = "acephone";
 
-  Logger.info("🚀 Acephone handler called (basic implementation)", { sessionId });
+  Logger.info("🚀 Acephone handler called (basic implementation)", { tempSessionId });
 
   try {
-    // Store connection using reusable utility
-    sessionUtils.storeConnection(sessionId, websocket, clientType, activeConnections);
+    // Store connection with temporary ID
+    sessionUtils.storeConnection(tempSessionId, websocket, clientType, activeConnections);
 
-    // Setup message handling
-    setupMessageHandling(websocket, sessionId, activeConnections);
+    // Setup message handling - will update sessionId when 'start' event is received
+    setupMessageHandling(websocket, tempSessionId, activeConnections);
 
     // Setup error and close handlers using reusable utilities
-    messageHandlers.setupErrorHandler(websocket, sessionId, "Acephone");
-    messageHandlers.setupCloseHandler(websocket, sessionId, activeConnections);
+    messageHandlers.setupErrorHandler(websocket, tempSessionId, "Acephone");
+    messageHandlers.setupCloseHandler(websocket, tempSessionId, activeConnections);
 
-    Logger.info("✅ Acephone handler setup complete", { sessionId });
+    Logger.info("✅ Acephone handler setup complete", { tempSessionId });
   } catch (error) {
     Logger.error("❌ Failed to setup Acephone connection", {
-      sessionId,
+      tempSessionId,
       error,
     });
     websocket.close(1011, "Failed to initialize connection");
@@ -70,7 +70,41 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
           },
 
           start: async (data, sid) => {
-            Logger.info("🎬 Acephone call started", { sessionId: sid });
+            // Extract real sessionId from customParameters.metadata.sessionId
+            const realSessionId = data.start?.customParameters?.metadata?.sessionId;
+
+            if (realSessionId) {
+              Logger.info("🔄 Updating sessionId from customParameters", {
+                oldSessionId: sid,
+                newSessionId: realSessionId
+              });
+
+              // Get the connection data
+              const connectionData = activeConnections.get(sid);
+
+              if (connectionData) {
+                // Remove old temp sessionId
+                activeConnections.delete(sid);
+
+                // Store with real sessionId
+                activeConnections.set(realSessionId, {
+                  ...connectionData,
+                  sessionId: realSessionId
+                });
+
+                // Update the sessionId variable for subsequent handlers
+                sessionId = realSessionId;
+              }
+
+              Logger.info("🎬 Acephone call started", {
+                sessionId: realSessionId,
+                agentId: data.start?.customParameters?.metadata?.agentId,
+                treatmentType: data.start?.customParameters?.metadata?.treatmentType,
+                language: data.start?.customParameters?.metadata?.language
+              });
+            } else {
+              Logger.info("🎬 Acephone call started", { sessionId: sid });
+            }
           },
 
           stop: async (data, sid) => {

@@ -55,7 +55,8 @@ router.post('/call', async (req, res) => {
       virtualNumber: req.body.virtualNumber,
       isPromotional: req.body.isPromotional || false,
       ivrId: req.body.ivrId,
-      metadata: req.body.metadata || {}
+      metadata: req.body.metadata || {},
+      provider: req.body.provider // optional override
     };
 
     // Make outbound call

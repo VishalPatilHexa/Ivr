@@ -16,6 +16,9 @@ const elevenLabsAdapter = require("../../../streaming/adapters/elevenlabs");
 // Track sequence numbers for outgoing messages per session
 const sequenceNumbers = new Map();
 
+// Track if ElevenLabs handler is already setup (singleton pattern)
+let isElevenLabsHandlerSetup = false;
+
 /**
  * Handle Acephone WebSocket connection
  */
@@ -143,16 +146,15 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
               const agentId = data.start?.customParameters?.metadata?.agentId;
               if (agentId) {
                 try {
+                  // Structure metadata the same way as Knowlarity for compatibility
+                  const customParams = data.start?.customParameters?.metadata || {};
                   await elevenLabsAdapter.createConversation(
                     agentId,
                     realSessionId,
                     {
-                      treatmentType:
-                        data.start?.customParameters?.metadata?.treatmentType,
-                      language:
-                        data.start?.customParameters?.metadata?.language,
-                      from: data.start?.from,
-                      to: data.start?.to,
+                      metadata: {
+                        metadata: customParams
+                      }
                     }
                   );
                   Logger.info("✅ ElevenLabs conversation initialized", {
@@ -216,8 +218,9 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
               const pcm16Base64 = pcm16Buffer.toString("base64");
               await elevenLabsAdapter.sendAudioToAgent(sid, pcm16Base64);
 
-              Logger.debug("✅ Audio forwarded to ElevenLabs", {
+              Logger.info("✅ Audio forwarded to ElevenLabs", {
                 sessionId: sid,
+                chunk: data.media?.chunk,
                 inputSize: ulawBuffer.length,
                 outputSize: pcm16Buffer.length,
               });
@@ -332,6 +335,12 @@ function getNextSequenceNumber(sessionId) {
  * Setup handler for ElevenLabs audio responses
  */
 function setupElevenLabsResponseHandler(activeConnections) {
+  // Only setup once (singleton pattern)
+  if (isElevenLabsHandlerSetup) {
+    return;
+  }
+  isElevenLabsHandlerSetup = true;
+
   // Register callback to receive audio from ElevenLabs
   elevenLabsAdapter.setClientMessageHandler((sessionId, message) => {
     try {
@@ -397,7 +406,7 @@ function handleElevenLabsAudio(sessionId, pcm16Base64, activeConnections) {
     const ulawBase64 = ulawBuffer.toString("base64");
     sendMedia(sessionId, ulawBase64, activeConnections);
 
-    Logger.debug("✅ Audio sent to Acephone", {
+    Logger.info("✅ Audio sent to Acephone", {
       sessionId,
       inputSize: pcm16Buffer.length,
       outputSize: ulawBuffer.length,
@@ -437,8 +446,9 @@ function sendMedia(sessionId, base64Audio, activeConnections) {
 
   try {
     connectionData.websocket.send(JSON.stringify(message));
-    Logger.debug("📤 Media sent to Acephone", {
+    Logger.info("📤 Media sent to Acephone", {
       sessionId,
+      streamSid: connectionData.streamSid,
       chunk: chunkNumber,
       payloadSize: base64Audio.length,
     });

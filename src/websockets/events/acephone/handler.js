@@ -11,7 +11,10 @@ const Logger = require("../../../utils/logger");
 const sessionUtils = require("../shared/session");
 const messageHandlers = require("../shared/messageHandlers");
 const audioUtils = require("../shared/audio");
+const agentInitializer = require("../shared/agentInitializer");
 const elevenLabsAdapter = require("../../../streaming/adapters/elevenlabs");
+const metadataProcessor = require("./metadata");
+const lifecycleManager = require("./lifecycle");
 
 // Track sequence numbers for outgoing messages per session
 const sequenceNumbers = new Map();
@@ -46,9 +49,8 @@ function handleConnection(websocket, urlPath, activeConnections) {
     // Setup ElevenLabs audio response handler
     setupElevenLabsResponseHandler(activeConnections);
 
-    // Setup error and close handlers using reusable utilities
-    messageHandlers.setupErrorHandler(websocket, tempSessionId, "Acephone");
-    messageHandlers.setupCloseHandler(
+    // Setup connection lifecycle (error, close handlers)
+    lifecycleManager.setupConnectionLifecycle(
       websocket,
       tempSessionId,
       activeConnections
@@ -90,89 +92,63 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
           },
 
           start: async (data, sid) => {
-            // Extract real sessionId from customParameters.metadata.sessionId
-            const realSessionId =
-              data.start?.customParameters?.metadata?.sessionId;
-            const streamSid = data.streamSid;
+            // Extract metadata using metadata processor
+            const { success, metadata } = metadataProcessor.extractMetadata(data.start);
 
-            if (realSessionId) {
-              Logger.info("🔄 Updating sessionId from customParameters", {
-                oldSessionId: sid,
-                newSessionId: realSessionId,
-                streamSid,
+            if (!success || !metadata.sessionId) {
+              Logger.warn("⚠️ Failed to extract metadata from start event", {
+                tempSessionId: sid,
+              });
+              return;
+            }
+
+            const realSessionId = metadata.sessionId;
+            const streamSid = metadata.streamSid;
+
+            Logger.info("🔄 Updating sessionId from customParameters", {
+              oldSessionId: sid,
+              newSessionId: realSessionId,
+              streamSid,
+            });
+
+            // Get the connection data
+            const connectionData = activeConnections.get(sid);
+
+            if (connectionData) {
+              // Remove old temp sessionId
+              activeConnections.delete(sid);
+
+              // Store with real sessionId and extracted metadata
+              activeConnections.set(realSessionId, {
+                ...connectionData,
+                ...metadata, // Spread all metadata fields
+                audioChunkCounter: 0, // Track media chunks
               });
 
-              // Get the connection data
-              const connectionData = activeConnections.get(sid);
+              // Initialize sequence number for this session
+              sequenceNumbers.set(realSessionId, 0);
 
-              if (connectionData) {
-                // Remove old temp sessionId
-                activeConnections.delete(sid);
+              // Update the sessionId variable for subsequent handlers
+              sessionId = realSessionId;
+            }
 
-                // Store with real sessionId and additional metadata
-                activeConnections.set(realSessionId, {
-                  ...connectionData,
-                  sessionId: realSessionId,
-                  streamSid,
-                  callSid: data.start?.callSid,
-                  accountSid: data.start?.accountSid,
-                  from: data.start?.from,
-                  to: data.start?.to,
-                  direction: data.start?.direction,
-                  mediaFormat: data.start?.mediaFormat,
-                  customParameters: data.start?.customParameters,
-                  audioChunkCounter: 0, // Track media chunks
-                });
+            Logger.info("🎬 Acephone call started", {
+              sessionId: realSessionId,
+              streamSid,
+              agentId: metadata.agentId,
+              treatmentType: metadata.treatmentType,
+              language: metadata.language,
+              from: metadata.from,
+              to: metadata.to,
+            });
 
-                // Initialize sequence number for this session
-                sequenceNumbers.set(realSessionId, 0);
-
-                // Update the sessionId variable for subsequent handlers
-                sessionId = realSessionId;
-              }
-
-              Logger.info("🎬 Acephone call started", {
-                sessionId: realSessionId,
-                streamSid,
-                agentId: data.start?.customParameters?.metadata?.agentId,
-                treatmentType:
-                  data.start?.customParameters?.metadata?.treatmentType,
-                language: data.start?.customParameters?.metadata?.language,
-                from: data.start?.from,
-                to: data.start?.to,
-              });
-
-              // Initialize ElevenLabs conversation
-              const agentId = data.start?.customParameters?.metadata?.agentId;
-              if (agentId) {
-                try {
-                  // Structure metadata the same way as Knowlarity for compatibility
-                  const customParams = data.start?.customParameters?.metadata || {};
-                  await elevenLabsAdapter.createConversation(
-                    agentId,
-                    realSessionId,
-                    {
-                      metadata: {
-                        metadata: customParams
-                      }
-                    }
-                  );
-                  Logger.info("✅ ElevenLabs conversation initialized", {
-                    sessionId: realSessionId,
-                    agentId,
-                  });
-                } catch (error) {
-                  Logger.error(
-                    "❌ Failed to initialize ElevenLabs conversation",
-                    {
-                      sessionId: realSessionId,
-                      error: error.message,
-                    }
-                  );
-                }
-              }
-            } else {
-              Logger.info("🎬 Acephone call started", { sessionId: sid });
+            // Initialize ElevenLabs agent using shared initializer
+            if (metadata.agentId) {
+              await initializeAgentForAcephone(
+                realSessionId,
+                data.start,
+                activeConnections
+              );
             }
           },
 
@@ -319,6 +295,32 @@ async function handleCallEnd(sessionId, activeConnections) {
   sessionUtils.removeConnection(sessionId, activeConnections);
 
   Logger.info("📞 Acephone call ended", { sessionId });
+}
+
+/**
+ * Initialize ElevenLabs agent conversation for Acephone
+ * Uses agentInitializer with custom metadata extractors
+ */
+async function initializeAgentForAcephone(sessionId, startData, activeConnections) {
+  // Custom agentId extractor for Acephone metadata structure
+  const extractAgentId = (data) => {
+    return metadataProcessor.extractAgentId(data);
+  };
+
+  // Custom extractors not needed for Acephone (no ivrCallId)
+  const extractCallId = () => null;
+
+  // Build ElevenLabs metadata structure
+  const elevenLabsMetadata = metadataProcessor.buildElevenLabsMetadata(startData);
+
+  // Use shared agent initializer
+  await agentInitializer.initializeAgent(
+    sessionId,
+    elevenLabsMetadata,
+    activeConnections,
+    extractAgentId,
+    extractCallId
+  );
 }
 
 /**

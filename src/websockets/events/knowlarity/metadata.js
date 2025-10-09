@@ -7,6 +7,7 @@
  */
 
 const Logger = require("../../../utils/logger");
+const { safeExtract } = require("../shared/utils");
 
 /**
  * Process initial message and check for metadata
@@ -147,36 +148,6 @@ function processMetadataObject(metadata) {
 }
 
 /**
- * Safely extract nested value from metadata with multiple fallback paths
- */
-function safeExtract(metadata, ...paths) {
-  for (const path of paths) {
-    try {
-      let current = metadata;
-      const parts = path.split('.');
-      
-      for (const part of parts) {
-        if (current && typeof current === 'object' && current[part] !== undefined) {
-          current = current[part];
-        } else {
-          current = undefined;
-          break;
-        }
-      }
-      
-      if (current !== undefined) {
-        return current;
-      }
-    } catch (error) {
-      Logger.debug("Failed to extract path", { path, error: error.message });
-    }
-  }
-  
-  return undefined;
-}
-
-
-/**
  * Validate metadata has required fields
  */
 function validateMetadata(metadata) {
@@ -214,5 +185,5 @@ module.exports = {
   parseKnowlarityMetadata,
   processMetadataObject,
   validateMetadata,
-  safeExtract,
+  safeExtract, // Re-export from shared/utils for backward compatibility
 };

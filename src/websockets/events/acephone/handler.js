@@ -49,12 +49,7 @@ function handleConnection(websocket, urlPath, activeConnections) {
     // Setup ElevenLabs audio response handler
     setupElevenLabsResponseHandler(activeConnections);
 
-    // Setup connection lifecycle (error, close handlers)
-    lifecycleManager.setupConnectionLifecycle(
-      websocket,
-      tempSessionId,
-      activeConnections
-    );
+    // Note: Lifecycle handlers will be set up after we get the real sessionId in 'start' event
 
     Logger.info("✅ Acephone handler setup complete", { tempSessionId });
   } catch (error) {
@@ -127,6 +122,13 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
 
               // Initialize sequence number for this session
               sequenceNumbers.set(realSessionId, 0);
+
+              // Setup connection lifecycle with real sessionId
+              lifecycleManager.setupConnectionLifecycle(
+                websocket,
+                realSessionId,
+                activeConnections
+              );
 
               // Update the sessionId variable for subsequent handlers
               sessionId = realSessionId;

@@ -9,8 +9,6 @@
  * 3. Force shutdown after timeout
  */
 
-const redisPool = require('./redis/redisPool');
-const { REDIS_POOL } = require('../constants');
 const Logger = require('../utils/logger');
 
 class GracefulShutdown {
@@ -18,34 +16,37 @@ class GracefulShutdown {
     this.isShuttingDown = false;
     this.maxWaitTime = 10 * 60 * 1000; // 10 minutes
     this.checkInterval = 5000; // 5 seconds
+    this.activeConnections = null; // Will be set via setActiveConnections()
   }
 
   /**
-   * Check for active calls in Redis
+   * Set reference to activeConnections Map
+   */
+  setActiveConnections(activeConnections) {
+    this.activeConnections = activeConnections;
+  }
+
+  /**
+   * Check for active calls in activeConnections Map
    */
   async getActiveCalls() {
     try {
-      const sessionKeys = await redisPool.execute(async (redis) => {
-        return await redis.keys('ivr:session:*');
-      }, REDIS_POOL.DATABASES.SESSIONS);
+      if (!this.activeConnections) {
+        Logger.warn('activeConnections not set');
+        return [];
+      }
 
       const activeCalls = [];
 
-      for (const sessionKey of sessionKeys) {
-        const sessionData = await redisPool.execute(async (redis) => {
-          return await redis.get(sessionKey);
-        }, REDIS_POOL.DATABASES.SESSIONS);
-
-        if (sessionData) {
-          const session = JSON.parse(sessionData);
-          if (session.status === 'active' || session.status === 'active_with_metadata') {
-            activeCalls.push({
-              sessionId: session.id,
-              status: session.status,
-              duration: Date.now() - session.createdAt,
-              clientType: session.clientInfo?.type
-            });
-          }
+      for (const [sessionId, connection] of this.activeConnections.entries()) {
+        // Check if connection is active and not ended
+        if (!connection.callEnded && connection.websocket) {
+          activeCalls.push({
+            sessionId: sessionId,
+            status: connection.agentConversation ? 'active_with_agent' : 'active',
+            duration: Date.now() - connection.connectedAt.getTime(),
+            clientType: connection.clientType
+          });
         }
       }
 
@@ -61,7 +62,7 @@ class GracefulShutdown {
    */
   async waitForCallsToComplete() {
     const startTime = Date.now();
-    
+
     Logger.info('⏳ Waiting for active calls to complete before shutdown...');
 
     return new Promise((resolve) => {
@@ -83,7 +84,7 @@ class GracefulShutdown {
         }
 
         Logger.info(`📞 Still ${activeCalls.length} active calls. Waiting... (${Math.round(elapsedTime/1000)}s/${this.maxWaitTime/1000}s)`);
-        
+
         // Log call details
         activeCalls.forEach(call => {
           Logger.info(`   - ${call.sessionId}: ${call.status} (${Math.round(call.duration/1000)}s)`);
@@ -119,10 +120,10 @@ class GracefulShutdown {
       }
 
       Logger.info(`📞 Found ${activeCalls.length} active calls. Waiting for completion...`);
-      
+
       // Wait for calls to complete or timeout
       await this.waitForCallsToComplete();
-      
+
       // Cleanup and exit
       await this.cleanup();
       process.exit(0);
@@ -139,11 +140,18 @@ class GracefulShutdown {
    */
   async cleanup() {
     Logger.info('🧹 Cleaning up resources...');
-    
+
     try {
-      // Shutdown Redis pools
-      await redisPool.shutdown();
-      Logger.info('✅ Redis pools shut down');
+      // Close all active WebSocket connections
+      if (this.activeConnections) {
+        for (const [sessionId, connection] of this.activeConnections.entries()) {
+          if (connection.websocket && connection.websocket.readyState === 1) {
+            connection.websocket.close(1001, 'Server shutting down');
+            Logger.info(`🔌 Closed connection for session: ${sessionId}`);
+          }
+        }
+        this.activeConnections.clear();
+      }
 
       // Add any other cleanup here
       Logger.info('✅ Cleanup completed');
@@ -171,8 +179,6 @@ class GracefulShutdown {
       Logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
       this.performGracefulShutdown('UNHANDLED_REJECTION');
     });
-
-    Logger.info('✅ Graceful shutdown handlers registered');
   }
 
   /**

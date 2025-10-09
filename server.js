@@ -5,13 +5,18 @@ require("dotenv").config();
 const app = require("./src/app");
 const config = require("./src/config");
 const Logger = require("./src/utils/logger");
+const gracefulShutdown = require("./src/core/gracefulShutdown");
 const {
   handleConnection,
   cleanup,
+  activeConnections,
 } = require("./src/websockets/events/stream");
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+
+// Set activeConnections reference for graceful shutdown
+gracefulShutdown.setActiveConnections(activeConnections);
 
 // WebSocket connection handling
 wss.on("connection", (ws, req) => {
@@ -33,26 +38,6 @@ setInterval(() => {
 const PORT = config.port;
 server.listen(PORT, () => {
   Logger.success(`Server running on port ${PORT}`);
-  Logger.info(`Environment: ${config.nodeEnv}`);
-  Logger.info(`API Base URL: http://localhost:${PORT}/api/v1`);
 });
 
-// Graceful shutdown
-const gracefulShutdown = (signal) => {
-  Logger.info(`Received ${signal}. Starting graceful shutdown...`);
-  
-  server.close(() => {
-    Logger.info('HTTP server closed');
-    cleanup();
-    process.exit(0);
-  });
-
-  // Force close server after 10 seconds
-  setTimeout(() => {
-    Logger.error('Could not close connections in time, forcefully shutting down');
-    process.exit(1);
-  }, 10000);
-};
-
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+// Note: Graceful shutdown handlers are registered in src/app.js via gracefulShutdown.register()

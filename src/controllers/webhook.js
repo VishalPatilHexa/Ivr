@@ -11,8 +11,8 @@ const {
   activeConnections,
   cleanupSession,
 } = require("../websockets/events/stream");
-const { updateCallRecord } = require("../services/outboundCall");
-const db = require("../models");
+const { updateCallRecord, getCallRecordBySessionId } = require("../services/outboundCall");
+const sessionUtils = require("../websockets/events/shared/session");
 
 // Webhook utilities
 const dataExtractor = require("../webhooks/utils/dataExtractor");
@@ -38,11 +38,8 @@ async function handlePostCallWebhook(req, res) {
     const elevenLabsExtracted =
       dataExtractor.extractElevenLabsData(webhookData);
 
-    // Get active connection using utility
-    const connection = dataExtractor.getActiveConnection(
-      sessionId,
-      activeConnections
-    );
+    // Get active connection using session utility
+    const connection = sessionUtils.getConnection(sessionId, activeConnections);
 
     // Build standardized ElevenLabs data object using utility
     const elevenLabsData = dataExtractor.buildElevenLabsDataObject(
@@ -50,11 +47,9 @@ async function handlePostCallWebhook(req, res) {
       conversationId,
       elevenLabsExtracted
     );
-    // Fetch call record using utility
-    const callRecord = await dataExtractor.getCallRecordMetadata(
-      sessionId,
-      db.ivr_calls
-    );
+
+    // Fetch call record from database service
+    const callRecord = await getCallRecordBySessionId(sessionId);
 
     // Update call record with extracted data using utility
     await sessionCleanup.updateCallRecordWithData(

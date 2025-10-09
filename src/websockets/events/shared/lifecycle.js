@@ -16,14 +16,12 @@ const streamingUtils = require("./streaming");
  * @param {WebSocket} websocket - WebSocket connection
  * @param {string} sessionId - Session identifier
  * @param {Map} activeConnections - Active connections map
- * @param {object} sessionManager - Session manager instance (optional)
  * @param {string} providerName - Provider name for logging (e.g., "Knowlarity", "Acephone")
  */
 function setupConnectionLifecycle(
   websocket,
   sessionId,
   activeConnections,
-  sessionManager = null,
   providerName = "Provider"
 ) {
   // Handle connection close
@@ -37,7 +35,6 @@ function setupConnectionLifecycle(
     await handleConnectionClose(
       sessionId,
       activeConnections,
-      sessionManager,
       providerName
     );
   });
@@ -52,7 +49,6 @@ function setupConnectionLifecycle(
     await handleConnectionError(
       sessionId,
       activeConnections,
-      sessionManager,
       error,
       providerName
     );
@@ -65,7 +61,6 @@ function setupConnectionLifecycle(
 async function handleConnectionClose(
   sessionId,
   activeConnections,
-  sessionManager = null,
   providerName = "Provider"
 ) {
   try {
@@ -75,12 +70,6 @@ async function handleConnectionClose(
     if (connection?.agentConversation) {
       await streamingUtils.endConversation(sessionId);
       Logger.info(`✅ Ended ElevenLabs conversation`, { sessionId });
-    }
-
-    // Clean up session from Redis
-    if (sessionManager) {
-      await sessionManager.deleteSession(sessionId);
-      Logger.info(`✅ Session cleaned up from Redis`, { sessionId });
     }
 
     // Remove from active connections
@@ -100,7 +89,6 @@ async function handleConnectionClose(
 async function handleConnectionError(
   sessionId,
   activeConnections,
-  sessionManager = null,
   error,
   providerName = "Provider"
 ) {
@@ -110,20 +98,6 @@ async function handleConnectionError(
     // End ElevenLabs conversation
     if (connection?.agentConversation) {
       await streamingUtils.endConversation(sessionId);
-    }
-
-    // Update session status to failed
-    if (sessionManager) {
-      try {
-        await sessionManager.updateSession(sessionId, {
-          status: "failed",
-          error: error.message,
-          failedAt: Date.now(),
-        });
-      } catch (updateError) {
-        // If update fails, try to delete the session
-        await sessionManager.deleteSession(sessionId);
-      }
     }
 
     // Remove from active connections
@@ -148,7 +122,6 @@ async function handleConnectionError(
 async function gracefulShutdown(
   sessionId,
   activeConnections,
-  sessionManager = null,
   reason = "Server shutdown",
   providerName = "Provider"
 ) {
@@ -177,15 +150,6 @@ async function gracefulShutdown(
     // End conversation gracefully
     if (connection.agentConversation) {
       await streamingUtils.endConversation(sessionId);
-    }
-
-    // Update session status
-    if (sessionManager) {
-      await sessionManager.updateSession(sessionId, {
-        status: "terminated",
-        reason: reason,
-        terminatedAt: Date.now(),
-      });
     }
 
     // Close WebSocket connection

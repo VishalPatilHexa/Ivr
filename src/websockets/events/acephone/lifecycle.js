@@ -11,14 +11,12 @@ const sharedLifecycle = require("../shared/lifecycle");
 
 /**
  * Setup WebSocket connection lifecycle handlers for Acephone
- * Note: Acephone doesn't use Redis session manager, so sessionManager is null
  */
 function setupConnectionLifecycle(websocket, sessionId, activeConnections) {
   return sharedLifecycle.setupConnectionLifecycle(
     websocket,
     sessionId,
     activeConnections,
-    null, // Acephone doesn't use Redis session manager
     "Acephone"
   );
 }

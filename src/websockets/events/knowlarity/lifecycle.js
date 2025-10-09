@@ -12,12 +12,11 @@ const sharedLifecycle = require("../shared/lifecycle");
 /**
  * Setup WebSocket connection lifecycle handlers for Knowlarity
  */
-function setupConnectionLifecycle(websocket, sessionId, activeConnections, sessionManager) {
+function setupConnectionLifecycle(websocket, sessionId, activeConnections) {
   return sharedLifecycle.setupConnectionLifecycle(
     websocket,
     sessionId,
     activeConnections,
-    sessionManager,
     "Knowlarity"
   );
 }

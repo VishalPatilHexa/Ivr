@@ -7,11 +7,6 @@
  */
 
 const Logger = require("../../../utils/logger");
-const { SessionManager } = require("../../../core/managers");
-
-// Initialize SessionManager singleton
-const sessionManager = new SessionManager();
-sessionManager.initialize();
 
 /**
  * Store connection information in activeConnections map
@@ -26,34 +21,6 @@ function storeConnection(sessionId, websocket, clientType, activeConnections, ad
   });
 
   Logger.info("✅ Connection stored", { sessionId, clientType });
-}
-
-/**
- * Create session in Redis
- */
-async function createSession(sessionId, clientType, metadata = {}) {
-  try {
-    const session = await sessionManager.createSession({
-      sessionId: sessionId,
-      clientInfo: {
-        type: clientType,
-        userAgent: `${clientType}-websocket`,
-        ipAddress: `${clientType}-gateway`,
-      },
-      metadata: {
-        callType: "inbound",
-        source: clientType,
-        isExternal: true,
-        ...metadata,
-      },
-    });
-
-    Logger.info("✅ Session created in Redis", { sessionId });
-    return session;
-  } catch (error) {
-    Logger.error("❌ Failed to create session", { sessionId, error });
-    throw error;
-  }
 }
 
 /**
@@ -104,20 +71,11 @@ function markCallEnded(sessionId, activeConnections) {
   }
 }
 
-/**
- * Get session manager instance
- */
-function getSessionManager() {
-  return sessionManager;
-}
-
 module.exports = {
   storeConnection,
-  createSession,
   getConnection,
   updateConnection,
   removeConnection,
   isCallEnded,
   markCallEnded,
-  getSessionManager,
 };

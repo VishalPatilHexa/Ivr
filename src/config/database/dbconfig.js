@@ -28,11 +28,7 @@ const options = {
     
     // Additional Sequelize options
     dialectOptions: {
-      charset: 'utf8mb4',
-      collate: 'utf8mb4_unicode_ci',
       connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT) || 60000,
-      acquireTimeout: parseInt(process.env.DB_ACQUIRE_TIMEOUT) || 60000,
-      timeout: parseInt(process.env.DB_TIMEOUT) || 60000,
       // SSL configuration for production
       ...(process.env.NODE_ENV === 'production' && {
         ssl: {
@@ -68,10 +64,10 @@ const options = {
     timezone: '+05:30', // IST
     
     // Logging
-    logging: process.env.NODE_ENV === 'production' ? false : console.log,
+    logging: false,
     
     // Benchmark queries in development
-    benchmark: process.env.NODE_ENV === 'development',
+    benchmark: false,
     
     // Define global options
     define: {

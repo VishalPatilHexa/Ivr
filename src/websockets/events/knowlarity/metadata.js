@@ -12,13 +12,13 @@ const { safeExtract } = require("../shared/utils");
 /**
  * Process initial message and check for metadata
  */
-async function processInitialMessage(incomingMessage, sessionId, sessionManager) {
+async function processInitialMessage(incomingMessage, sessionId) {
   try {
     const messageStr = incomingMessage.toString();
 
     // Quick check for metadata indicators
     if (messageStr.includes("metadata") || messageStr.includes("callid")) {
-      const metadata = await processMetadata(messageStr, sessionId, sessionManager);
+      const metadata = await processMetadata(messageStr, sessionId);
       return metadata;
     }
 
@@ -32,21 +32,12 @@ async function processInitialMessage(incomingMessage, sessionId, sessionManager)
 /**
  * Process metadata message from Knowlarity
  */
-async function processMetadata(rawMetadata, sessionId, sessionManager) {
+async function processMetadata(rawMetadata, sessionId) {
   try {
     Logger.info("📋 Processing Knowlarity metadata", { sessionId });
 
     // Parse the metadata
     const metadata = parseKnowlarityMetadata(rawMetadata);
-
-    // Update session with metadata
-    if (sessionManager) {
-      await sessionManager.updateSession(sessionId, {
-        metadata: metadata,
-        status: "active_with_metadata"
-      });
-      Logger.info("✅ Session updated with metadata", { sessionId });
-    }
 
     return { success: true, metadata };
   } catch (error) {

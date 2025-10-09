@@ -20,7 +20,7 @@ const {
 /**
  * Handle Knowlarity WebSocket connection
  */
-async function handleConnection(websocket, urlPath, activeConnections) {
+function handleConnection(websocket, urlPath, activeConnections) {
   const sessionId = urlPath.split("/")[2];
   const clientType = "knowlarity";
 
@@ -30,9 +30,6 @@ async function handleConnection(websocket, urlPath, activeConnections) {
     // Store connection info using reusable utility
     sessionUtils.storeConnection(sessionId, websocket, clientType, activeConnections);
 
-    // Create session in Redis using reusable utility
-    await sessionUtils.createSession(sessionId, clientType);
-
     // Setup message handling
     setupMessageHandling(websocket, sessionId, activeConnections);
 
@@ -40,8 +37,7 @@ async function handleConnection(websocket, urlPath, activeConnections) {
     lifecycleManager.setupConnectionLifecycle(
       websocket,
       sessionId,
-      activeConnections,
-      sessionUtils.getSessionManager()
+      activeConnections
     );
 
     Logger.info("✅ Knowlarity connection established", { sessionId });
@@ -77,8 +73,7 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
 
         const metadata = await metadataProcessor.processInitialMessage(
           incomingMessage,
-          sessionId,
-          sessionUtils.getSessionManager()
+          sessionId
         );
 
         if (metadata) {

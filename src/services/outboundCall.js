@@ -513,6 +513,34 @@ async function updateCallEndTime(ivrCallId) {
   }
 }
 
+/**
+ * Get call record by sessionId
+ */
+async function getCallRecordBySessionId(sessionId) {
+  try {
+    const callRecord = await db.ivr_calls.findOne({
+      where: { sessionId: sessionId },
+    });
+
+    if (callRecord) {
+      Logger.info("📋 Call record found", {
+        sessionId,
+        id: callRecord.dataValues.id,
+      });
+      return callRecord;
+    }
+
+    Logger.warn("⚠️ No call record found", { sessionId });
+    return null;
+  } catch (error) {
+    Logger.error("❌ Failed to fetch call record", {
+      sessionId,
+      error: error.message,
+    });
+    return null;
+  }
+}
+
 module.exports = {
   updateCallRecord,
   makeOutboundCall,
@@ -521,6 +549,7 @@ module.exports = {
   markCallCancelled,
   updateCallStartTime,
   updateCallEndTime,
+  getCallRecordBySessionId,
   getProviderInfo,
   normalizePhoneNumber,
   formatPhoneWithCountryCode,

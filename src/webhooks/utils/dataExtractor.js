@@ -88,53 +88,8 @@ function buildElevenLabsDataObject(sessionId, conversationId, elevenLabsData) {
   };
 }
 
-/**
- * Extract call record metadata
- */
-async function getCallRecordMetadata(sessionId, dbModel) {
-  try {
-    const callRecord = await dbModel.findOne({
-      where: { sessionId: sessionId },
-    });
-
-    if (callRecord) {
-      Logger.info("📋 Call record found", {
-        sessionId,
-        id: callRecord.dataValues.id,
-      });
-
-      return callRecord;
-    }
-
-    Logger.warn("⚠️ No call record found", { sessionId });
-    return null;
-  } catch (error) {
-    Logger.error("❌ Failed to fetch call record", {
-      sessionId,
-      error: error.message,
-    });
-    return null;
-  }
-}
-
-/**
- * Extract connection from activeConnections map
- */
-function getActiveConnection(sessionId, activeConnections) {
-  const connection = activeConnections.get(sessionId);
-
-  if (!connection) {
-    Logger.warn("⚠️ No active connection found", { sessionId });
-    Logger.info("💡 This is normal - cleanup may have already happened");
-  }
-
-  return connection;
-}
-
 module.exports = {
   extractSessionInfo,
   extractElevenLabsData,
   buildElevenLabsDataObject,
-  getCallRecordMetadata,
-  getActiveConnection,
 };

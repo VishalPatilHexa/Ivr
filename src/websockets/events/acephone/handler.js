@@ -193,13 +193,6 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
               // Step 4: Encode as base64 and send to ElevenLabs
               const pcm16Base64 = pcm16Buffer.toString("base64");
               await elevenLabsAdapter.sendAudioToAgent(sid, pcm16Base64);
-
-              Logger.info("✅ Audio forwarded to ElevenLabs", {
-                sessionId: sid,
-                chunk: data.media?.chunk,
-                inputSize: ulawBuffer.length,
-                outputSize: pcm16Buffer.length,
-              });
             } catch (error) {
               Logger.error("❌ Error processing incoming audio", {
                 sessionId: sid,

@@ -303,8 +303,16 @@ async function handleCallEnd(sessionId, activeConnections) {
  */
 async function initializeAgentForAcephone(sessionId, startData, activeConnections) {
   // Custom agentId extractor for Acephone metadata structure
-  const extractAgentId = (data) => {
-    return metadataProcessor.extractAgentId(data);
+  // Note: agentInitializer will pass the full metadata to this function
+  const extractAgentId = (metadata) => {
+    // The metadata here is the ElevenLabs format: {metadata: {metadata: {agentId, ...}}}
+    // Extract from nested structure
+    return metadataProcessor.safeExtract(
+      metadata,
+      "metadata.metadata.agentId",
+      "metadata.agentId",
+      "agentId"
+    );
   };
 
   // Custom extractors not needed for Acephone (no ivrCallId)

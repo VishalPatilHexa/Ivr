@@ -369,8 +369,11 @@ function setupElevenLabsResponseHandler(activeConnections) {
           break;
 
         case "call_end":
-          // ElevenLabs ended the conversation
-          Logger.info("�� ElevenLabs ended conversation", { sessionId });
+          // ElevenLabs ended the conversation - close Acephone connection
+          Logger.info("📞 ElevenLabs ended conversation, closing Acephone call", { sessionId });
+          if (connectionData.websocket) {
+            connectionData.websocket.close(1000, "Conversation ended by agent");
+          }
           break;
 
         default:

@@ -24,7 +24,7 @@ async function handlePostCallWebhook(req, res) {
   try {
     const webhookData = req.body;
 
-    console.log("🎯 ===== ELEVENLABS POST-CALL WEBHOOK RECEIVED =====");
+    console.log("🎯 ===== ELEVENLABS POST-CALL WEBHOOK RECEIVED =====", webhookData);
 
     // Extract session information using utility
     const { sessionId, conversationId } =
@@ -35,6 +35,9 @@ async function handlePostCallWebhook(req, res) {
     // Extract ElevenLabs data using utility
     const elevenLabsExtracted =
       dataExtractor.extractElevenLabsData(webhookData);
+
+      console.log("📊 Extracted ElevenLabs data:", elevenLabsExtracted);
+      
 
     // Get active connection using session utility
     const connection = sessionUtils.getConnection(sessionId, activeConnections);

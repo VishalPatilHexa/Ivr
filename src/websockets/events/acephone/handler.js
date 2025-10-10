@@ -134,16 +134,6 @@ function setupMessageHandling(websocket, sessionId, activeConnections) {
               sessionId = realSessionId;
             }
 
-            Logger.info("🎬 Acephone call started", {
-              sessionId: realSessionId,
-              streamSid,
-              agentId: metadata.agentId,
-              treatmentType: metadata.treatmentType,
-              language: metadata.language,
-              from: metadata.from,
-              to: metadata.to,
-            });
-
             // Initialize ElevenLabs agent using shared initializer
             if (metadata.agentId) {
               await initializeAgentForAcephone(

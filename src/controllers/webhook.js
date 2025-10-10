@@ -11,7 +11,7 @@ const {
   activeConnections,
   cleanupSession,
 } = require("../websockets/events/stream");
-const { updateCallRecord, getCallRecordBySessionId } = require("../services/outboundCall");
+const { updateCallRecord } = require("../services/outboundCall");
 const sessionUtils = require("../websockets/events/shared/session");
 
 // Webhook utilities
@@ -24,60 +24,60 @@ async function handlePostCallWebhook(req, res) {
   try {
     const webhookData = req.body;
 
-    console.log("🎯 ===== ELEVENLABS POST-CALL WEBHOOK RECEIVED =====", webhookData);
-
-    // Extract session information using utility
+    // Extract session information
     const { sessionId, conversationId } =
       dataExtractor.extractSessionInfo(webhookData);
 
-    console.log("🔍 Processing webhook for session:", sessionId);
+    console.log("🎯 Processing webhook", { sessionId, conversationId });
 
-    // Extract ElevenLabs data using utility
+    // Extract ElevenLabs data
     const elevenLabsExtracted =
       dataExtractor.extractElevenLabsData(webhookData);
 
-      console.log("📊 Extracted ElevenLabs data:", elevenLabsExtracted);
-      
+    // Extract transcript and summary
+    const transcript = webhookData.data?.transcript || [];
+    const transcriptSummary =
+      webhookData.data?.analysis?.transcript_summary || "";
 
-    // Get active connection using session utility
+    // Log clean values for debugging
+    console.log("📊 Extracted data:", {
+      cleanValues: elevenLabsExtracted.cleanValues,
+      transcriptSummary,
+    });
+
+    // Prepare update data with cleanValues, transcript and summary
+    const updateData = {
+      extractedJson: {
+        ...elevenLabsExtracted.cleanValues,
+        transcript: transcript,
+        transcriptSummary: transcriptSummary,
+      },
+      status: CALL_STATUS.COMPLETED,
+    };
+
+    // Update call record
+    await updateCallRecord(sessionId, updateData);
+
+    // Handle connection cleanup
     const connection = sessionUtils.getConnection(sessionId, activeConnections);
+    if (connection) {
+      sessionCleanup.handleConnectionCleanup(
+        connection,
+        sessionId,
+        cleanupSession
+      );
+    }
 
-    // Build standardized ElevenLabs data object using utility
-    const elevenLabsData = dataExtractor.buildElevenLabsDataObject(
-      sessionId,
-      conversationId,
-      elevenLabsExtracted
-    );
+    console.log("✅ Webhook processed", { sessionId });
 
-    // Fetch call record from database service
-    const callRecord = await getCallRecordBySessionId(sessionId);
-
-    // Update call record with extracted data using utility
-    await sessionCleanup.updateCallRecordWithData(
-      sessionId,
-      elevenLabsExtracted.cleanValues,
-      updateCallRecord,
-      CALL_STATUS.COMPLETED
-    );
-    // Handle connection cleanup using utility
-    console.log("🧹 Performing session cleanup after webhook processing");
-    sessionCleanup.handleConnectionCleanup(
-      connection,
-      sessionId,
-      cleanupSession
-    );
-
-    console.log("🎯 ===== END ELEVENLABS WEBHOOK PROCESSING =====");
-
-    // Respond to ElevenLabs webhook
+    // Respond to ElevenLabs
     res.status(200).json({
       success: true,
       message: "Webhook processed successfully",
-      sessionId: sessionId,
+      sessionId,
     });
   } catch (error) {
-    console.error("❌ Error processing ElevenLabs webhook:", error);
-    console.error("💥 Error details:", error.message);
+    console.error("❌ Webhook error:", error.message);
 
     res.status(500).json({
       success: false,

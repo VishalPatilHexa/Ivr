@@ -33,6 +33,7 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
         sessionId,
         innerMetadata
       });
+      delete innerMetadata.sessionId
 
       initializeConversation(agentWebSocket, sessionId, innerMetadata);
       resolve(agentWebSocket);

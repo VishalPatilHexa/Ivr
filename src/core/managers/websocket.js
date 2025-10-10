@@ -62,7 +62,7 @@ function initializeConversation(agentWebSocket, sessionId, innerMetadata) {
     type: "conversation_initiation_client_data",
     dynamic_variables: {
       user_id: sessionId,
-      treatmentType: innerMetadata.treatmentType,
+      ...innerMetadata,
     },
     conversation_config_override: {
       agent: {

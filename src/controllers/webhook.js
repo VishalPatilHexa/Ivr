@@ -34,10 +34,14 @@ async function handlePostCallWebhook(req, res) {
     const elevenLabsExtracted =
       dataExtractor.extractElevenLabsData(webhookData);
 
-    // Extract transcript and summary
-    const transcript = webhookData.data?.transcript || [];
-    const transcriptSummary =
-      webhookData.data?.analysis?.transcript_summary || "";
+    // Extract and filter transcript (only keep role and message)
+    const rawTranscript = webhookData.data?.transcript || [];
+    const transcript = rawTranscript.map(item => ({
+      role: item.role,
+      message: item.message
+    }));
+
+    const transcriptSummary = webhookData.data?.analysis?.transcript_summary || "";
 
     // Log clean values for debugging
     console.log("📊 Extracted data:", {
@@ -47,11 +51,9 @@ async function handlePostCallWebhook(req, res) {
 
     // Prepare update data with cleanValues, transcript and summary
     const updateData = {
-      extractedJson: {
-        ...elevenLabsExtracted.cleanValues,
-        transcript: transcript,
-        transcriptSummary: transcriptSummary,
-      },
+      extractedJson: elevenLabsExtracted.cleanValues,
+      transcript: transcript,
+      transcriptSummary: transcriptSummary,
       status: CALL_STATUS.COMPLETED,
     };
 

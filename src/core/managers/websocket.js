@@ -33,11 +33,6 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
         sessionId,
         innerMetadata
       });
-      delete innerMetadata.sessionId
-      delete innerMetadata.ivrCallId
-      // delete innerMetadata.agentId
-      // delete innerMetadata.retryInfo
-      // delete innerMetadata.ourProviderCampaignId
 
 
       initializeConversation(agentWebSocket, sessionId, innerMetadata);
@@ -68,7 +63,7 @@ function initializeConversation(agentWebSocket, sessionId, innerMetadata) {
     type: "conversation_initiation_client_data",
     dynamic_variables: {
       user_id: sessionId,
-      ...innerMetadata,
+      ...innerMetadata.dynamicVariables,
     },
     conversation_config_override: {
       agent: {

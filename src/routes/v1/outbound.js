@@ -39,7 +39,7 @@ router.post("/call", async (req, res) => {
       isPromotional: req.body.isPromotional || false,
       ivrId: req.body.ivrId,
       metadata: req.body.metadata || {},
-      provider: req.body.provider || process.env.OUTBOUND_PROVIDER,
+      provider: req.body?.metadata?.provider || process.env.OUTBOUND_PROVIDER,
     };
 
     // Make outbound call

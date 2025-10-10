@@ -33,9 +33,9 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
         sessionId,
         innerMetadata
       });
-      // delete innerMetadata.sessionId
-      // delete innerMetadata.ivrCallId
-      delete innerMetadata.agentId
+      delete innerMetadata.sessionId
+      delete innerMetadata.ivrCallId
+      // delete innerMetadata.agentId
       // delete innerMetadata.retryInfo
       // delete innerMetadata.ourProviderCampaignId
 

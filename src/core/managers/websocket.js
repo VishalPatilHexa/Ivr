@@ -26,6 +26,12 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
     });
 
     agentWebSocket.on("open", () => {
+      // Log the metadata structure to debug
+      Logger.debug("ElevenLabs WebSocket opened, metadata structure:", {
+        sessionId,
+        metadata: JSON.stringify(metadata, null, 2)
+      });
+
       // Extract only the inner metadata and pass it
       const innerMetadata = metadata?.metadata?.metadata || {};
       initializeConversation(agentWebSocket, sessionId, innerMetadata);
@@ -56,21 +62,14 @@ function initializeConversation(agentWebSocket, sessionId, innerMetadata) {
 
   const initializationMessage = {
     type: "conversation_initiation_client_data",
-    dynamic_variables: {
-      user_id: sessionId,
+    conversation_initiation_client_data: {
       ...innerMetadata,
-    },
-    // Optional: Add conversation config overrides
-    conversation_config_override: {
-      agent: {
-        language: innerMetadata?.language || "hi",
-      },
-    },
+    }
   };
 
-  Logger.debug("Sending initialization message to ElevenLabs", {
+  Logger.info("📤 Sending initialization message to ElevenLabs", {
     sessionId,
-    dynamicVariables: initializationMessage.dynamic_variables,
+    message: JSON.stringify(initializationMessage, null, 2)
   });
 
   agentWebSocket.send(JSON.stringify(initializationMessage));

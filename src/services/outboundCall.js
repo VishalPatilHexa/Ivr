@@ -63,11 +63,15 @@ async function makeOutboundCall(callData) {
   try {
     // Determine provider from environment
     const provider = getActiveProvider(callData.provider);
+    let { metadata } = callData;
+    let { retryInfo } = metadata;
 
     // Create database record with INITIATED status
     // Note: createdAt serves as call initiation time
     dbRecord = await createCallRecord({
+      campaignId: retryInfo.campaignId,
       sessionId: callId, // Use callId as sessionId
+      ourProviderCampaignId:metadata.ourProviderCampaignId,
       customerNumber: callData.customerNumber,
       isPromotional: callData.isPromotional || false,
       status: CALL_STATUS.INITIATED,

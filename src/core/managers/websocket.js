@@ -64,7 +64,7 @@ function initializeConversation(agentWebSocket, sessionId, innerMetadata) {
     type: "conversation_initiation_client_data",
     conversation_initiation_client_data: {
       dynamic_variables: {
-        ...innerMetadata,
+        treatmentType: innerMetadata?.treatmentType || "general",
       }
     }
   };

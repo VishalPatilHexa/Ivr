@@ -58,12 +58,12 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
  * Initialize conversation with user context and settings
  */
 function initializeConversation(agentWebSocket, sessionId, innerMetadata) {
-  // Destructure the clean inner metadata directl
-
   const initializationMessage = {
     type: "conversation_initiation_client_data",
     conversation_initiation_client_data: {
-      ...innerMetadata,
+      custom_llm_extra_body: {
+        ...innerMetadata,
+      }
     }
   };
 

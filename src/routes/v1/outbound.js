@@ -16,27 +16,6 @@ const {
   SUCCESS_MESSAGES,
 } = require("../../constants");
 
-/**
- * POST /api/v1/outbound/call
- * Make an outbound call using configured provider
- *
- * Body:
- * {
- *   "customerNumber": "+917972318018",
- *   "callerNumber": "+918047224660",
- *   "virtualNumber": "+919513439773", // optional
- *   "isPromotional": false, // optional, default false
- *   "ivrId": "1000129909", // optional, for Knowlarity
- *   "metadata": {
- *     "agentId": "agent_2801k10mggvefy5vjfrybj2grs5j",
- *     "treatmentType": "Piles",
- *     "language": "hi",
- *     "campaign_id": "HEALTH_CAMP_2024", // optional
- *     "department": "cardiology", // optional
- *     "priority": "high" // optional
- *   }
- * }
- */
 router.post("/call", async (req, res) => {
   try {
     Logger.info("📞 Outbound call request received", {
@@ -98,10 +77,6 @@ router.post("/call", async (req, res) => {
   }
 });
 
-/**
- * GET /api/v1/outbound/provider-info
- * Get current provider configuration and status
- */
 router.get("/provider-info", (req, res) => {
   try {
     const providerInfo = outboundCallService.getProviderInfo();
@@ -122,10 +97,6 @@ router.get("/provider-info", (req, res) => {
   }
 });
 
-/**
- * POST /api/v1/outbound/test
- * Test endpoint for outbound call functionality (logs only, no actual call)
- */
 router.post("/test", (req, res) => {
   try {
     Logger.info("🧪 Outbound call test request", {

@@ -68,8 +68,6 @@ async function makeOutboundCall(callData) {
     // Note: createdAt serves as call initiation time
     dbRecord = await createCallRecord({
       sessionId: callId, // Use callId as sessionId
-      provider: provider.name,
-      callerNumber: callData.callerNumber,
       customerNumber: callData.customerNumber,
       isPromotional: callData.isPromotional || false,
       status: CALL_STATUS.INITIATED,
@@ -161,24 +159,6 @@ async function makeOutboundCall(callData) {
 }
 
 /**
- * Validate required call data fields
- */
-function validateCallData(callData) {
-  const required = ["customerNumber", "callerNumber", "metadata"];
-  const missing = required.filter((field) => !callData[field]);
-
-  if (missing.length > 0) {
-    throw new Error(
-      `${ERROR_MESSAGES.VALIDATION.REQUIRED_FIELD}: ${missing.join(", ")}`
-    );
-  }
-
-  if (!callData.metadata.agentId) {
-    throw new Error(ERROR_MESSAGES.VALIDATION.MISSING_AGENT_ID);
-  }
-}
-
-/**
  * Get active provider configuration
  */
 function getActiveProvider(providerName = process.env.OUTBOUND_PROVIDER) {
@@ -238,6 +218,7 @@ function createAcephonePayload(callData, dbRecord) {
     customer_number: cleanCustomerNumber,
     api_key: process.env.ACEPHONE_API_KEY,
     metadata: {
+      ivrCallId: dbRecord.id, // Pass database record ID for tracking
       ...callData.metadata, // Include any additional metadata
       sessionId: dbRecord.sessionId, // Add sessionId to metadata for WebSocket connection
     },

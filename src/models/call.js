@@ -20,18 +20,9 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BIGINT,
         allowNull: true,
       },
-      crmSynced: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        defaultValue: 0,
-      },
-      provider: {
-        type: DataTypes.ENUM("knowlarity", "acephone"),
-        allowNull: false,
-      },
-      callerNumber: {
+      ourProviderCampaignId: {
         type: DataTypes.BIGINT,
-        allowNull: false,
+        allowNull: true,
       },
       customerNumber: {
         type: DataTypes.BIGINT,
@@ -41,10 +32,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 91,
-      },
-      srNumber: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
       },
       sessionId: {
         type: DataTypes.STRING,
@@ -64,14 +51,6 @@ module.exports = (sequelize, DataTypes) => {
       },
       duration: {
         type: DataTypes.INTEGER, // Duration in seconds
-        allowNull: true,
-      },
-      callStartTime: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-      },
-      callEndTime: {
-        type: DataTypes.BIGINT,
         allowNull: true,
       },
       errorMessage: {
@@ -120,9 +99,6 @@ module.exports = (sequelize, DataTypes) => {
         { fields: ["customerNumber"] },
         {
           fields: ["status"],
-        },
-        {
-          fields: ["provider"],
         },
         {
           fields: ["sessionId"],

@@ -16,8 +16,6 @@ const sessionUtils = require("../websockets/events/shared/session");
 
 // Webhook utilities
 const dataExtractor = require("../webhooks/utils/dataExtractor");
-const payloadMapper = require("../webhooks/utils/payloadMapper");
-const httpClient = require("../webhooks/utils/httpClient");
 const sessionCleanup = require("../webhooks/utils/sessionCleanup");
 /**
  * Handle ElevenLabs post-call webhook
@@ -58,40 +56,6 @@ async function handlePostCallWebhook(req, res) {
       updateCallRecord,
       CALL_STATUS.COMPLETED
     );
-
-    // Map ElevenLabs data to webhook format and call external API
-    try {
-      console.log("🔍 Mapping ElevenLabs data to webhook format", {
-        elevenLabsData,
-        callRecordMetadata: callRecord.metadata,
-        id: callRecord.dataValues.id,
-        sessionId,
-      });
-      // here i am able to get callRecord details its printable but see logs i showed
-
-      // Map to webhook payload using utility
-      const webhookPayload = payloadMapper.mapElevenLabsToWebhook(
-        elevenLabsData,
-        callRecord
-      );
-      console.log("📦 Mapped webhook payload:", webhookPayload);
-
-      // Call external webhook using utility
-      const webhookResult = await httpClient.callHexaHealthWebhook(
-        webhookPayload
-      );
-
-      console.log("🎯 External webhook called successfully", {
-        sessionId,
-        success: webhookResult.success,
-      });
-    } catch (error) {
-      console.error("❌ Failed to call external webhook", {
-        sessionId,
-        error: error.message,
-      });
-    }
-
     // Handle connection cleanup using utility
     console.log("🧹 Performing session cleanup after webhook processing");
     sessionCleanup.handleConnectionCleanup(

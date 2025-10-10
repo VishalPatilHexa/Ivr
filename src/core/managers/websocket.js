@@ -27,13 +27,8 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
 
     agentWebSocket.on("open", () => {
       // Extract the inner metadata - handle both nested and flat structures
-      const innerMetadata = metadata?.metadata?.metadata || metadata?.metadata || {};
-
-      console.log("Initializing conversation with ElevenLabs", {
-        sessionId,
-        innerMetadata
-      });
-
+      const innerMetadata =
+        metadata?.metadata?.metadata || metadata?.metadata || {};
 
       initializeConversation(agentWebSocket, sessionId, innerMetadata);
       resolve(agentWebSocket);

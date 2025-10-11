@@ -86,6 +86,8 @@ async function makeOutboundCall(callData) {
     // Create provider-specific payload
     const payload = createProviderPayload(provider, callData, dbRecord);
 
+    console.log("📡 Outbound call payload:", payload );
+
     // Make API call
     const response = await makeApiCall(provider, payload);
 
@@ -219,6 +221,8 @@ function createAcephonePayload(callData, dbRecord) {
   // Remove + prefix and country code for Acephone (they expect 10-digit numbers)
   const cleanCustomerNumber = callData.customerNumber.replace(/^\+?91/, "");
   let cleanerMetadata = { ...callData.metadata };
+  console.log("Cleaner Metadata:", cleanerMetadata);
+  
   let dynamicVariables = cleanerMetadata.dynamicVariables || {};
   delete cleanerMetadata.sessionId, cleanerMetadata.dynamicVariables; // Remove sessionId from metadata to avoid duplication
   return {

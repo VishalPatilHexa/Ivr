@@ -30,6 +30,9 @@ async function createElevenLabsWebSocket(agentId, sessionId, metadata) {
       const innerMetadata =
         metadata?.metadata?.metadata || metadata?.metadata || {};
 
+        console.log("📊 Extracted inner metadata:", innerMetadata, metadata);
+        
+
       initializeConversation(agentWebSocket, sessionId, innerMetadata);
       resolve(agentWebSocket);
     });

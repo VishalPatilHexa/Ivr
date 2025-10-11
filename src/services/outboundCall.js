@@ -71,7 +71,7 @@ async function makeOutboundCall(callData) {
     dbRecord = await createCallRecord({
       campaignId: retryInfo.campaignId,
       sessionId: callId, // Use callId as sessionId
-      ourProviderCampaignId:metadata.ourProviderCampaignId,
+      ourProviderCampaignId: metadata.ourProviderCampaignId,
       customerNumber: callData.customerNumber,
       isPromotional: callData.isPromotional || false,
       status: CALL_STATUS.INITIATED,
@@ -218,12 +218,16 @@ function createKnowlarityPayload(callData, dbRecord) {
 function createAcephonePayload(callData, dbRecord) {
   // Remove + prefix and country code for Acephone (they expect 10-digit numbers)
   const cleanCustomerNumber = callData.customerNumber.replace(/^\+?91/, "");
+  let cleanerMetadata = { ...callData.metadata };
+  let dynamicVariables = cleanerMetadata.dynamicVariables || {};
+  delete cleanerMetadata.sessionId, cleanerMetadata.dynamicVariables; // Remove sessionId from metadata to avoid duplication
   return {
     customer_number: cleanCustomerNumber,
     api_key: process.env.ACEPHONE_API_KEY,
     metadata: {
       ivrCallId: dbRecord.id, // Pass database record ID for tracking
-      ...callData.metadata, // Include any additional metadata
+      ...cleanerMetadata, // Include any additional metadata
+      dynamicVariables,
       sessionId: dbRecord.sessionId, // Add sessionId to metadata for WebSocket connection
     },
     async: 1, // Acephone async flag

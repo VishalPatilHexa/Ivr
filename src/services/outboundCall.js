@@ -221,8 +221,6 @@ function createAcephonePayload(callData, dbRecord) {
   // Remove + prefix and country code for Acephone (they expect 10-digit numbers)
   const cleanCustomerNumber = callData.customerNumber.replace(/^\+?91/, "");
   let cleanerMetadata = { ...callData.metadata };
-  console.log("Cleaner Metadata:", cleanerMetadata);
-
   let dynamicVariables = cleanerMetadata?.metadata?.dynamicVariables || {};
   delete cleanerMetadata.metadata; // Remove sessionId from metadata to avoid duplication
   return {
